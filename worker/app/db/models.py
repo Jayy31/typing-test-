@@ -88,6 +88,7 @@ class NewsTag(Base):
     novelty: Mapped[float | None] = mapped_column(Float)
     model: Mapped[str | None] = mapped_column(String(128))
     prompt_ver: Mapped[str | None] = mapped_column(String(32))
+    taxonomy_ver: Mapped[str | None] = mapped_column(String(16))
 
 
 class MacroSnapshot(Base):
@@ -171,6 +172,31 @@ class Signal(Base):
     analysis_id: Mapped[int | None] = mapped_column(ForeignKey("analyses.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+    # DESIGN_V2: configuration provenance
+    engine_version: Mapped[str | None] = mapped_column(String(16))
+    flags_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    impact_order: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1"
+    )  # 1 direct, 2-3 via KG
+    # probabilities and EV (null until the phase that fills them)
+    p_move: Mapped[float | None] = mapped_column(Float)
+    p_t1_before_sl: Mapped[float | None] = mapped_column(Float)
+    p_t2: Mapped[float | None] = mapped_column(Float)
+    p_t3: Mapped[float | None] = mapped_column(Float)
+    expected_value: Mapped[float | None] = mapped_column(Float)  # % of premium after costs
+    expected_value_inr: Mapped[float | None] = mapped_column(Float)  # per lot
+    calibrator_id: Mapped[int | None] = mapped_column(
+        ForeignKey("calibrators.id")
+    )  # null = uncalibrated
+    # predicted vs implied move
+    implied_move_pct: Mapped[float | None] = mapped_column(Float)
+    predicted_move_pct: Mapped[float | None] = mapped_column(Float)  # in the trade direction
+    predicted_move_source: Mapped[str | None] = mapped_column(
+        String(16)
+    )  # scenario_tree/analogues/blended
+    edge_ratio: Mapped[float | None] = mapped_column(Float)
+    iv_percentile: Mapped[float | None] = mapped_column(Float)
+    event_iv_premium: Mapped[float | None] = mapped_column(Float)
 
 
 class SignalVersion(Base):
@@ -271,3 +297,163 @@ class Alert(Base):
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# ---- DESIGN_V2 tables -------------------------------------------------------------------
+
+
+class Scenario(Base):
+    """Scenario tree branch from an analysis (probabilities per analysis sum to 1)."""
+
+    __tablename__ = "scenarios"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    analysis_id: Mapped[int] = mapped_column(ForeignKey("analyses.id"), index=True)
+    name: Mapped[str] = mapped_column(Text)
+    probability: Mapped[float] = mapped_column(Float)
+    stock_move_pct: Mapped[float] = mapped_column(Float)
+    timing_days: Mapped[int] = mapped_column(Integer)
+    triggers: Mapped[list[str] | None] = mapped_column(Json)
+    invalidation: Mapped[str | None] = mapped_column(Text)
+
+
+class SignalCandidate(Base):
+    """Every strike/expiry the simulator evaluated for a signal (drill-down table)."""
+
+    __tablename__ = "signal_candidates"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    signal_id: Mapped[int] = mapped_column(ForeignKey("signals.id"), index=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expiry: Mapped[date] = mapped_column(Date)
+    strike: Mapped[float] = mapped_column(Float)
+    option_type: Mapped[str] = mapped_column(String(2))  # CE / PE
+    bid: Mapped[float | None] = mapped_column(Float)
+    ask: Mapped[float | None] = mapped_column(Float)
+    iv: Mapped[float | None] = mapped_column(Float)
+    oi: Mapped[int | None] = mapped_column(BigInteger)
+    volume: Mapped[int | None] = mapped_column(BigInteger)
+    spread_pct: Mapped[float | None] = mapped_column(Float)
+    ev_pct: Mapped[float | None] = mapped_column(Float)
+    ev_inr: Mapped[float | None] = mapped_column(Float)
+    p_t1_before_sl: Mapped[float | None] = mapped_column(Float)
+    p_t3: Mapped[float | None] = mapped_column(Float)
+    max_loss_inr: Mapped[float | None] = mapped_column(Float)
+    exp_hold_days: Mapped[float | None] = mapped_column(Float)
+    theta_per_day: Mapped[float | None] = mapped_column(Float)
+    breakeven_move_pct: Mapped[float | None] = mapped_column(Float)
+    iv_sensitivity: Mapped[float | None] = mapped_column(Float)
+    chosen: Mapped[bool] = mapped_column(Boolean, default=False)
+    rejected_reason: Mapped[str | None] = mapped_column(Text)
+    details_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+
+
+class AgentRun(Base):
+    """One multi-agent step (researcher/bull/bear/judge/novelty) for an analysis."""
+
+    __tablename__ = "agent_runs"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    analysis_id: Mapped[int] = mapped_column(ForeignKey("analyses.id"), index=True)
+    agent: Mapped[str] = mapped_column(String(16))
+    model: Mapped[str] = mapped_column(String(128))
+    prompt_ver: Mapped[str] = mapped_column(String(32))
+    input_refs: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    output_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_inr: Mapped[float] = mapped_column(Float, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class Calibrator(Base):
+    """Versioned probability calibrator (isotonic / Platt), refit weekly."""
+
+    __tablename__ = "calibrators"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    target: Mapped[str] = mapped_column(String(32))  # p_move / p_t1_before_sl / ...
+    method: Mapped[str] = mapped_column(String(16))
+    version: Mapped[int] = mapped_column(Integer)
+    params_json: Mapped[dict[str, Any]] = mapped_column(Json)
+    n_samples: Mapped[int] = mapped_column(Integer)
+    brier: Mapped[float | None] = mapped_column(Float)
+    fitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    active: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class CalibrationRecord(Base):
+    """Predicted probability vs realised outcome, for Brier score and reliability curves."""
+
+    __tablename__ = "calibration_records"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    signal_id: Mapped[int | None] = mapped_column(ForeignKey("signals.id"), index=True)
+    trade_id: Mapped[int | None] = mapped_column(ForeignKey("paper_trades.id"))
+    target: Mapped[str] = mapped_column(String(32))
+    predicted: Mapped[float] = mapped_column(Float)
+    calibrator_id: Mapped[int | None] = mapped_column(ForeignKey("calibrators.id"))
+    config_hash: Mapped[str | None] = mapped_column(String(64))
+    outcome: Mapped[bool | None] = mapped_column(Boolean)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class KgNode(Base):
+    __tablename__ = "kg_nodes"
+    __table_args__ = (UniqueConstraint("kind", "name"),)
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(32))  # company/sector/commodity/country/...
+    name: Mapped[str] = mapped_column(String(256))
+    symbol: Mapped[str | None] = mapped_column(String(32), index=True)
+    attrs: Mapped[dict[str, Any] | None] = mapped_column(Json)
+
+
+class KgEdge(Base):
+    __tablename__ = "kg_edges"
+    __table_args__ = (UniqueConstraint("src", "dst", "type"),)
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    src: Mapped[int] = mapped_column(ForeignKey("kg_nodes.id"), index=True)
+    dst: Mapped[int] = mapped_column(ForeignKey("kg_nodes.id"), index=True)
+    type: Mapped[str] = mapped_column(String(32))
+    weight: Mapped[float] = mapped_column(Float)
+    source: Mapped[str | None] = mapped_column(Text)
+    confidence: Mapped[float | None] = mapped_column(Float)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class BacktestRun(Base):
+    __tablename__ = "backtest_runs"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    config_hash: Mapped[str] = mapped_column(String(64), index=True)
+    config_json: Mapped[dict[str, Any]] = mapped_column(Json)
+    period_start: Mapped[date] = mapped_column(Date)
+    period_end: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(16))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    metrics_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+
+class BacktestTrade(Base):
+    __tablename__ = "backtest_trades"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("backtest_runs.id"), index=True)
+    symbol: Mapped[str] = mapped_column(String(32))
+    event_ref: Mapped[str | None] = mapped_column(String(64))
+    direction: Mapped[str] = mapped_column(String(8))
+    expiry: Mapped[date] = mapped_column(Date)
+    strike: Mapped[float] = mapped_column(Float)
+    entry_date: Mapped[date] = mapped_column(Date)
+    entry_premium: Mapped[float] = mapped_column(Float)
+    exit_date: Mapped[date | None] = mapped_column(Date)
+    exit_premium: Mapped[float | None] = mapped_column(Float)
+    exit_reason: Mapped[str | None] = mapped_column(String(32))
+    pnl_pct: Mapped[float | None] = mapped_column(Float)
+    pnl_inr: Mapped[float | None] = mapped_column(Float)
+    details_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
