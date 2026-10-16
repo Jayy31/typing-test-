@@ -23,6 +23,9 @@ class OptionQuoteRow:
     volume: int | None
     spot: float | None
     ts: datetime
+    bid_qty: int | None = None  # shares at the best bid (fill checks, DESIGN_V2 R2)
+    ask_qty: int | None = None
+    instrument_key: str | None = None  # broker key of this option (depth fallback)
 
     @property
     def mid(self) -> float | None:
