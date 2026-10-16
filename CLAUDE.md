@@ -2,7 +2,9 @@
 
 Project guide for Claude Code. Read this first, then BOTH design docs:
 `docs/DESIGN.md` and `docs/DESIGN_V2.md`. Together they define ONE final system (no v1/v2 split, no
-shadow mode, one pipeline, one output). **Where they conflict, `docs/DESIGN_V2.md` wins.**
+shadow mode, one pipeline, one output). **Where they conflict, `docs/DESIGN_V2.md` wins.** Its section
+"Rules and outputs v2.1" adds owner rules: all values in config, each rule switchable by mode so the
+backtester can compare v2.1 rules with the original fixed rules.
 Phase-specific research notes live in `docs/notes/` (e.g. `docs/notes/upstox-api.md`).
 
 ## What this is
@@ -52,7 +54,7 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 ## Conventions
 - Typed Pydantic models at every boundary (external APIs, AI outputs, DB writes)
 - AI outputs: strict JSON validated against schemas; store model id + prompt version + input refs with every output
-- Model ids come from env (`AI_MODEL_TAGGER`, `AI_MODEL_ANALYST`, `AI_MODEL_REVIEWER`), never hard-coded
+- Model ids come from env (`AI_MODEL_<ROLE>`), never hard-coded
 - Enforce `AI_DAILY_BUDGET_INR` / `AI_MONTHLY_BUDGET_INR`; log usage to `ai_usage`
 - All jobs idempotent (unique keys), retries with backoff, log to `job_runs`
 - Every external call has a timeout
@@ -80,13 +82,13 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 | 1 | News intelligence | done |
 | 2 | Signals and alerts | done |
 | 2.5 | Refactor 0-2 for DESIGN_V2 (schema, taxonomy, tagger batch, collector base, option interface, DuckDB, flags, scenario tree, V2 signal fields/templates) | done |
-| 3 | Live options (Upstox) + paper trading + implied move / edge ratio + scenario simulator (best strike/expiry by EV) | next |
+| 3 | Live options (Upstox) + paper trading + implied move / edge ratio + scenario simulator (best strike/expiry by EV) + v2.1 rules A1-A6, outputs B1/B2/B3/B6(live)/B7 | next |
 | 4 | History: 5y backfill (bhavcopy, announcements, GDELT, events YAML), batch tagging, event study + analogue lookup, R2 backup | |
-| 5 | Multi-agent analysis + probability blending + calibration + EV ranking | |
-| 6 | Backtester (walk-forward, costs, no look-ahead / survivorship) | |
+| 5 | Multi-agent analysis + probability blending + calibration + EV ranking + AI post-mortems (B4) | |
+| 6 | Backtester (walk-forward, costs, no look-ahead / survivorship) + fixed vs v2.1 rule comparison, metrics module (B5), benchmarks (B6) | |
 | 7 | Deeper data sources (+ their tables) incl. results fast-path | |
 | 8 | Knowledge graph + 2nd/3rd-order signals | |
-| 9 | Dashboard (all pages from both docs) + morning brief / evening summary | |
+| 9 | Dashboard (all pages from both docs + Rejected page, portfolio views) + morning brief / evening summary incl. top rejected (B8) | |
 | 10 | Analytics, monthly report, learning loop, hardening | |
 
 ## Current phase
