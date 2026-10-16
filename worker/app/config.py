@@ -9,7 +9,8 @@ IST = ZoneInfo("Asia/Kolkata")
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Blank values (KEY=) fall back to the defaults below, so .env can hold keys only.
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
 
     # App
     app_env: str = "development"

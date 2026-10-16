@@ -1,0 +1,9 @@
+# Maintained calendar of market-wide events. NO dates are pre-filled on purpose: wrong dates
+# would create wrong trades. Fill from official sources, then the loader stores them daily.
+#   RBI MPC:   https://www.rbi.org.in  (Monetary Policy Committee schedule)
+#   US FOMC:   https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
+#   US CPI:    https://www.bls.gov/schedule/news_release/cpi.htm
+#   NSE holidays / monthly expiry dates: https://www.nseindia.com (trading holidays, F&O circulars)
+# Example entry (remove the leading '#'):
+#   - {event_type: rbi_mpc, event_date: 2026-12-04, sector: Banks, details: {note: "policy decision"}}
+events: []

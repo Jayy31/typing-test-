@@ -48,7 +48,8 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 - `cd dashboard && npm run dev`
 
 ## Current phase
-Phase 1 – News intelligence (see `docs/DESIGN.md` §19). Update this line when a phase is done.
+Phase 2 – Signals and alerts (see `docs/DESIGN.md` §19). Update this line when a phase is done.
 
 ## Progress log
 - Phase 0 (PR `phase-0-foundation`): worker skeleton, full §14 schema + Alembic migrations (RLS enabled on all tables), settings, job runner with `job_runs` + retries, health heartbeat, symbol master (148 stocks) + NSE lot-size loader, APScheduler, Dockerfile, Makefile, CI. No Sentry (owner decision). NSE lot-size fetch untested against live NSE (blocked in build sandbox); Dockerfile untested (no Docker daemon).
+- Phase 1 (PR `phase-1-news-intelligence`): RSS + NSE announcement collectors (feeds in `worker/config/news_sources.yaml`), URL-hash dedup + title-similarity clustering, entity mapper (case-sensitive alias match, themes in YAML), relevance gate (YAML rules), budget-capped Anthropic client with prompt caching + `ai_usage` logging, stage-1 tagger (structured outputs, prompt `tagger_v1`), Yahoo macro collector, NSE FII/DII + event calendar parsers, manual calendar YAML (empty: owner fills), scheduler wiring. `.env.example` is keys-only (blank values fall back to defaults). Unverified against live sources (blocked in build sandbox): feed URLs, NSE JSON endpoints, Yahoo tickers, real Anthropic calls. Not built: BSE announcements, GIFT Nifty, full-article extraction.
