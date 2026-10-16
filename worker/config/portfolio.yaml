@@ -1,0 +1,6 @@
+# Paper portfolio (DESIGN_V2 "Rules and outputs v2.1" A5/A6).
+notional_capital_inr: 500000        # for portfolio P&L, equity curve and drawdown (sizing stays 1 lot)
+lots_per_signal: 1
+theme_keys: [theme, sector]         # group signals by the first available: evidence theme, then sector
+opposite_signal_action: flag        # flag (alert for review) | close (exit the open trade as THESIS)
+snapshot_every_min: 15

@@ -5,6 +5,9 @@ polling:
   universe_times: ["09:35", "12:30"]             # full F&O universe snapshots
   strikes_each_side: 6                           # strikes stored around ATM per chain
   store_full_res_days: 7                         # older quotes are thinned to one per strike per day
+  protect_days_after_close: 2                    # never thin stocks with open trades / live signals
+                                                 # until this many days after they close
+  archive_batch_rows: 200000                     # rows per archive run (full-res Parquet on the VM)
 
 liquidity:                    # per option strike; all must pass
   min_oi: 50000               # open interest (shares)
