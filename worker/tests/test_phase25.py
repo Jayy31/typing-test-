@@ -225,7 +225,8 @@ def test_history_store_schema_and_single_writer(tmp_path: Path) -> None:
 def test_flags_default_on_but_inactive_until_built(engine: Engine) -> None:
     with session_scope(engine) as s:
         snap = flags.snapshot(s)
-        assert snap["feat.simulator"] == {"enabled": True, "built": False, "active": False}
+        assert snap["feat.multi_agent"] == {"enabled": True, "built": False, "active": False}
+        assert snap["feat.simulator"] == {"enabled": True, "built": True, "active": True}
         set_config(s, "feat.multi_agent", False)
         assert flags.enabled(s, "feat.multi_agent") is False
 
@@ -282,7 +283,8 @@ def test_signal_gets_v2_stamp_scenarios_and_honest_labels(engine: Engine) -> Non
     with session_scope(engine) as s:
         sig = s.scalars(select(Signal)).one()
         assert sig.engine_version == flags.ENGINE_VERSION
-        assert sig.flags_json and sig.flags_json["feat.simulator"]["active"] is False
+        assert sig.flags_json and sig.flags_json["feat.multi_agent"]["active"] is False
+        assert sig.pricing_status == "pending"  # no broker token in tests -> graceful degradation
         assert (
             sig.predicted_move_pct == pytest.approx(2.85)
             and sig.predicted_move_source == "scenario_tree"

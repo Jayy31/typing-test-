@@ -1,5 +1,5 @@
-from datetime import date
 from dataclasses import replace
+from datetime import date
 
 import numpy as np
 import pytest
