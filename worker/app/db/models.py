@@ -254,3 +254,20 @@ class AiUsage(Base):
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cached_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_inr: Mapped[float] = mapped_column(Float, default=0)
+
+
+class Alert(Base):
+    """Outbox for Telegram messages. Postgres is the queue; a job sends pending rows."""
+
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(16), index=True)  # signal/sector/trade/health/brief
+    dedupe_key: Mapped[str] = mapped_column(String(128), unique=True)
+    text: Mapped[str] = mapped_column(Text)
+    signal_id: Mapped[int | None] = mapped_column(ForeignKey("signals.id"))
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

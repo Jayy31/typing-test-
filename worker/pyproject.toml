@@ -39,6 +39,9 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.per-file-ignores]
+"app/notify/explain.py" = ["E501"]  # message text formatting
+
 [tool.mypy]
 python_version = "3.12"
 strict = true

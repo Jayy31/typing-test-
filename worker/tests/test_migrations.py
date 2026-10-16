@@ -16,6 +16,10 @@ def test_single_head_and_rls_covers_all_tables() -> None:
     script = ScriptDirectory.from_config(cfg)
     assert len(script.get_heads()) == 1
 
-    rls = (ROOT / "app/db/migrations/versions/0002_enable_rls.py").read_text()
-    missing = [t for t in Base.metadata.tables if f'"{t}"' not in rls]
-    assert not missing, f"tables without RLS in migration 0002: {missing}"
+    rls = "".join(
+        p.read_text()
+        for p in (ROOT / "app/db/migrations/versions").glob("*.py")
+        if "ROW LEVEL SECURITY" in p.read_text()
+    )
+    missing = [t for t in Base.metadata.tables if t not in rls]
+    assert not missing, f"tables without RLS in migrations: {missing}"

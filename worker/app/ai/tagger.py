@@ -121,7 +121,7 @@ def _store_tags(engine: Engine | None, news_id: int, out: TaggerOutput, model: s
                     news_id=news_id,
                     symbol=imp.symbol,
                     sector=imp.sector,
-                    theme=",".join(out.themes) or None,
+                    theme=",".join(out.themes)[:64] or None,  # column is varchar(64)
                     event_type=out.event_type,
                     direction=imp.direction,
                     sentiment=imp.sentiment,

@@ -141,3 +141,14 @@ def test_tag_items_stores_tags_and_statuses(engine: Engine) -> None:
             == "not_actionable"
         )
         assert len(s.scalars(select(NewsTag)).all()) == 1
+
+
+def test_long_theme_list_fits_column(engine: Engine) -> None:
+    rows = parse_symbol_master(SYMBOL_MASTER.read_text(encoding="utf-8"))
+    sync_instruments(rows, {"BHARTIARTL": 475}, engine)
+    with session_scope(engine) as s:
+        s.add(NewsItem(url_hash="h9", source="x", title="Airtel", url="u9", status="relevant"))
+    long = OUT.model_copy(update={"themes": [f"theme_number_{i}_long_name" for i in range(10)]})
+    tag_items(engine, AiClient(settings(), engine, FakeMessages(long)))
+    with session_scope(engine) as s:
+        assert len(s.scalars(select(NewsTag)).one().theme or "") <= 64

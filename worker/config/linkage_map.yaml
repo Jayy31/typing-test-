@@ -1,0 +1,61 @@
+# Sector linkage map: macro moves -> sector effects. STARTING DEFAULTS, tune with results (Phase 5).
+# A rule fires when the metric moves at least `threshold` in the given direction over ~24h.
+#   mode pct = % change, mode abs = absolute change in the metric's own units (us10y is in % points)
+# effect.weight is points added to (agree) or subtracted from (disagree) a candidate's score.
+# Targets match a stock's sector (as in data/symbol_master.csv) or sub_sector.
+macro_moves:
+  - name: crude_up
+    metric: brent
+    mode: pct
+    move: up
+    threshold: 3.0
+    effects:
+      - {sub_sectors: [OMC], direction: bearish, weight: 8}
+      - {sectors: [Aviation], direction: bearish, weight: 8}
+      - {sub_sectors: [Paints, Tyres], direction: bearish, weight: 5}
+      - {sub_sectors: [Upstream], direction: bullish, weight: 8}
+  - name: crude_down
+    metric: brent
+    mode: pct
+    move: down
+    threshold: 3.0
+    effects:
+      - {sub_sectors: [OMC], direction: bullish, weight: 8}
+      - {sectors: [Aviation], direction: bullish, weight: 8}
+      - {sub_sectors: [Paints, Tyres], direction: bullish, weight: 5}
+      - {sub_sectors: [Upstream], direction: bearish, weight: 8}
+  - name: rupee_weaker
+    metric: usdinr
+    mode: pct
+    move: up
+    threshold: 0.5
+    effects:
+      - {sectors: [IT], direction: bullish, weight: 6}
+      - {sectors: [Pharma], direction: bullish, weight: 4}
+      - {sectors: [Aviation], direction: bearish, weight: 5}
+      - {sub_sectors: [OMC], direction: bearish, weight: 4}
+  - name: rupee_stronger
+    metric: usdinr
+    mode: pct
+    move: down
+    threshold: 0.5
+    effects:
+      - {sectors: [IT], direction: bearish, weight: 6}
+      - {sectors: [Pharma], direction: bearish, weight: 4}
+      - {sectors: [Aviation], direction: bullish, weight: 5}
+  - name: us_yield_up
+    metric: us10y
+    mode: abs
+    move: up
+    threshold: 0.10
+    effects:
+      - {sectors: [Realty], direction: bearish, weight: 4}
+      - {sectors: [NBFC], direction: bearish, weight: 3}
+  - name: us_yield_down
+    metric: us10y
+    mode: abs
+    move: down
+    threshold: 0.10
+    effects:
+      - {sectors: [Realty], direction: bullish, weight: 4}
+      - {sectors: [NBFC], direction: bullish, weight: 3}

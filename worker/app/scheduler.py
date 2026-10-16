@@ -1,33 +1,55 @@
 """All job schedules live here. One worker process, APScheduler inside."""
 
 import logging
+from datetime import datetime
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.base import BaseTrigger
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from sqlalchemy import Engine
 
 from app.ai.tagger import tag_items
 from app.collectors.calendar import sync_manual_calendar
 from app.collectors.fno_meta import refresh_fno_universe
 from app.collectors.macro import collect_macro
 from app.collectors.news_rss import collect_news
-from app.collectors.nse import collect_announcements, collect_event_calendar, collect_fii_dii
+from app.collectors.nse import (
+    collect_announcements,
+    collect_corporate_actions,
+    collect_event_calendar,
+    collect_fii_dii,
+    collect_fno_ban,
+)
 from app.config import IST, get_settings
+from app.db.session import session_scope
+from app.health.cleanup import cleanup
 from app.health.heartbeat import failing_jobs
 from app.jobs import JobFn, run_job
+from app.notify import templates
+from app.notify.outbox import enqueue_alert
+from app.notify.telegram import poll_telegram_job, send_alerts_job
 from app.processing.pipeline import gate_news
+from app.signals.service import run_signal_cycle
 
 log = logging.getLogger(__name__)
 
 
-def heartbeat() -> int:
-    """Log jobs that keep failing. (Telegram delivery for this arrives in Phase 2.)"""
-    bad = failing_jobs(get_settings().job_failure_alert_threshold)
-    for h in bad:
-        log.error(
-            "job %s failed %d times in a row: %s", h.job, h.consecutive_failures, h.last_error
-        )
+def heartbeat(engine: Engine | None = None) -> int:
+    """Queue a Telegram alert for jobs that keep failing (at most 4 per job per day)."""
+    now = datetime.now(IST)
+    bad = failing_jobs(get_settings().job_failure_alert_threshold, engine)
+    with session_scope(engine) as s:
+        for h in bad:
+            log.error(
+                "job %s failed %d times in a row: %s", h.job, h.consecutive_failures, h.last_error
+            )
+            enqueue_alert(
+                s,
+                "health",
+                templates.health_problem(h.job, h.consecutive_failures, h.last_error),
+                f"health:{h.job}:{now.date()}:{now.hour // 6}",
+            )
     return len(bad)
 
 
@@ -71,11 +93,24 @@ def build_scheduler() -> BlockingScheduler:
     _job(
         sched, "manual_calendar", sync_manual_calendar, CronTrigger(hour=7, minute=40, timezone=IST)
     )
+    _job(sched, "signal_cycle", run_signal_cycle, IntervalTrigger(minutes=5))
+    _job(sched, "send_alerts", send_alerts_job, IntervalTrigger(seconds=20))
+    _job(sched, "telegram_poll", poll_telegram_job, IntervalTrigger(seconds=15))
+    _job(sched, "fno_ban", collect_fno_ban, CronTrigger(hour="8,17", minute=15, timezone=IST))
+    _job(
+        sched,
+        "corporate_actions",
+        collect_corporate_actions,
+        CronTrigger(hour=7, minute=50, timezone=IST),
+    )
+    _job(sched, "cleanup", cleanup, CronTrigger(hour=3, minute=30, timezone=IST))
     return sched
 
 
 def main() -> None:
     logging.basicConfig(level=get_settings().log_level)
+    for noisy in ("httpx", "httpcore"):  # their INFO logs print full URLs (bot token!)
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     log.info("worker starting")
     build_scheduler().start()
 

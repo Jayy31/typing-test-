@@ -1,0 +1,145 @@
+"""Candidates: per-stock evidence from tagged news, with time-decayed weighted sentiment."""
+
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.db.models import NewsItem, NewsTag
+from app.timeutil import as_ist
+from app.yaml_config import load_yaml
+
+
+@dataclass(frozen=True)
+class EvidenceItem:
+    news_id: int
+    tag_id: int
+    source: str
+    kind: str
+    title: str
+    summary: str | None
+    published_at: datetime
+    sentiment: float
+    novelty: float
+    event_type: str | None
+    themes: tuple[str, ...]
+    weight: float
+    cluster_id: int | None = None
+
+
+@dataclass
+class Candidate:
+    symbol: str
+    items: list[EvidenceItem] = field(default_factory=list)
+    agg_sentiment: float = 0.0
+    strength: float = 0.0
+
+    @property
+    def direction(self) -> str:
+        return "bullish" if self.agg_sentiment > 0 else "bearish"
+
+    @property
+    def sources(self) -> set[str]:
+        return {i.source for i in self.items}
+
+    @property
+    def has_official(self) -> bool:
+        return any(i.kind == "official" for i in self.items)
+
+    @property
+    def max_tag_id(self) -> int:
+        return max(i.tag_id for i in self.items)
+
+    @property
+    def themes(self) -> frozenset[str]:
+        return frozenset(t for i in self.items for t in i.themes)
+
+    @property
+    def event_types(self) -> frozenset[str]:
+        return frozenset(i.event_type for i in self.items if i.event_type)
+
+
+def source_kind(source: str) -> str:
+    if source == "nse_announcements":
+        return "official"
+    for feed in load_yaml("news_sources.yaml")["feeds"]:
+        if feed["name"] == source:
+            return str(feed["kind"])
+    return "news"
+
+
+def decay(age_hours: float, half_life_hours: float) -> float:
+    return float(0.5 ** (max(age_hours, 0.0) / half_life_hours))
+
+
+def weighted_sentiment(items: list[tuple[float, float]]) -> float:
+    """items = [(weight, sentiment)] -> weighted mean, 0 when there is no weight."""
+    total = sum(w for w, _ in items)
+    return sum(w * s for w, s in items) / total if total else 0.0
+
+
+def evidence_for(
+    s: Session, now: datetime, symbol: str | None = None
+) -> list[tuple[str | None, str | None, EvidenceItem]]:
+    """All tagged evidence in the window as (symbol, sector, item)."""
+    cfg = load_yaml("signals.yaml")["candidates"]
+    weights = load_yaml("news_sources.yaml")["kind_weights"]
+    window = timedelta(hours=float(cfg["evidence_window_hours"]))
+    q = select(NewsTag, NewsItem).join(NewsItem, NewsItem.id == NewsTag.news_id)
+    if symbol:
+        q = q.where(NewsTag.symbol == symbol)
+    out: list[tuple[str | None, str | None, EvidenceItem]] = []
+    for tag, item in s.execute(q).all():
+        when = as_ist(item.published_at or item.fetched_at)
+        age_h = (now - when).total_seconds() / 3600
+        if age_h > window.total_seconds() / 3600 or tag.sentiment is None:
+            continue
+        kind = source_kind(item.source)
+        out.append(
+            (
+                tag.symbol,
+                tag.sector,
+                EvidenceItem(
+                    news_id=item.id,
+                    tag_id=tag.id,
+                    source=item.source,
+                    kind=kind,
+                    title=item.title,
+                    summary=item.body,
+                    published_at=when,
+                    sentiment=tag.sentiment,
+                    novelty=tag.novelty or 0.0,
+                    event_type=tag.event_type,
+                    themes=tuple(t for t in (tag.theme or "").split(",") if t),
+                    weight=float(weights.get(kind, 0.5))
+                    * decay(age_h, float(cfg["half_life_hours"])),
+                    cluster_id=item.cluster_id,
+                ),
+            )
+        )
+    return out
+
+
+def build_candidates(s: Session, now: datetime) -> list[Candidate]:
+    """Stocks whose evidence is strong enough to deserve a deep analysis, strongest first."""
+    cfg = load_yaml("signals.yaml")["candidates"]
+    by_symbol: dict[str, Candidate] = {}
+    for symbol, _sector, item in evidence_for(s, now):
+        if symbol:
+            by_symbol.setdefault(symbol, Candidate(symbol)).items.append(item)
+    out: list[Candidate] = []
+    for cand in by_symbol.values():
+        cand.agg_sentiment = weighted_sentiment([(i.weight, i.sentiment) for i in cand.items])
+        cand.strength = abs(cand.agg_sentiment) * max(i.novelty for i in cand.items)
+        if cand.strength < float(cfg["min_strength"]):
+            continue
+        if not (
+            cand.has_official
+            or len(cand.sources) >= 2
+            or cand.strength >= float(cfg["strong_single_source"])
+        ):
+            continue
+        cand.items.sort(key=lambda i: abs(i.sentiment) * i.weight, reverse=True)
+        out.append(cand)
+    return sorted(out, key=lambda c: c.strength, reverse=True)
