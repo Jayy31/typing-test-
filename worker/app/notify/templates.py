@@ -1,6 +1,7 @@
 """Telegram message texts. Plain text only (no parse_mode), so nothing needs escaping."""
 
 from datetime import date
+from typing import Any
 
 from app.db.models import Signal
 
@@ -46,7 +47,14 @@ def v2_lines(sig: Signal, analogues_line: str | None = None) -> list[str]:
     lines: list[str] = []
     if sig.predicted_move_pct is not None:
         src = SOURCE_LABEL.get(sig.predicted_move_source or "", sig.predicted_move_source or "?")
-        lines.append(f"Predicted move: {pct(sig.predicted_move_pct)} (source: {src})")
+        shrink_note = ""
+        if (
+            sig.shrink_weight is not None
+            and sig.shrink_weight < 1
+            and sig.predicted_move_raw_pct is not None
+        ):
+            shrink_note = f", shrunk {1 - sig.shrink_weight:.0%} toward market; raw AI {pct(sig.predicted_move_raw_pct)}"
+        lines.append(f"Predicted move: {pct(sig.predicted_move_pct)} (source: {src}{shrink_note})")
     if sig.implied_move_pct is not None or sig.edge_ratio is not None:
         lines.append(
             f"Implied move: {pct(sig.implied_move_pct, False)}   "
@@ -122,4 +130,76 @@ def health_problem(job: str, failures: int, error: str | None) -> str:
     return (
         f"SYSTEM PROBLEM\nJob '{job}' failed {failures} times in a row.\n"
         f"Last error: {(error or 'unknown')[:300]}"
+    )
+
+
+# ---- trade alerts (Phase 3b) ---------------------------------------------------------
+EVENT_LABEL = {
+    "T1": "TARGET 1 HIT",
+    "T2": "TARGET 2 HIT",
+    "T3": "TARGET 3 HIT",
+    "SL": "STOP-LOSS HIT",
+    "TRAIL": "TRAILING STOP HIT",
+    "USTOP": "UNDERLYING STOP HIT",
+    "WINDOW": "TIME WINDOW EXIT",
+    "THESIS": "THESIS BROKEN EXIT",
+    "TIME": "NEAR-EXPIRY EXIT",
+    "NOMOVE": "NO-MOVE EXIT",
+}
+
+
+def _contract(tr: Any) -> str:
+    return f"{tr.symbol} {tr.strike:g} {tr.option_type} {tr.expiry:%d-%b}"
+
+
+def trade_entry(tr: Any, sig: Signal, spot_stop: float | None) -> str:
+    ustop = f"   Stock stop: {spot_stop:.2f}" if spot_stop else ""
+    fill = (
+        ""
+        if tr.entry_fill == "fillable"
+        else f"\nFill check: {tr.entry_fill} (ask qty {tr.entry_ask_qty})"
+    )
+    return (
+        f"PAPER ENTRY  T{tr.id}  (signal #{sid(sig.id)})\n{_contract(tr)}  x{tr.lots} lot ({tr.lot_size})\n"
+        f"Entry (ask): {tr.entry_premium:.2f}   SL: {tr.sl:.2f}{ustop}\n"
+        f"T1: {tr.t1:.2f}  T2: {tr.t2:.2f}  T3: {tr.t3:.2f}+   Spot: {tr.spot_entry:.2f}{fill}"
+    )
+
+
+def trade_event(tr: Any, event: str, price: float, fraction: float, state: Any) -> str:
+    pct = (price / tr.entry_premium - 1) * 100
+    left = (
+        f"{state.remaining:.0%} open, stop now {state.stop:.2f}"
+        if not state.closed
+        else "position closed"
+    )
+    return (
+        f"{EVENT_LABEL.get(event, event)}  T{tr.id}  {_contract(tr)}\n"
+        f"Sold {fraction:.0%} at {price:.2f} ({pct:+.1f}% vs entry {tr.entry_premium:.2f}); {left}"
+    )
+
+
+def trade_closed(tr: Any) -> str:
+    bench = (
+        f"\nSame period, stock instead: {tr.benchmark_stock_pct:+.2f}% (Rs {tr.benchmark_stock_inr:,.0f}/lot)"
+        if tr.benchmark_stock_pct is not None
+        else ""
+    )
+    a = tr.attribution_json or {}
+    attr = (
+        f"\nP&L split: delta {a.get('delta', 0):+,.0f}, theta {a.get('theta', 0):+,.0f}, "
+        f"vega {a.get('vega', 0):+,.0f}, spread {a.get('spread', 0):+,.0f}, other {a.get('residual', 0):+,.0f}"
+    )
+    fill = "" if tr.fillability == "fillable" else f"\nFill check: {tr.fillability}"
+    return (
+        f"TRADE CLOSED  T{tr.id}  {_contract(tr)}  ({tr.exit_reason})\n"
+        f"P&L after costs: Rs {tr.pnl:,.0f} ({tr.pnl_pct:+.1f}%)   avg exit {tr.exit_premium:.2f}\n"
+        f"Best/worst during trade: {tr.mfe_pct:+.0f}% / {tr.mae_pct:+.0f}%{bench}{attr}{fill}"
+    )
+
+
+def trade_review_flag(tr: Any, other_signal_id: int) -> str:
+    return (
+        f"REVIEW  T{tr.id}  {_contract(tr)}\nAn opposite signal #{sid(other_signal_id)} was raised while this "
+        f"trade is open. Kept open (opposite_signal_action = flag)."
     )

@@ -28,7 +28,6 @@ from app.health.heartbeat import failing_jobs
 from app.jobs import JobFn, run_job
 from app.market.live import (
     configured_poll_minutes,
-    poll_active_options,
     poll_universe_options,
     sync_instruments_job,
 )
@@ -37,6 +36,10 @@ from app.notify.outbox import enqueue_alert
 from app.notify.telegram import poll_telegram_job, send_alerts_job
 from app.processing.pipeline import gate_news
 from app.signals.service import run_signal_cycle
+from app.tracking.counterfactual import track_rejections
+from app.tracking.scorecard import update_scores
+from app.trading.paper_engine import trading_cycle
+from app.trading.portfolio import eod_snapshot_job, snapshot_job
 from app.yaml_config import load_yaml
 
 log = logging.getLogger(__name__)
@@ -137,11 +140,31 @@ def build_scheduler() -> BlockingScheduler:
         sync_instruments_job,
         CronTrigger(day_of_week="mon-fri", hour=7, minute=35, timezone=IST),
     )
+    # Paper trading: one cycle polls chains for live signals + open trades, enters and exits.
+    _job(sched, "trading_cycle", trading_cycle, IntervalTrigger(minutes=configured_poll_minutes()))
+    every = int(load_yaml("portfolio.yaml")["snapshot_every_min"])
+    _job(sched, "portfolio_snapshot", snapshot_job, IntervalTrigger(minutes=every))
     _job(
         sched,
-        "options_active",
-        poll_active_options,
-        IntervalTrigger(minutes=configured_poll_minutes()),
+        "portfolio_eod",
+        eod_snapshot_job,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=35, timezone=IST),
+    )
+    trk = load_yaml("tracking.yaml")
+    for hhmm in trk["counterfactual"]["times"]:
+        h, m = (int(x) for x in hhmm.split(":"))
+        _job(
+            sched,
+            f"counterfactual_{h:02d}{m:02d}",
+            track_rejections,
+            CronTrigger(day_of_week="mon-fri", hour=h, minute=m, timezone=IST),
+        )
+    h, m = (int(x) for x in trk["scorecard"]["time"].split(":"))
+    _job(
+        sched,
+        "scorecard",
+        update_scores,
+        CronTrigger(day_of_week="mon-fri", hour=h, minute=m, timezone=IST),
     )
     for hhmm in load_yaml("options.yaml")["polling"]["universe_times"]:
         h, m = (int(x) for x in hhmm.split(":"))
