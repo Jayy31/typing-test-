@@ -191,10 +191,23 @@ def build_why(s: Session, signal_id: int) -> str | None:
         _bullets(js.get("invalidators")),
     ]
 
-    out += ["", "HISTORICAL ANALOGUES"]
-    out += [_bullets([str(a) for a in an.analogues or []], "none in the library yet")]
+    out += ["", "HISTORICAL ANALOGUES (event study, actual prices)"]
+    stats = [a for a in (an.analogues or []) if isinstance(a, dict) and "n" in a]
+    if stats:
+        a = stats[0]
+        use = "used in the prediction" if a.get("usable") else "too few events: shown only"
+        out.append(
+            f"  n={a['n']}, avg {a['mean']:+.1f}%, median {a['median']:+.1f}%, hit {a['hit_rate']:.0%}, "
+            f"p25..p75 {a['p25']:+.1f}..{a['p75']:+.1f}% ({a['level']}, {a['regime']}, {a['window']}d; {use})"
+        )
+        out += [
+            f"  - {e['date']} {e['symbol']} ({e['direction']}): {e['abnormal_pct']:+.1f}% | {e['title']}"
+            for e in a.get("examples", [])
+        ]
+    else:
+        out.append("  - none yet (history not loaded or no similar events)")
     if js.get("analogue_notes"):
-        out.append(f"  {js['analogue_notes']}")
+        out.append(f"  Analyst: {js['analogue_notes']}")
 
     out += ["", "TIMELINE"]
     for v in s.scalars(

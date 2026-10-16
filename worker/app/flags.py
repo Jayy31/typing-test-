@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db.config_store import get_config
 
-ENGINE_VERSION = "3.0.0"
+ENGINE_VERSION = "4.0.0"
 
 DEFAULTS: dict[str, bool] = {
     "feat.event_study": True,
@@ -25,7 +25,7 @@ DEFAULTS: dict[str, bool] = {
 
 # Flip to True in the phase that ships each stage.
 BUILT: dict[str, bool] = {
-    "feat.event_study": False,  # Phase 4
+    "feat.event_study": True,  # Phase 4
     "feat.implied_move_gate": True,  # Phase 3a
     "feat.probabilities": False,  # Phase 5
     "feat.simulator": True,  # Phase 3a

@@ -11,12 +11,13 @@ from sqlalchemy.orm import Session
 from app import flags
 from app.ai import analyst
 from app.ai.client import AiClient, AiOutputError, BudgetExceededError
-from app.ai.schemas import AnalystOutput
+from app.ai.schemas import AnalystOutput, Scenario
 from app.config import IST, get_settings
 from app.db.models import Analysis, Instrument, MacroSnapshot, Signal, SignalCandidate
 from app.db.models import Scenario as ScenarioRow
 from app.db.session import session_scope
 from app.flags import ENGINE_VERSION
+from app.history.analogues import AnalogueResult, lookup
 from app.market.live import UpstoxOptionData
 from app.notify import templates
 from app.notify.outbox import enqueue_alert
@@ -27,7 +28,7 @@ from app.signals.expiry import choose_expiry
 from app.signals.filters import Check, check_eligibility, load_holidays
 from app.signals.lifecycle import LifecycleEvent, apply_analysis, expire_stale, live_signal
 from app.signals.options_stage import OptionPlan, candidate_rows_json, plan_options
-from app.signals.prediction import from_scenarios, shrink
+from app.signals.prediction import Prediction, combine, from_scenarios, shrink
 from app.signals.rejections import record_rejection
 from app.signals.scoring import Score, compute_score
 from app.timeutil import as_ist
@@ -46,6 +47,15 @@ class WorkItem:
     provided_ids: set[int]
     sector: str
     sub_sector: str | None
+    analogue: AnalogueResult | None = None  # event-study base rate (Phase 4)
+
+
+def predict(item: WorkItem, out: AnalystOutput) -> tuple[Prediction | None, list[Scenario]]:
+    """Predicted move in our direction (+ the distribution the simulator samples):
+    scenario tree alone, or blended with historical analogues once there are enough."""
+    weight = float(load_yaml("history.yaml")["blend"]["analogue_weight"])
+    agree = out.direction == item.cand.direction  # analyst agrees with the news' direction
+    return combine(out.scenarios, out.direction, item.analogue, agree, weight)
 
 
 def _last_analysis(s: Session, symbol: str) -> Analysis | None:
@@ -97,8 +107,12 @@ def plan_work(s: Session, now: datetime) -> tuple[list[WorkItem], dict[str, floa
             cand.symbol, inst.sector, inst.sub_sector, text, cand.themes, cand.event_types
         )
         hits = evaluate(ctx, macro)
-        message, ids = analyst.build_user_message(s, cand, hits, changes, now)
-        work.append(WorkItem(cand, hits, message, ids, inst.sector, inst.sub_sector))
+        analogue = None
+        if flags.active(s, "feat.event_study"):
+            etypes = sorted(cand.event_types) or ["other"]
+            analogue = lookup(etypes, inst.sector, cand.symbol, cand.direction, now.date())
+        message, ids = analyst.build_user_message(s, cand, hits, changes, now, analogue)
+        work.append(WorkItem(cand, hits, message, ids, inst.sector, inst.sub_sector, analogue))
         if len(work) >= int(cfg["max_analyses_per_cycle"]):
             break
     return work, changes
@@ -116,7 +130,7 @@ def price_analysis(
     source: UpstoxOptionData | None,
 ) -> OptionPlan | None:
     """Options stage (network reads), only for a directional view with live data available."""
-    pred = from_scenarios(out.scenarios, out.direction)
+    pred, dist = predict(item, out)
     if pred is None or source is None or not source.available:
         return None
     with session_scope(engine) as s:
@@ -130,7 +144,7 @@ def price_analysis(
             source,
             item.cand.symbol,
             out.direction,
-            out.scenarios,
+            dist,
             pred.move_pct,
             out.window_days,
             news_time,
@@ -219,7 +233,7 @@ def store_result(
         window_days=out.window_days,
         risks=out.risks,
         counter_args=out.counter_arguments,
-        analogues=analyst.load_analogues(cand.event_types, item.sector, 3),
+        analogues=[analogue_json(item.analogue)] if item.analogue else None,
         scores_json={
             **base,
             "components": score.components,
@@ -271,10 +285,10 @@ def store_result(
         assert sig is not None
         if sig.status != "CANCELLED":
             stamp_signal(s, sig, out, item, plan, now)
-    _score_prediction(s, analysis, out, plan, events, now)
+    _score_prediction(s, analysis, out, plan, events, now, item)
     if not any(ev.kind == "new" for ev in events) and live_signal(s, cand.symbol) is None:
         _record_not_signalled(s, item, out, analysis, score, checks, plan, now)
-    _enqueue_events(s, events, analysis, cand, out)
+    _enqueue_events(s, events, analysis, cand, out, item.analogue)
     return events
 
 
@@ -285,9 +299,10 @@ def _score_prediction(
     plan: OptionPlan | None,
     events: list[LifecycleEvent],
     now: datetime,
+    item: WorkItem,
 ) -> None:
     """Every directional prediction with a known starting price goes on the scorecard (v2.1 B3)."""
-    pred = from_scenarios(out.scenarios, out.direction)
+    pred, _ = predict(item, out)
     if pred is None or plan is None or plan.spot is None:
         return
     shrunk = shrink(pred, float(get_settings().scenario_shrink_weight))
@@ -371,7 +386,7 @@ def _record_not_signalled(
         stage, reason = "score", f"score {score.final:.1f} below {threshold:.0f}"
     else:
         return
-    pred = from_scenarios(out.scenarios, out.direction)
+    pred, _ = predict(item, out)
     best = plan.best_reference if plan else None
     record_rejection(
         s,
@@ -412,7 +427,9 @@ def stamp_signal(
     sig.engine_version = ENGINE_VERSION
     sig.flags_json = flags.snapshot(s)
     w = float(get_settings().scenario_shrink_weight)
-    pred = from_scenarios(out.scenarios, out.direction)
+    pred = (
+        predict(item, out)[0] if item is not None else from_scenarios(out.scenarios, out.direction)
+    )
     if pred is not None:
         shrunk = shrink(pred, w)
         sig.shrink_weight = w
@@ -455,6 +472,23 @@ def stamp_signal(
         sig.expected_value, sig.expected_value_inr = r.ev_pct, r.ev_inr
         sig.p_t1_before_sl, sig.p_t2, sig.p_t3 = r.p_t1_before_sl, r.p_t2, r.p_t3
     _store_candidates(s, sig, plan, now or datetime.now(IST))
+
+
+def analogue_json(a: AnalogueResult) -> dict[str, Any]:
+    return {
+        "level": a.level,
+        "regime": a.regime,
+        "window": a.window,
+        "n": a.n,
+        "mean": round(a.mean, 3),
+        "median": round(a.median, 3),
+        "hit_rate": round(a.hit_rate, 3),
+        "std": round(a.std, 3),
+        "p25": round(a.p25, 3),
+        "p75": round(a.p75, 3),
+        "usable": a.usable,
+        "examples": a.examples,
+    }
 
 
 def theme_key(item: WorkItem) -> str:
@@ -508,6 +542,7 @@ def _enqueue_events(
     analysis: Analysis,
     cand: Candidate,
     out: AnalystOutput,
+    analogue: AnalogueResult | None = None,
 ) -> None:
     high = float(load_yaml("signals.yaml")["high_conviction"])
     for ev in events:
@@ -523,6 +558,7 @@ def _enqueue_events(
                 out.window_days,
                 high,
                 entry_line=entry_line(s, sig),
+                analogues_line=analogue.line() if analogue and analogue.usable else None,
             )
         elif ev.kind == "cancelled":
             text = templates.signal_cancelled(sig, ev.reason)

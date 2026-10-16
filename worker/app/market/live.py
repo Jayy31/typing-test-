@@ -172,7 +172,7 @@ def atm_iv(chain: OptionChain) -> float | None:
 def iv_percentile(s: Session, symbol: str, current_iv: float, now: datetime) -> float | None:
     """Percentile of the current ATM IV within this stock's own daily ATM IV history."""
     cfg = load_yaml("options.yaml")["iv"]
-    since = now - timedelta(days=int(cfg["lookback_days"]))
+    since = now - timedelta(days=max(int(cfg["lookback_days"]), _hist_lookback()))
     rows = s.execute(
         select(OptionQuote.ts, OptionQuote.strike, OptionQuote.spot, OptionQuote.iv).where(
             OptionQuote.symbol == symbol, OptionQuote.ts >= since, OptionQuote.iv.is_not(None)
@@ -185,10 +185,33 @@ def iv_percentile(s: Session, symbol: str, current_iv: float, now: datetime) -> 
         d, dist = as_ist(ts).date(), abs(strike - spot)
         if d not in daily or dist < daily[d][0]:
             daily[d] = (dist, float(iv))
-    history = [iv for _, iv in daily.values()]
+    merged: dict[date, float] = dict(hist_atm_ivs(symbol, now))  # backfilled history (Phase 4)
+    merged.update({d: iv for d, (_, iv) in daily.items()})  # live quotes win on overlapping days
+    history = list(merged.values())
     if len(history) < int(cfg["min_samples"]):
         return None
     return 100.0 * sum(1 for h in history if h <= current_iv) / len(history)
+
+
+def _hist_lookback() -> int:
+    return int(load_yaml("history.yaml")["iv_backfill"]["lookback_days"])
+
+
+def hist_atm_ivs(symbol: str, now: datetime) -> dict[date, float]:
+    """Backfilled daily ATM IV (bhavcopy) for the lookback window; empty if unavailable."""
+    from app.history.store import connect
+
+    since = (now - timedelta(days=_hist_lookback())).date()
+    try:
+        with connect() as con:
+            rows = con.execute(
+                "SELECT date, atm_iv FROM hist_atm_iv WHERE symbol = ? AND date >= ?",
+                [symbol, since],
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001 - history is optional (store busy/missing)
+        log.info("IV history unavailable: %s", exc)
+        return {}
+    return {d: float(v) for d, v in rows}
 
 
 def _poll(
