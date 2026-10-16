@@ -189,7 +189,7 @@ def test_signals_open_closed_stats_commands(engine: Engine) -> None:
     assert b.reply_for("/signals") == "No live signals."
     assert b.reply_for("/open") == "No open paper trades."
     assert b.reply_for("/closed") == "No closed trades yet."
-    assert "Closed trades: 0" in b.reply_for("/stats")
+    assert "no closed trades" in b.reply_for("/stats")
     assert b.reply_for("/nonsense").startswith("Unknown")
 
 

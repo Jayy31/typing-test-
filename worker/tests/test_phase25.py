@@ -285,16 +285,20 @@ def test_signal_gets_v2_stamp_scenarios_and_honest_labels(engine: Engine) -> Non
         assert sig.engine_version == flags.ENGINE_VERSION
         assert sig.flags_json and sig.flags_json["feat.multi_agent"]["active"] is False
         assert sig.pricing_status == "pending"  # no broker token in tests -> graceful degradation
-        assert (
-            sig.predicted_move_pct == pytest.approx(2.85)
-            and sig.predicted_move_source == "scenario_tree"
+        assert sig.predicted_move_pct == pytest.approx(1.425)  # shrunk 50% toward market
+        assert sig.predicted_move_raw_pct == pytest.approx(2.85) and sig.p_move == pytest.approx(
+            0.7
         )
+        assert sig.predicted_move_source == "scenario_tree" and sig.shrink_weight == 0.5
         assert sig.impact_order == 1 and sig.calibrator_id is None
         assert len(s.scalars(select(ScenarioRow)).all()) == 3
         from app.db.models import Alert
 
         text = s.scalars(select(Alert)).one().text
-    assert "Predicted move: +2.9% (source: scenario tree)" in text
+    assert (
+        "Predicted move: +1.4% (source: scenario tree, shrunk 50% toward market; raw AI +2.9%)"
+        in text
+    )
     assert "not yet calibrated" in text
     from tests.test_notify import Recorder, bot
 
