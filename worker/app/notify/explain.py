@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    AgentRun,
     Analysis,
     EventCalendar,
     NewsItem,
@@ -11,7 +12,8 @@ from app.db.models import (
     Signal,
     SignalVersion,
 )
-from app.notify.templates import sid
+from app.db.models import Scenario as ScenarioRow
+from app.notify.templates import sid, v2_lines
 from app.timeutil import as_ist
 from app.yaml_config import load_yaml
 
@@ -98,6 +100,31 @@ def build_why(s: Session, signal_id: int) -> str | None:
         "OPTION DATA",
         "  Strike, premium, IV, OI and spread arrive with live options (Phase 3).",
         f"  Chosen expiry: {js.get('expiry')}",
+    ]
+
+    out += ["", "PREDICTION"]
+    out += [f"  {line}" for line in v2_lines(sig)] or ["  no prediction yet"]
+    if not sig.calibrator_id:
+        out.append("  Probabilities are NOT YET CALIBRATED (no calibrator fitted on outcomes yet).")
+    scen = s.scalars(select(ScenarioRow).where(ScenarioRow.analysis_id == an.id)).all()
+    out += ["", "SCENARIO TREE"]
+    out += [
+        f"  {r.probability * 100:.0f}%  {r.name}: stock {r.stock_move_pct:+.1f}% in {r.timing_days}d"
+        f" | invalidated by: {r.invalidation}"
+        for r in scen
+    ] or ["  none recorded"]
+    runs = s.scalars(select(AgentRun).where(AgentRun.analysis_id == an.id)).all()
+    if runs:
+        out += ["", "DEBATE (bull / bear / judge)"]
+        out += [f"  {r.agent}: {str((r.output_json or {}).get('summary', ''))[:200]}" for r in runs]
+    out += [
+        "",
+        "ENGINE",
+        f"  version {sig.engine_version or 'n/a'}; active stages: "
+        + (
+            ", ".join(k for k, v in (sig.flags_json or {}).items() if v.get("active"))
+            or "base pipeline only"
+        ),
     ]
 
     comps = js.get("components") or {}

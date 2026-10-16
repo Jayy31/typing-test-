@@ -8,12 +8,15 @@ from typing import Any
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
+from app import flags
 from app.ai import analyst
 from app.ai.client import AiClient, AiOutputError, BudgetExceededError
 from app.ai.schemas import AnalystOutput
 from app.config import IST, get_settings
 from app.db.models import Analysis, Instrument, Signal
+from app.db.models import Scenario as ScenarioRow
 from app.db.session import session_scope
+from app.flags import ENGINE_VERSION
 from app.notify import templates
 from app.notify.outbox import enqueue_alert
 from app.rules.engine import RuleContext, RuleHit, evaluate, fired_macro_rules
@@ -22,6 +25,7 @@ from app.signals.candidates import Candidate, build_candidates, evidence_for, we
 from app.signals.expiry import choose_expiry
 from app.signals.filters import Check, check_eligibility, load_holidays
 from app.signals.lifecycle import LifecycleEvent, apply_analysis, expire_stale
+from app.signals.prediction import from_scenarios
 from app.signals.scoring import Score, compute_score
 from app.timeutil import as_ist
 from app.yaml_config import load_yaml
@@ -154,6 +158,18 @@ def store_result(
     )
     s.add(analysis)
     s.flush()
+    for sc in out.scenarios:
+        s.add(
+            ScenarioRow(
+                analysis_id=analysis.id,
+                name=sc.name,
+                probability=sc.probability,
+                stock_move_pct=sc.stock_move_pct,
+                timing_days=sc.timing_days,
+                triggers=sc.triggers,
+                invalidation=sc.invalidation,
+            )
+        )
     events = apply_analysis(
         s,
         symbol=cand.symbol,
@@ -167,8 +183,24 @@ def store_result(
         reason=out.thesis,
         now=now,
     )
+    for ev in events:
+        sig = s.get(Signal, ev.signal_id)
+        assert sig is not None
+        if sig.status != "CANCELLED":
+            stamp_signal(s, sig, out)
     _enqueue_events(s, events, analysis, cand, out)
     return events
+
+
+def stamp_signal(s: Session, sig: Signal, out: AnalystOutput) -> None:
+    """Configuration provenance + V2 prediction slots (filled further in later phases)."""
+    sig.engine_version = ENGINE_VERSION
+    sig.flags_json = flags.snapshot(s)
+    pred = from_scenarios(out.scenarios, out.direction)
+    if pred is not None:
+        sig.predicted_move_pct = pred.move_pct
+        sig.predicted_move_source = pred.source
+        sig.p_move = pred.p_move
 
 
 def _enqueue_events(
