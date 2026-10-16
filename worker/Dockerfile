@@ -11,6 +11,8 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY worker/ ./
 COPY data/ /app/data/
 
-RUN useradd --create-home worker
+RUN useradd --create-home worker && mkdir -p /data/history && chown worker /data/history
+# History store (DuckDB + Parquet). Mount a host directory here so it survives rebuilds.
+VOLUME ["/data/history"]
 USER worker
 CMD ["uv", "run", "--no-dev", "python", "-m", "app.scheduler"]

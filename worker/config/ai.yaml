@@ -1,10 +1,20 @@
-# AI cost model. Model ids come from env (AI_MODEL_*); prices are per tier and editable.
+# AI cost model. Model ids come from env (AI_MODEL_<ROLE>); prices are per price tier and editable.
 # USD per million tokens. Check current pricing at https://www.anthropic.com/pricing
 usd_inr: 88.0
-tiers:
-  tagger:   {input: 0.10, output: 0.50, cache_read: 0.01, cache_write: 0.125}
-  analyst:  {input: 2.00, output: 10.00, cache_read: 0.20, cache_write: 2.50}
-  reviewer: {input: 4.00, output: 20.00, cache_read: 0.40, cache_write: 5.00}
+batch_discount: 0.5          # Message Batches API bills 50% of standard prices
+prices:
+  cheap:  {input: 0.10, output: 0.50, cache_read: 0.01, cache_write: 0.125}   # e.g. Haiku tier
+  mid:    {input: 2.00, output: 10.00, cache_read: 0.20, cache_write: 2.50}   # e.g. Sonnet tier
+  strong: {input: 4.00, output: 20.00, cache_read: 0.40, cache_write: 5.00}   # e.g. Opus tier
+# Which price tier each role's model belongs to. Keep in sync with the AI_MODEL_* values you choose.
+roles:
+  tagger: cheap
+  researcher: cheap
+  novelty: cheap
+  analyst: mid          # single-call analyst, used until multi-agent (Phase 5) replaces it
+  bull: mid
+  bear: mid
+  judge: strong
 # Tagger batching and limits
 tagger:
   max_items_per_run: 40
@@ -13,3 +23,6 @@ tagger:
   # Haiku-tier models can run with thinking off for cheap tagging. Set to null to omit the
   # parameter (needed if AI_MODEL_TAGGER is a model that rejects disabled thinking).
   thinking: {type: disabled}
+  # Rough per-item token sizes used only for cost ESTIMATES shown before one-off batch jobs.
+  est_input_tokens: 1400
+  est_output_tokens: 250

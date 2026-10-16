@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import Engine
 
+from app.collectors.base import Collector
 from app.config import IST
 from app.db.models import MacroSnapshot
 from app.db.session import session_scope
@@ -64,11 +65,22 @@ def build_snapshot(prices: dict[str, tuple[float, float] | None], ts: datetime) 
     )
 
 
-def collect_macro(engine: Engine | None = None) -> int:
-    prices = fetch_last_prices([*TICKERS.values(), *ADRS])
-    if all(v is None for v in prices.values()):
-        raise RuntimeError("no macro data available")
-    snap = build_snapshot(prices, datetime.now(IST).replace(second=0, microsecond=0))
-    with session_scope(engine) as s:
-        s.merge(snap)
-    return 1
+class MacroCollector(Collector[MacroSnapshot]):
+    name = "macro_yahoo"
+
+    def fetch(self) -> Any:
+        return fetch_last_prices([*TICKERS.values(), *ADRS])
+
+    def parse(self, raw: Any) -> list[MacroSnapshot]:
+        if all(v is None for v in raw.values()):
+            raise RuntimeError("no macro data available")
+        return [build_snapshot(raw, datetime.now(IST).replace(second=0, microsecond=0))]
+
+    def store(self, items: list[MacroSnapshot], engine: Engine | None) -> int:
+        with session_scope(engine) as s:
+            for snap in items:
+                s.merge(snap)
+        return len(items)
+
+
+collect_macro = MacroCollector().run

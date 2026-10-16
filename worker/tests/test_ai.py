@@ -126,7 +126,7 @@ def test_tag_items_stores_tags_and_statuses(engine: Engine) -> None:
     assert tag_items(engine, ai) == 1
     with session_scope(engine) as s:
         tag = s.scalars(select(NewsTag)).one()
-        assert (tag.symbol, tag.direction, tag.prompt_ver) == ("BHARTIARTL", "bullish", "tagger_v1")
+        assert (tag.symbol, tag.direction, tag.prompt_ver) == ("BHARTIARTL", "bullish", "tagger_v2")
         assert s.scalars(select(NewsItem).where(NewsItem.url_hash == "h1")).one().status == "tagged"
     # not actionable -> no tag rows
     with session_scope(engine) as s:

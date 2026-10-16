@@ -1,11 +1,17 @@
-"""Budget-aware Anthropic wrapper. Every call is cost-logged to ai_usage and capped."""
+"""Budget-aware Anthropic wrapper. Every call is cost-logged to ai_usage and capped.
 
+Two modes: `parse` (one live structured call) and `submit_batch` / `batch_results`
+(Message Batches API, half price, for one-off historical jobs; always estimate first).
+"""
+
+import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol, TypeVar, cast
 
 import anthropic
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import Engine, func, select
 
 from app.config import IST, Settings, get_settings
@@ -15,7 +21,7 @@ from app.yaml_config import load_yaml
 
 log = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
-TIERS = ("tagger", "analyst", "reviewer")
+ROLES = ("tagger", "researcher", "novelty", "analyst", "bull", "bear", "judge")
 
 
 class BudgetExceededError(RuntimeError):
@@ -30,22 +36,58 @@ class MessagesApi(Protocol):
     def parse(self, **kwargs: Any) -> Any: ...
 
 
+class BatchesApi(Protocol):
+    def create(self, **kwargs: Any) -> Any: ...
+    def retrieve(self, batch_id: str) -> Any: ...
+    def results(self, batch_id: str) -> Any: ...
+
+
 def compute_cost_inr(
-    tier: str, input_t: int, output_t: int, cache_read: int, cache_write: int
+    role: str, input_t: int, output_t: int, cache_read: int, cache_write: int, batch: bool = False
 ) -> float:
-    """Cost of one call in INR, using the per-tier USD prices in config/ai.yaml.
+    """Cost of one call in INR, using the role's price tier in config/ai.yaml.
 
     `input_t` is the uncached input; cache reads/writes are billed at their own rates.
     """
     cfg = load_yaml("ai.yaml")
-    p = cfg["tiers"][tier]
+    p = cfg["prices"][cfg["roles"][role]]
     usd = (
         input_t * p["input"]
         + output_t * p["output"]
         + cache_read * p["cache_read"]
         + cache_write * p["cache_write"]
     ) / 1_000_000
+    if batch:
+        usd *= float(cfg["batch_discount"])
     return float(usd * float(cfg["usd_inr"]))
+
+
+@dataclass(frozen=True)
+class CostEstimate:
+    role: str
+    items: int
+    input_tokens: int
+    output_tokens: int
+    inr: float
+    batch: bool
+
+    def summary(self) -> str:
+        mode = "Batch API (50% off)" if self.batch else "live calls"
+        return (
+            f"{self.items:,} items via {mode} on the '{self.role}' model: about "
+            f"{self.input_tokens:,} input + {self.output_tokens:,} output tokens "
+            f"= ~Rs {self.inr:,.0f}"
+        )
+
+
+def estimate_cost(
+    role: str, items: int, in_per_item: int, out_per_item: int, batch: bool = True
+) -> CostEstimate:
+    """Estimate for a one-off job. Shown to the owner for approval BEFORE anything runs."""
+    tin, tout = items * in_per_item, items * out_per_item
+    return CostEstimate(
+        role, items, tin, tout, compute_cost_inr(role, tin, tout, 0, 0, batch), batch
+    )
 
 
 class AiClient:
@@ -54,23 +96,35 @@ class AiClient:
         settings: Settings | None = None,
         engine: Engine | None = None,
         messages: MessagesApi | None = None,
+        batches: BatchesApi | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.engine = engine
-        if messages is not None:
-            self._messages = messages
-        else:
-            sdk = anthropic.Anthropic(api_key=self.settings.anthropic_api_key or None, timeout=60.0)
-            self._messages = cast(MessagesApi, sdk.messages)
+        self._msg_override = messages
+        self._batch_override = batches
+        self._sdk: anthropic.Anthropic | None = None
 
-    def model_for(self, tier: str) -> str:
-        model = {
-            "tagger": self.settings.ai_model_tagger,
-            "analyst": self.settings.ai_model_analyst,
-            "reviewer": self.settings.ai_model_reviewer,
-        }[tier]
+    def _client(self) -> anthropic.Anthropic:
+        if self._sdk is None:
+            self._sdk = anthropic.Anthropic(
+                api_key=self.settings.anthropic_api_key or None, timeout=60.0
+            )
+        return self._sdk
+
+    @property
+    def _messages(self) -> MessagesApi:
+        return self._msg_override or cast(MessagesApi, self._client().messages)
+
+    @property
+    def _batches(self) -> BatchesApi:
+        return self._batch_override or cast(BatchesApi, self._client().messages.batches)
+
+    def model_for(self, role: str) -> str:
+        if role not in ROLES:
+            raise ValueError(f"unknown AI role {role}")
+        model = str(getattr(self.settings, f"ai_model_{role}"))
         if not model:
-            raise RuntimeError(f"AI_MODEL_{tier.upper()} is not set")
+            raise RuntimeError(f"AI_MODEL_{role.upper()} is not set")
         return model
 
     def spend_inr(self, since: datetime) -> float:
@@ -91,9 +145,13 @@ class AiClient:
         if self.spend_inr(month_start) >= self.settings.ai_monthly_budget_inr:
             raise BudgetExceededError("monthly AI budget reached")
 
+    @staticmethod
+    def _system(system: str) -> list[dict[str, Any]]:
+        return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+
     def parse(
         self,
-        tier: str,
+        role: str,
         system: str,
         user: str,
         output: type[T],
@@ -102,18 +160,18 @@ class AiClient:
     ) -> T:
         """One structured call. The system prompt is cached; usage is recorded."""
         self.check_budget()
-        model = self.model_for(tier)
+        model = self.model_for(role)
         kwargs: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
-            "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+            "system": self._system(system),
             "messages": [{"role": "user", "content": user}],
             "output_format": output,
         }
         if thinking is not None:
             kwargs["thinking"] = thinking
         resp = self._messages.parse(**kwargs)
-        self._record_usage(tier, model, resp.usage)
+        self._record_usage(role, model, resp.usage)
         if resp.stop_reason == "refusal":
             raise AiOutputError("model refused the request")
         if resp.parsed_output is None:
@@ -121,11 +179,59 @@ class AiClient:
         parsed: T = resp.parsed_output
         return parsed
 
-    def _record_usage(self, tier: str, model: str, usage: Any) -> None:
+    # ---- batch mode -------------------------------------------------------------------
+    def submit_batch(
+        self,
+        role: str,
+        system: str,
+        items: list[tuple[str, str]],
+        output: type[BaseModel],
+        max_tokens: int,
+        thinking: dict[str, Any] | None = None,
+    ) -> str:
+        """Submit (custom_id, user message) pairs as one Message Batch. Returns the batch id."""
+        self.check_budget()
+        model = self.model_for(role)
+        schema = anthropic.transform_schema(output)
+        requests = []
+        for custom_id, user in items:
+            params: dict[str, Any] = {
+                "model": model,
+                "max_tokens": max_tokens,
+                "system": self._system(system),
+                "messages": [{"role": "user", "content": user}],
+                "output_config": {"format": {"type": "json_schema", "schema": schema}},
+            }
+            if thinking is not None:
+                params["thinking"] = thinking
+            requests.append({"custom_id": custom_id, "params": params})
+        return str(self._batches.create(requests=requests).id)
+
+    def batch_done(self, batch_id: str) -> bool:
+        return bool(self._batches.retrieve(batch_id).processing_status == "ended")
+
+    def batch_results(self, role: str, batch_id: str, output: type[T]) -> dict[str, T | None]:
+        """Validated outputs by custom_id (None = errored/invalid). Billed at batch price."""
+        model = self.model_for(role)
+        out: dict[str, T | None] = {}
+        for r in self._batches.results(batch_id):
+            if r.result.type != "succeeded":
+                out[r.custom_id] = None
+                continue
+            msg = r.result.message
+            self._record_usage(role, model, msg.usage, batch=True)
+            text = next((b.text for b in msg.content if b.type == "text"), "")
+            try:
+                out[r.custom_id] = output.model_validate(json.loads(text))
+            except (ValueError, ValidationError):
+                out[r.custom_id] = None
+        return out
+
+    def _record_usage(self, role: str, model: str, usage: Any, batch: bool = False) -> None:
         cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
         cache_write = getattr(usage, "cache_creation_input_tokens", 0) or 0
         cost = compute_cost_inr(
-            tier, usage.input_tokens, usage.output_tokens, cache_read, cache_write
+            role, usage.input_tokens, usage.output_tokens, cache_read, cache_write, batch
         )
         with session_scope(self.engine) as s:
             s.add(

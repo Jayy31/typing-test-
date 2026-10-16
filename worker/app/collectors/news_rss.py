@@ -11,6 +11,7 @@ import httpx
 from pydantic import BaseModel
 from sqlalchemy import Engine, select
 
+from app.collectors.base import Collector, record_source
 from app.config import IST
 from app.db.models import NewsCluster, NewsItem
 from app.db.session import session_scope
@@ -121,14 +122,40 @@ def store_items(items: list[RawNews], engine: Engine | None = None) -> int:
     return added
 
 
+class RssFeedCollector(Collector[RawNews]):
+    """One feed from config/news_sources.yaml."""
+
+    name = "rss"
+
+    def __init__(self, feed: dict[str, Any]) -> None:
+        self.feed = feed
+
+    def fetch(self) -> Any:
+        return fetch_feed(self.feed["url"], self.timeout_s)
+
+    def parse(self, raw: Any) -> list[RawNews]:
+        return parse_feed(raw, self.feed["name"], self.feed["kind"])
+
+    def store(self, items: list[RawNews], engine: Engine | None) -> int:
+        return store_items(items, engine)
+
+    def run(self, engine: Engine | None = None) -> int:
+        try:
+            n = self.store(self.parse(self.fetch()), engine)
+        except Exception as exc:
+            record_source(engine, f"rss:{self.feed['name']}", False, f"{type(exc).__name__}: {exc}")
+            raise
+        record_source(engine, f"rss:{self.feed['name']}", True)
+        return n
+
+
 def collect_news(engine: Engine | None = None) -> int:
-    """Job entrypoint. A failing feed is logged and skipped; raises only if every feed fails."""
+    """Job entrypoint. A failing feed is recorded and skipped; raises only if every feed fails."""
     feeds: list[dict[str, Any]] = load_yaml("news_sources.yaml")["feeds"]
     total, failures = 0, 0
     for feed in feeds:
         try:
-            items = parse_feed(fetch_feed(feed["url"]), feed["name"], feed["kind"])
-            total += store_items(items, engine)
+            total += RssFeedCollector(feed).run(engine)
         except Exception as exc:  # noqa: BLE001 - isolate per-feed failures
             failures += 1
             log.warning("feed %s failed: %s", feed["name"], exc)

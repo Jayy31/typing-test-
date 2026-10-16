@@ -1,0 +1,9 @@
+# Exit rules (DESIGN.md section 2/9). Shared by live paper trading, the simulator and the backtester.
+stop_loss_pct: -50          # premium % from entry
+targets_pct: [25, 50, 100]  # T1, T2, T3
+book_fractions: [0.3333, 0.3333, 0.3334]   # booked at T1, T2, T3 (last third also closes at T3)
+move_sl_to_entry_after: 1   # after T1 the stop moves to entry
+trail_after: 2              # after T2 the stop trails at the T1 level
+no_move_sessions: 2         # sessions after the event with no meaningful move -> exit
+no_move_threshold_pct: 10   # "meaningful" = premium moved at least this much either way
+time_stop_trading_days: 5   # exit this many trading days before expiry

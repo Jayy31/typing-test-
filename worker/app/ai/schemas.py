@@ -1,26 +1,18 @@
 """Strict schemas for AI outputs (validated with Pydantic)."""
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-EventType = Literal[
-    "results",
-    "order_win",
-    "mna",
-    "regulatory",
-    "policy",
-    "macro_data",
-    "geopolitical",
-    "commodity",
-    "management",
-    "rating",
-    "corporate_action",
-    "block_deal",
-    "legal_fraud",
-    "disaster",
-    "other",
-]
+from app import taxonomy
+
+
+def _event_type_field() -> Any:
+    """event_type is constrained to the shared taxonomy (config/taxonomy.yaml)."""
+    return Field(
+        description="Closest event type from the taxonomy",
+        json_schema_extra={"enum": list[Any](taxonomy.event_types())},
+    )
 
 
 class Impact(BaseModel):
@@ -35,10 +27,26 @@ class Impact(BaseModel):
 class TaggerOutput(BaseModel):
     impacts: list[Impact] = Field(description="Affected stocks/sectors; empty if none")
     themes: list[str] = Field(description="Macro themes such as crude, rates, tariffs")
-    event_type: EventType
+    event_type: str = _event_type_field()
     novelty: float = Field(ge=0, le=1, description="0 = old/recap, 1 = brand-new fact")
     is_actionable: bool = Field(description="True only if this could move an F&O stock or sector")
     reason: str = Field(description="One sentence justification")
+
+    @field_validator("event_type")
+    @classmethod
+    def _known_event_type(cls, v: str) -> str:
+        return v if v in taxonomy.event_types() else "other"
+
+
+class Scenario(BaseModel):
+    """One branch of the scenario tree. Moves are signed stock % moves (+ up, - down)."""
+
+    name: str
+    probability: float = Field(ge=0, le=1)
+    stock_move_pct: float = Field(ge=-50, le=50, description="Signed stock move in %")
+    timing_days: int = Field(ge=1, le=30, description="Trading days until the move plays out")
+    triggers: list[str] = Field(description="What would make this scenario happen")
+    invalidation: str = Field(description="What would rule this scenario out")
 
 
 class AnalystOutput(BaseModel):
@@ -64,3 +72,15 @@ class AnalystOutput(BaseModel):
     analogue_notes: str | None = Field(
         description="How provided historical analogues compare; null if none were provided"
     )
+    scenarios: list[Scenario] = Field(
+        description="2-5 mutually exclusive scenarios whose probabilities sum to 1"
+    )
+
+    @model_validator(mode="after")
+    def _probabilities_sum_to_one(self) -> "AnalystOutput":
+        total = sum(s.probability for s in self.scenarios)
+        if not 2 <= len(self.scenarios) <= 5 or abs(total - 1.0) > 0.02:
+            raise ValueError(
+                f"need 2-5 scenarios with probabilities summing to 1 (got {total:.2f})"
+            )
+        return self

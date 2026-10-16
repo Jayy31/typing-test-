@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 from sqlalchemy import Engine, select
 
+from app.collectors.base import Collector
 from app.collectors.news_rss import RawNews, store_items
 from app.config import IST
 from app.db.config_store import set_config
@@ -111,27 +112,53 @@ def parse_event_calendar(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return events
 
 
-def collect_announcements(engine: Engine | None = None) -> int:
-    rows = nse_get("/api/corporate-announcements?index=equities")
-    return store_items(parse_announcements(rows), engine)
+class AnnouncementsCollector(Collector[RawNews]):
+    name = "nse_announcements"
+
+    def fetch(self) -> Any:
+        return nse_get("/api/corporate-announcements?index=equities", self.timeout_s)
+
+    def parse(self, raw: Any) -> list[RawNews]:
+        return parse_announcements(raw)
+
+    def store(self, items: list[RawNews], engine: Engine | None) -> int:
+        return store_items(items, engine)
 
 
-def collect_fii_dii(engine: Engine | None = None) -> int:
-    flows = parse_fii_dii(nse_get("/api/fiidiiTradeReact"))
-    if flows is None:
-        raise RuntimeError("FII/DII data not found in NSE response")
-    ts = datetime.now(IST).replace(hour=18, minute=0, second=0, microsecond=0)
-    with session_scope(engine) as s:
-        snap = s.get(MacroSnapshot, ts) or MacroSnapshot(ts=ts)
-        snap.fii_net, snap.dii_net = flows
-        s.add(snap)
-    return 1
+class FiiDiiCollector(Collector[tuple[float, float]]):
+    name = "nse_fii_dii"
+
+    def fetch(self) -> Any:
+        return nse_get("/api/fiidiiTradeReact", self.timeout_s)
+
+    def parse(self, raw: Any) -> list[tuple[float, float]]:
+        flows = parse_fii_dii(raw)
+        if flows is None:
+            raise RuntimeError("FII/DII data not found in NSE response")
+        return [flows]
+
+    def store(self, items: list[tuple[float, float]], engine: Engine | None) -> int:
+        ts = datetime.now(IST).replace(hour=18, minute=0, second=0, microsecond=0)
+        with session_scope(engine) as s:
+            snap = s.get(MacroSnapshot, ts) or MacroSnapshot(ts=ts)
+            snap.fii_net, snap.dii_net = items[0]
+            s.add(snap)
+        return 1
 
 
-def collect_event_calendar(engine: Engine | None = None) -> int:
-    """Store results/board-meeting dates for F&O stocks. Idempotent on (symbol, type, date)."""
-    events = parse_event_calendar(nse_get("/api/event-calendar"))
-    return store_events(events, engine)
+class EventCalendarCollector(Collector[dict[str, Any]]):
+    """Results/board-meeting dates for F&O stocks. Idempotent on (symbol, type, date)."""
+
+    name = "nse_event_calendar"
+
+    def fetch(self) -> Any:
+        return nse_get("/api/event-calendar", self.timeout_s)
+
+    def parse(self, raw: Any) -> list[dict[str, Any]]:
+        return parse_event_calendar(raw)
+
+    def store(self, items: list[dict[str, Any]], engine: Engine | None) -> int:
+        return store_events(items, engine)
 
 
 def store_events(events: list[dict[str, Any]], engine: Engine | None = None) -> int:
@@ -181,13 +208,21 @@ def parse_ban_list(text: str) -> list[str]:
     return symbols
 
 
-def collect_fno_ban(engine: Engine | None = None) -> int:
-    resp = httpx.get(BAN_URL, headers=HEADERS, timeout=20.0, follow_redirects=True)
-    resp.raise_for_status()
-    symbols = parse_ban_list(resp.text)
-    with session_scope(engine) as s:
-        set_config(s, "fno_ban", {"date": today().isoformat(), "symbols": symbols})
-    return len(symbols)
+class FnoBanCollector(Collector[str]):
+    name = "nse_fno_ban"
+
+    def fetch(self) -> Any:
+        resp = httpx.get(BAN_URL, headers=HEADERS, timeout=self.timeout_s, follow_redirects=True)
+        resp.raise_for_status()
+        return resp.text
+
+    def parse(self, raw: Any) -> list[str]:
+        return parse_ban_list(str(raw))
+
+    def store(self, items: list[str], engine: Engine | None) -> int:
+        with session_scope(engine) as s:
+            set_config(s, "fno_ban", {"date": today().isoformat(), "symbols": items})
+        return len(items)
 
 
 def classify_action(subject: str) -> str | None:
@@ -224,7 +259,21 @@ def parse_corporate_actions(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return events
 
 
-def collect_corporate_actions(engine: Engine | None = None) -> int:
-    return store_events(
-        parse_corporate_actions(nse_get("/api/corporates-corporateActions?index=equities")), engine
-    )
+class CorporateActionsCollector(Collector[dict[str, Any]]):
+    name = "nse_corporate_actions"
+
+    def fetch(self) -> Any:
+        return nse_get("/api/corporates-corporateActions?index=equities", self.timeout_s)
+
+    def parse(self, raw: Any) -> list[dict[str, Any]]:
+        return parse_corporate_actions(raw)
+
+    def store(self, items: list[dict[str, Any]], engine: Engine | None) -> int:
+        return store_events(items, engine)
+
+
+collect_announcements = AnnouncementsCollector().run
+collect_fii_dii = FiiDiiCollector().run
+collect_event_calendar = EventCalendarCollector().run
+collect_fno_ban = FnoBanCollector().run
+collect_corporate_actions = CorporateActionsCollector().run
