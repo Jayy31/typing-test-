@@ -14,6 +14,7 @@ from sqlalchemy import Engine, select
 
 from app.collectors.news_rss import RawNews, store_items
 from app.config import IST
+from app.db.config_store import set_config
 from app.db.models import EventCalendar, Instrument, MacroSnapshot
 from app.db.session import session_scope
 
@@ -165,3 +166,65 @@ def store_events(events: list[dict[str, Any]], engine: Engine | None = None) -> 
 
 def today() -> date:
     return datetime.now(IST).date()
+
+
+BAN_URL = "https://nsearchives.nseindia.com/content/fo/fo_secban.csv"
+
+
+def parse_ban_list(text: str) -> list[str]:
+    """NSE fo_secban.csv: a title line, then rows like '1,SYMBOL'. Empty list is valid."""
+    symbols: list[str] = []
+    for line in text.splitlines()[1:]:
+        cols = [c.strip() for c in line.split(",")]
+        if len(cols) >= 2 and cols[0].isdigit() and cols[1]:
+            symbols.append(cols[1].upper())
+    return symbols
+
+
+def collect_fno_ban(engine: Engine | None = None) -> int:
+    resp = httpx.get(BAN_URL, headers=HEADERS, timeout=20.0, follow_redirects=True)
+    resp.raise_for_status()
+    symbols = parse_ban_list(resp.text)
+    with session_scope(engine) as s:
+        set_config(s, "fno_ban", {"date": today().isoformat(), "symbols": symbols})
+    return len(symbols)
+
+
+def classify_action(subject: str) -> str | None:
+    low = subject.lower()
+    if "split" in low or "sub-division" in low or "sub division" in low:
+        return "split"
+    if "bonus" in low:
+        return "bonus"
+    if "demerger" in low or "scheme of arrangement" in low or "spin" in low:
+        return "demerger"
+    if "special dividend" in low:
+        return "special_dividend"
+    if "dividend" in low:
+        return "dividend"
+    return None
+
+
+def parse_corporate_actions(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """NSE corporate-actions JSON -> events keyed by ex-date (split/bonus/demerger/dividend)."""
+    events: list[dict[str, Any]] = []
+    for r in rows:
+        etype = classify_action(str(r.get("subject", "")))
+        d = _parse_dt(str(r.get("exDate", "")), ("%d-%b-%Y", "%Y-%m-%d"))
+        symbol = str(r.get("symbol", "")).strip()
+        if etype and d and symbol:
+            events.append(
+                {
+                    "symbol": symbol,
+                    "event_type": etype,
+                    "event_date": d.date(),
+                    "details": {"subject": r.get("subject")},
+                }
+            )
+    return events
+
+
+def collect_corporate_actions(engine: Engine | None = None) -> int:
+    return store_events(
+        parse_corporate_actions(nse_get("/api/corporates-corporateActions?index=equities")), engine
+    )

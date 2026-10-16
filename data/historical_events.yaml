@@ -1,0 +1,5 @@
+# Curated library of past events and how stocks/sectors reacted. Used as "historical analogues".
+# Empty on purpose: entries must be verified facts, never guesses. Phase 5 builds this library.
+# Entry shape:
+#   - {event_type: results, sector: IT, description: "...", outcome: "...", move_pct: -4.2, date: 2024-01-12}
+events: []

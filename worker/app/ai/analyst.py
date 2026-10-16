@@ -1,0 +1,138 @@
+"""Stage 2 analyst (strong model): full-context deep analysis of one stock's evidence."""
+
+import logging
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+import yaml
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.ai.client import AiClient, AiOutputError
+from app.ai.schemas import AnalystOutput
+from app.db.models import EventCalendar, Instrument, MacroSnapshot
+from app.rules.engine import RuleHit
+from app.signals.candidates import Candidate, evidence_for, weighted_sentiment
+from app.yaml_config import load_yaml
+
+log = logging.getLogger(__name__)
+PROMPT_VERSION = "analyst_v1"
+SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "analyst_v1.md").read_text(encoding="utf-8")
+ANALOGUES_FILE = Path(__file__).resolve().parents[3] / "data" / "historical_events.yaml"
+
+
+def load_analogues(event_types: frozenset[str], sector: str, limit: int) -> list[dict[str, Any]]:
+    data = yaml.safe_load(ANALOGUES_FILE.read_text(encoding="utf-8")) or {}
+    events: list[dict[str, Any]] = data.get("events") or []
+    matches = [e for e in events if e.get("event_type") in event_types or e.get("sector") == sector]
+    return matches[:limit]
+
+
+def sector_context(s: Session, sector: str, symbol: str, now: datetime) -> str:
+    by_peer: dict[str, list[tuple[float, float]]] = {}
+    insts = {i.symbol: i.sector for i in s.scalars(select(Instrument))}
+    for sym, sec, item in evidence_for(s, now):
+        member = sym if sym and insts.get(sym) == sector else None
+        if member is None and sec != sector:
+            continue
+        by_peer.setdefault(member or f"(sector-level: {sector})", []).append(
+            (item.weight, item.sentiment)
+        )
+    lines = [
+        f"- {k}: sentiment {weighted_sentiment(v):+.2f} from {len(v)} item(s)"
+        for k, v in sorted(by_peer.items())
+        if k != symbol
+    ]
+    return "\n".join(lines) or "- no other tagged news in this sector"
+
+
+def macro_text(s: Session, changes: dict[str, float]) -> str:
+    snap = s.scalars(select(MacroSnapshot).order_by(MacroSnapshot.ts.desc()).limit(1)).first()
+    if snap is None:
+        return "- no macro snapshot available"
+    vals = {
+        k: getattr(snap, k)
+        for k in ("brent", "usdinr", "dxy", "us10y", "india_vix", "fii_net", "dii_net")
+    }
+    line = ", ".join(f"{k}={v}" for k, v in vals.items() if v is not None)
+    chg = ", ".join(f"{k} {v:+.2f}" for k, v in changes.items()) or "n/a"
+    return (
+        f"- as of {snap.ts:%Y-%m-%d %H:%M}: {line}\n"
+        f"- 24h changes: {chg}\n- ADRs: {snap.adr_json or 'n/a'}"
+    )
+
+
+def calendar_text(s: Session, symbol: str, today: date) -> str:
+    rows = s.scalars(
+        select(EventCalendar)
+        .where(
+            EventCalendar.event_date >= today,
+            EventCalendar.event_date <= today + timedelta(days=30),
+        )
+        .where((EventCalendar.symbol == symbol) | (EventCalendar.symbol.is_(None)))
+        .order_by(EventCalendar.event_date)
+    ).all()
+    return (
+        "\n".join(f"- {e.event_date}: {e.event_type} {e.symbol or '(market-wide)'}" for e in rows)
+        or "- none in the next 30 days"
+    )
+
+
+def build_user_message(
+    s: Session, cand: Candidate, hits: list[RuleHit], changes: dict[str, float], now: datetime
+) -> tuple[str, set[int]]:
+    """Assemble the full context. Returns (message, ids of provided news items)."""
+    cfg = load_yaml("signals.yaml")["candidates"]
+    inst = s.get(Instrument, cand.symbol)
+    sector = inst.sector if inst else "unknown"
+    items = cand.items[: int(cfg["max_evidence_items"])]
+    news = "\n".join(
+        f"[id={i.news_id}] {i.source} ({i.kind}), {i.published_at:%Y-%m-%d %H:%M}, "
+        f"tagger sentiment {i.sentiment:+.2f}\n"
+        f"  {i.title}\n  {(i.summary or '')[:600]}"
+        for i in items
+    )
+    analogues = load_analogues(cand.event_types, sector, int(cfg["analogues"]))
+    rules = "\n".join(f"- {h.name} ({h.kind}): {h.direction}, {h.why}" for h in hits) or "- none"
+    msg = (
+        f"Today: {now:%Y-%m-%d %H:%M} IST\n"
+        f"Stock: {cand.symbol} ({inst.name if inst else ''}), sector {sector}, "
+        f"sub-sector {inst.sub_sector if inst else ''}, "
+        f"lot size {inst.lot_size if inst else ''}\n\n"
+        f"NEWS EVIDENCE:\n{news}\n\n"
+        f"SENTIMENT: weighted {cand.agg_sentiment:+.2f} over {len(cand.items)} item(s), "
+        f"{len(cand.sources)} source(s), official filing present: {cand.has_official}\n\n"
+        f"SECTOR CONTEXT:\n{sector_context(s, sector, cand.symbol, now)}\n\n"
+        f"MACRO:\n{macro_text(s, changes)}\n\n"
+        f"UPCOMING EVENTS:\n{calendar_text(s, cand.symbol, now.date())}\n\n"
+        f"RULES ENGINE (for your information):\n{rules}\n\n"
+        f"HISTORICAL ANALOGUES:\n{analogues or 'none provided'}"
+    )
+    return msg, {i.news_id for i in items}
+
+
+def validate_output(out: AnalystOutput, provided_ids: set[int]) -> None:
+    """Reject unsupported reasoning: every cited id must have been provided."""
+    if not out.cited_news_ids:
+        raise AiOutputError("analysis cites no news items")
+    unknown = set(out.cited_news_ids) - provided_ids
+    if unknown:
+        raise AiOutputError(f"analysis cites unknown news ids {sorted(unknown)}")
+    if not out.thesis.strip():
+        raise AiOutputError("empty thesis")
+
+
+def analyse(ai: AiClient, message: str, provided_ids: set[int], retries: int = 1) -> AnalystOutput:
+    """One deep analysis; retries once when the output fails validation."""
+    last: AiOutputError | None = None
+    for _ in range(retries + 1):
+        try:
+            out = ai.parse("analyst", SYSTEM_PROMPT, message, AnalystOutput, max_tokens=8000)
+            validate_output(out, provided_ids)
+            return out
+        except AiOutputError as exc:
+            last = exc
+            log.warning("analyst output rejected: %s", exc)
+    assert last is not None
+    raise last

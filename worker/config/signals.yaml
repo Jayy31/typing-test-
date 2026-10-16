@@ -1,0 +1,43 @@
+# Scoring and signal-lifecycle rules (defaults; the monthly learning loop in Phase 5 proposes changes).
+# The raise threshold itself comes from env SIGNAL_SCORE_THRESHOLD (default 65).
+weights:
+  impact: 0.25
+  surprise: 0.20
+  clarity: 0.15
+  timing: 0.15
+  source_quality: 0.10
+  liquidity: 0.10
+  macro_alignment: 0.05
+priced_in_max_penalty: 30        # applied in Phase 3 once live prices exist (0 until then)
+high_conviction: 80
+cancel_below: 55                 # live signal is cancelled when its score falls under this
+update_delta: 5                  # score change that triggers an UPGRADED / DOWNGRADED alert
+rules_adjustment_cap: 15         # max +/- points the rules engine can add on top of the AI score
+liquidity_placeholder: 70        # until live option data (Phase 3) replaces it
+
+candidates:
+  evidence_window_hours: 48
+  half_life_hours: 24            # sentiment time decay
+  min_strength: 0.25             # |weighted sentiment| x max novelty
+  strong_single_source: 0.6      # a lone unofficial source needs at least this strength
+  max_analyses_per_cycle: 5      # caps strong-model spend per run
+  reanalysis_cooldown_min: 60
+  max_evidence_items: 12
+  analogues: 3
+
+signals:
+  max_age_days: 7                # live signals older than this are cancelled quietly
+
+expiry:
+  weekday: 1                     # monthly stock expiry weekday, 0=Mon (NSE: Tuesday). Verify yearly.
+  min_trading_days: 8            # fewer left than this -> next month (design says ~7; 8 = 5-day time stop + 3 holding days)
+  time_stop_days: 5              # paper engine exits this many trading days before expiry
+  max_required_holding_days: 3
+  holiday_event_type: market_holiday
+
+eligibility:
+  blocked_corporate_actions: [split, bonus, demerger]
+
+sector_watch:
+  min_items: 3
+  threshold: 0.5

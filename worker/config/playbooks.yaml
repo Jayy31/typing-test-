@@ -1,0 +1,56 @@
+# Event playbooks: news evidence -> sector effects. STARTING DEFAULTS, tune with results (Phase 5).
+# A playbook applies to a candidate stock when ALL its conditions hold:
+#   keywords_any : any phrase appears in the candidate's headlines/summaries (case-insensitive)
+#   themes_any   : any of these macro themes is tagged on the evidence (optional)
+#   event_types_any : any of these AI event types is tagged on the evidence (optional)
+# Effects only touch stocks whose sector / sub_sector is targeted.
+playbooks:
+  - name: rbi_rate_cut
+    keywords_any: ["rate cut", "cuts repo", "cut repo rate", "reduces repo", "lowers repo"]
+    themes_any: [rates]
+    effects:
+      - {sectors: [Banks], direction: bullish, weight: 6}
+      - {sectors: [NBFC], direction: bullish, weight: 8}
+      - {sectors: [Realty], direction: bullish, weight: 8}
+      - {sectors: [Auto], direction: bullish, weight: 5}
+  - name: rbi_rate_hike
+    keywords_any: ["rate hike", "hikes repo", "raises repo", "hike repo rate"]
+    themes_any: [rates]
+    effects:
+      - {sectors: [Banks], direction: bearish, weight: 4}
+      - {sectors: [NBFC], direction: bearish, weight: 8}
+      - {sectors: [Realty], direction: bearish, weight: 8}
+      - {sectors: [Auto], direction: bearish, weight: 5}
+  - name: telecom_tariff_hike
+    keywords_any: ["tariff hike", "hikes tariff", "raises tariff", "tariff increase"]
+    effects:
+      - {sectors: [Telecom], direction: bullish, weight: 8}
+  - name: geopolitical_crude_spike
+    keywords_any: ["war", "missile", "airstrike", "strait of hormuz", "sanctions"]
+    themes_any: [war, crude]
+    effects:
+      - {sub_sectors: [Upstream], direction: bullish, weight: 6}
+      - {sub_sectors: [OMC], direction: bearish, weight: 6}
+      - {sectors: [Aviation], direction: bearish, weight: 6}
+      - {sectors: [Defence], direction: bullish, weight: 5}
+  - name: good_monsoon
+    keywords_any: ["above normal monsoon", "good monsoon", "surplus rainfall", "monsoon advances"]
+    themes_any: [monsoon]
+    effects:
+      - {sectors: [FMCG], direction: bullish, weight: 4}
+      - {sub_sectors: [Two Wheelers, Agrochemicals], direction: bullish, weight: 5}
+  - name: weak_monsoon
+    keywords_any: ["deficient monsoon", "monsoon deficit", "below normal monsoon", "drought"]
+    themes_any: [monsoon]
+    effects:
+      - {sectors: [FMCG], direction: bearish, weight: 4}
+      - {sub_sectors: [Two Wheelers, Agrochemicals], direction: bearish, weight: 5}
+  - name: capex_push
+    keywords_any: ["capex", "infrastructure outlay", "capital expenditure"]
+    themes_any: [budget_policy]
+    effects:
+      - {sectors: [Capital Goods, Infrastructure, Cement, Defence], direction: bullish, weight: 5}
+  - name: usfda_action
+    keywords_any: ["warning letter", "form 483", "import alert", "usfda observations"]
+    effects:
+      - {sectors: [Pharma], direction: bearish, weight: 6}
