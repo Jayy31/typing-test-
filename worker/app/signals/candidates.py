@@ -121,8 +121,11 @@ def evidence_for(
     return out
 
 
-def build_candidates(s: Session, now: datetime) -> list[Candidate]:
-    """Stocks whose evidence is strong enough to deserve a deep analysis, strongest first."""
+def build_candidates(
+    s: Session, now: datetime, rejected: list[tuple[Candidate, str]] | None = None
+) -> list[Candidate]:
+    """Stocks whose evidence is strong enough to deserve a deep analysis, strongest first.
+    Weak ones are appended to `rejected` with the reason (if a list is given)."""
     cfg = load_yaml("signals.yaml")["candidates"]
     by_symbol: dict[str, Candidate] = {}
     for symbol, _sector, item in evidence_for(s, now):
@@ -133,12 +136,18 @@ def build_candidates(s: Session, now: datetime) -> list[Candidate]:
         cand.agg_sentiment = weighted_sentiment([(i.weight, i.sentiment) for i in cand.items])
         cand.strength = abs(cand.agg_sentiment) * max(i.novelty for i in cand.items)
         if cand.strength < float(cfg["min_strength"]):
+            if rejected is not None:
+                rejected.append(
+                    (cand, f"evidence strength {cand.strength:.2f} below {cfg['min_strength']}")
+                )
             continue
         if not (
             cand.has_official
             or len(cand.sources) >= 2
             or cand.strength >= float(cfg["strong_single_source"])
         ):
+            if rejected is not None:
+                rejected.append((cand, "single unofficial source without strong evidence"))
             continue
         cand.items.sort(key=lambda i: abs(i.sentiment) * i.weight, reverse=True)
         out.append(cand)
