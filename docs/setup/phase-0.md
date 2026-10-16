@@ -10,8 +10,8 @@
 
 ## 2. Check it worked (SQL Editor)
 ```sql
-select count(*) from pg_tables where schemaname = 'public';   -- expect 17
-select tablename, rowsecurity from pg_tables where schemaname = 'public' order by 1;  -- rowsecurity = true on all 16 app tables
+select count(*) from pg_tables where schemaname = 'public';   -- expect 18 once Phase 2 is applied (17 tables + alembic_version)
+select tablename, rowsecurity from pg_tables where schemaname = 'public' order by 1;  -- rowsecurity = true on all 17 app tables
 ```
 After the worker's first run of the `fno_meta` job (07:30 IST daily, or `make run` then trigger it manually):
 ```sql
