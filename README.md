@@ -1,7 +1,7 @@
 # News-driven options research and paper trading
 
-Automated research and **paper trading** for NSE F&O stock options. Read `CLAUDE.md` and
-`docs/DESIGN.md` first. No real orders are ever placed.
+Automated research and **paper trading** for NSE F&O stock options. Read `CLAUDE.md`, `docs/DESIGN.md` and
+`docs/DESIGN_V2.md` (wins on conflicts) first. No real orders are ever placed.
 
 ## Local setup (worker)
 
@@ -18,5 +18,5 @@ make run                        # start the scheduler
 
 ```
 docker build -f worker/Dockerfile -t news-options-worker .
-docker run --env-file worker/.env news-options-worker
+docker run --env-file worker/.env -v /data/history:/data/history news-options-worker
 ```

@@ -1,6 +1,9 @@
 # CLAUDE.md
 
-Project guide for Claude Code. Read this first, then `docs/DESIGN.md` (full design, source of truth).
+Project guide for Claude Code. Read this first, then BOTH design docs:
+`docs/DESIGN.md` and `docs/DESIGN_V2.md`. Together they define ONE final system (no v1/v2 split, no
+shadow mode, one pipeline, one output). **Where they conflict, `docs/DESIGN_V2.md` wins.**
+Phase-specific research notes live in `docs/notes/` (e.g. `docs/notes/upstox-api.md`).
 
 ## What this is
 News-driven research and **paper trading** system for Indian NSE F&O **stock options** (no index options).
@@ -13,6 +16,24 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 - **Secrets only via env vars.** Never hard-code or log keys. Keep `.env.example` updated with blank values.
 - **No per-news alerts.** Alerts only for signals, trade events, health problems, and the optional morning brief / evening summary / monthly report.
 - Business rules (linkage map, playbooks, weights, thresholds, exit rules) live in YAML/DB config, not code.
+
+## Owner decisions (binding)
+- Broker: **Upstox**, market data only, via the read-only 1-year **Analytics Token** (`docs/notes/upstox-api.md`).
+- No Sentry. Monitoring = `job_runs`, `source_health`, Telegram health alerts.
+- AI roles, all model ids from env: `AI_MODEL_TAGGER`, `AI_MODEL_RESEARCHER`, `AI_MODEL_NOVELTY` (cheap);
+  `AI_MODEL_BULL`, `AI_MODEL_BEAR` (mid); `AI_MODEL_JUDGE` (strongest). `AI_MODEL_ANALYST` (mid) is the
+  single-call analyst used until multi-agent lands in Phase 5.
+- Selection (from Phase 5, all in config): EV > 0 after costs, `p_t1_before_sl` >= 0.55, minimum EV of
+  10% of premium, and edge_ratio >= `EDGE_RATIO_MIN` (1.2). Raw score is kept for comparison.
+- History: 5 years. Optional Cloudflare R2 backup of Parquet (Phase 4), off by default
+  (`R2_BACKUP_ENABLED`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET`).
+- **Before any one-off AI job (e.g. historical batch tagging) show the owner the cost estimate
+  (`app.ai.client.estimate_cost` / `tagger.estimate`) and wait for approval.**
+- NSE files cannot be downloaded from the build sandbox: history setup docs must give exact VM
+  commands plus a verification script (row counts, date ranges, gaps).
+- Dashboard and `/why` must say "not yet calibrated" until a calibrator exists, and always show the
+  source of each predicted move (scenario tree / analogues / blended).
+- `.env.example` holds keys only (blank values); the owner sets values at deploy.
 
 ## Trading rules (defaults, configurable)
 - 1 lot per signal, no cap on open trades
@@ -37,6 +58,11 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 - Every external call has a timeout
 - Tests required for parsers, entity mapping, scoring, exit rules
 - **End of every phase:** give the owner a setup checklist in the final reply and save it as `docs/setup/phase-N.md`: accounts to create, API keys/env values to set (names only, never values), any SQL to run (also saved under `docs/setup/`, tested on a real Postgres), and any other external steps, in the order to do them
+- Shared building blocks (reuse, never duplicate): taxonomy `config/taxonomy.yaml` (`app/taxonomy.py`);
+  tagger core with live + batch modes (`app/ai/tagger.py`); collector base (`app/collectors/base.py`);
+  option data interface (`app/market/options.py`); pure exit rules (`app/trading/exits.py`, `config/exits.yaml`);
+  history store (`app/history/store.py`, DuckDB single writer); feature flags (`app/flags.py`: flip
+  `BUILT[...]` when a stage ships, bump `ENGINE_VERSION`)
 - Small commits; one branch per phase (`phase-0-foundation`, ...); open a PR per phase
 
 ## Commands
@@ -47,10 +73,27 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 - `make lint` – ruff + mypy
 - `cd dashboard && npm run dev`
 
+## Build order (merged, DESIGN_V2)
+| Phase | Scope | Status |
+|---|---|---|
+| 0 | Foundation | done |
+| 1 | News intelligence | done |
+| 2 | Signals and alerts | done |
+| 2.5 | Refactor 0-2 for DESIGN_V2 (schema, taxonomy, tagger batch, collector base, option interface, DuckDB, flags, scenario tree, V2 signal fields/templates) | done |
+| 3 | Live options (Upstox) + paper trading + implied move / edge ratio + scenario simulator (best strike/expiry by EV) | next |
+| 4 | History: 5y backfill (bhavcopy, announcements, GDELT, events YAML), batch tagging, event study + analogue lookup, R2 backup | |
+| 5 | Multi-agent analysis + probability blending + calibration + EV ranking | |
+| 6 | Backtester (walk-forward, costs, no look-ahead / survivorship) | |
+| 7 | Deeper data sources (+ their tables) incl. results fast-path | |
+| 8 | Knowledge graph + 2nd/3rd-order signals | |
+| 9 | Dashboard (all pages from both docs) + morning brief / evening summary | |
+| 10 | Analytics, monthly report, learning loop, hardening | |
+
 ## Current phase
-Phase 3 – Live options and paper trading (see `docs/DESIGN.md` §19). Update this line when a phase is done.
+Phase 3 – Live options (Upstox), paper trading, implied move / edge ratio, scenario simulator. Update this line when a phase is done.
 
 ## Progress log
 - Phase 0 (PR `phase-0-foundation`): worker skeleton, full §14 schema + Alembic migrations (RLS enabled on all tables), settings, job runner with `job_runs` + retries, health heartbeat, symbol master (148 stocks) + NSE lot-size loader, APScheduler, Dockerfile, Makefile, CI. No Sentry (owner decision). NSE lot-size fetch untested against live NSE (blocked in build sandbox); Dockerfile untested (no Docker daemon).
 - Phase 1 (PR `phase-1-news-intelligence`): RSS + NSE announcement collectors (feeds in `worker/config/news_sources.yaml`), URL-hash dedup + title-similarity clustering, entity mapper (case-sensitive alias match, themes in YAML), relevance gate (YAML rules), budget-capped Anthropic client with prompt caching + `ai_usage` logging, stage-1 tagger (structured outputs, prompt `tagger_v1`), Yahoo macro collector, NSE FII/DII + event calendar parsers, manual calendar YAML (empty: owner fills), scheduler wiring. `.env.example` is keys-only (blank values fall back to defaults). Unverified against live sources (blocked in build sandbox): feed URLs, NSE JSON endpoints, Yahoo tickers, real Anthropic calls. Not built: BSE announcements, GIFT Nifty, full-article extraction.
 - Phase 2 (PR `phase-2-signals-alerts`): rules engine (`config/linkage_map.yaml` macro moves, `config/playbooks.yaml` news playbooks; adjusts score, never creates signals), stage-2 analyst (`analyst_v1`, citations validated against provided news ids), candidates with time-decayed source-weighted sentiment, scoring per §8 (AI score and rules adjustment stored separately), eligibility gates (F&O, ban list, contract-adjusting actions, days to expiry), provisional expiry, signal lifecycle with versions, `alerts` outbox + Telegram bot (httpx; alerts, `/why`, `/signals`, `/open`, `/closed`, `/stats`, `/mute`, buttons; token never in logs/errors; owner chat only), health alerts from heartbeat, sector-watch alerts, cleanup job. Deviation: expiry rolls to next month under 8 trading days (design ~7) so the 5-day time stop leaves 3 holding days. Pending for Phase 3: strike/premium, real liquidity score, priced-in penalty, real expiry from broker. Unverified live: NSE ban/corporate-action endpoints, real Anthropic analyst call, real Telegram API.
+- Phase 2.5 (PR `phase-2.5-refactor`): migration 0004 (V2 signal fields incl. `predicted_move_source`, `calibrator_id`, `expected_value_inr`; tables scenarios, signal_candidates, agent_runs, calibrators, calibration_records, kg_nodes, kg_edges, backtest_runs, backtest_trades; `news_tags.taxonomy_ver`; RLS on all), shared taxonomy `tx1`, tagger `tagger_v2` with live + Batch API modes and cost estimates, AI roles per owner, collector base + per-source health (all collectors ported), `OptionDataSource` + static impl, pure exit rules, DuckDB/Parquet store with single-writer lock, feature flags + `ENGINE_VERSION` 2.5.0 stamped on signals, analyst `analyst_v2` with validated scenario tree, predicted move from scenario tree, alert and `/why` V2 sections with explicit calibration status. V2 collector tables deferred to Phase 7 (owner).
