@@ -83,7 +83,9 @@ def test_ev_sign_follows_the_prediction() -> None:
     assert call.ev_pct > 0 > put.ev_pct
     assert 0 <= call.p_t1_before_sl <= 1 and call.p_t3 <= call.p_t2 <= 1
     c = cand("CE")
-    assert call.ev_inr == pytest.approx(call.ev_pct / 100 * c.ask * 500, abs=0.5)
+    assert call.ev_inr == pytest.approx(
+        call.ev_pct / 100 * c.ask * 500 * BASE.lots, abs=0.5
+    )  # whole position
     assert call.theta_per_day_inr < 0 and call.iv_sensitivity_pct > 0
     assert call.breakeven_move_pct is not None and call.breakeven_move_pct > 0
     assert sum(call.exit_mix.values()) == pytest.approx(1.0, abs=1e-3)

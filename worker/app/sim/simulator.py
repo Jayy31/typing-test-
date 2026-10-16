@@ -42,7 +42,7 @@ class CandidateInput:
 @dataclass(frozen=True)
 class SimResult:
     ev_pct: float  # % of entry premium, after costs
-    ev_inr: float  # per lot
+    ev_inr: float  # per position (all lots)
     p_t1_before_sl: float
     p_t2: float
     p_t3: float
@@ -163,9 +163,15 @@ def evaluate(
         event_day,
     )
 
-    lot_value = entry * cand.lot_size
+    lot_value = entry * cand.lot_size * rules.lots  # whole position (LOTS_PER_SIGNAL)
     cost_pct = float(cfg["costs_pct_of_premium"]) + (
-        2 * float(cfg["brokerage_inr_per_order"]) / lot_value * 100 if lot_value else 0.0
+        # entry order + one order per target that books lots
+        (1 + sum(1 for f in rules.book_fractions if f > 0))
+        * float(cfg["brokerage_inr_per_order"])
+        / lot_value
+        * 100
+        if lot_value
+        else 0.0
     )
     pnl = res.realised_pct - cost_pct
     ev_pct = float(pnl.mean())
@@ -181,7 +187,7 @@ def evaluate(
         p_t3=round(float((res.targets_hit >= 3).mean()), 4),
         max_loss_inr=round(float(pnl.min()) / 100 * lot_value, 2),
         exp_hold_days=round(float(res.hold_days.mean()), 2),
-        theta_per_day_inr=round(g.theta_per_day * cand.lot_size, 2),
+        theta_per_day_inr=round(g.theta_per_day * cand.lot_size * rules.lots, 2),
         breakeven_move_pct=_breakeven(cand, stock.spot0, iv0, r, window_days),
         iv_sensitivity_pct=round(g.vega_per_point / entry * 100, 3) if entry else 0.0,
         targets=tuple(round(x, 2) for x in targets),

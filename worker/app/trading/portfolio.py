@@ -40,6 +40,14 @@ def open_value(tr: PaperTrade) -> tuple[float, float, float]:
     return unreal, at_risk, delta_notional
 
 
+def capital_used(tr: PaperTrade) -> float:
+    """Premium paid for the lots still open (whole lots)."""
+    if not tr.state_json or not tr.lot_size:
+        return 0.0
+    open_lots = int(round(state_from_json(tr.state_json).remaining * tr.lots))
+    return tr.entry_premium * tr.lot_size * open_lots
+
+
 def exposure(s: Session) -> dict[str, dict[str, Any]]:
     """Per theme: open trades, premium at risk and delta-equivalent notional."""
     out: dict[str, dict[str, Any]] = {}
@@ -90,6 +98,7 @@ def snapshot(engine: Engine | None = None, now: datetime | None = None, force: b
                 premium_at_risk_inr=round(sum(v[1] for v in vals), 2),
                 exposure_json=exposure(s),
                 realised_fillable_inr=round(realised_fillable, 2),
+                capital_used_inr=round(sum(capital_used(t) for t in opens), 2),
             )
         )
     return 1

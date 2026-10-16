@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     # Until calibration (Phase 5): share of simulated paths from the AI scenario tree; the rest
     # follow the option-implied market distribution (no drift, ATM IV). 1.0 = AI only.
     scenario_shrink_weight: float = 0.5
+    # Paper position size and booking (whole lots only)
+    lots_per_signal: int = 3
+    partial_booking_mode: str = "per_lot"  # per_lot | single_exit
 
     # History store (DuckDB + Parquet on the worker VM)
     history_data_dir: str = "/data/history"

@@ -13,10 +13,14 @@ USTOP underlying stop (v2.1 A1), WINDOW scenario-window stop (v2.1 A3), THESIS, 
 (near-expiry backstop), NOMOVE (no move after the event).
 """
 
+import logging
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from app.config import get_settings
 from app.yaml_config import load_yaml
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -30,6 +34,8 @@ class ExitRules:
     predicted_fractions: tuple[float, ...] = (0.5, 1.0, 1.5)
     min_step_pct: float = 5
     book_fractions: tuple[float, ...] = (1 / 3, 1 / 3, 1 / 3)
+    lots: int = 1
+    booking_mode: str = "per_lot"  # per_lot | single_exit
     move_sl_to_entry_after: int = 1
     trail_after: int = 2
     window_stop: bool = False
@@ -52,7 +58,7 @@ class ExitRules:
             targets_pct=tuple(float(x) for x in c["targets"]["fixed_pct"]),
             predicted_fractions=tuple(float(x) for x in c["targets"]["predicted_fractions"]),
             min_step_pct=float(c["targets"]["min_step_pct"]),
-            book_fractions=tuple(float(x) for x in c["book_fractions"]),
+            book_fractions=(),  # set from the lot booking plan below
             move_sl_to_entry_after=int(c["move_sl_to_entry_after"]),
             trail_after=int(c["trail_after"]),
             window_stop=bool(c["window_stop"]["enabled"]),
@@ -62,10 +68,56 @@ class ExitRules:
             no_move_threshold_pct=float(c["no_move_threshold_pct"]),
             time_stop_trading_days=int(c["time_stop_trading_days"]),
         )
-        return replace(rules, **(overrides or {}))
+        overrides = dict(overrides or {})
+        rules = replace(rules, **overrides)
+        if "book_fractions" in overrides:  # explicit fractions win (tests, stored per-trade rules)
+            return rules
+        settings = get_settings()
+        lots = int(overrides.get("lots", settings.lots_per_signal))
+        mode = str(overrides.get("booking_mode", settings.partial_booking_mode))
+        _, fractions = booking_plan(
+            lots, len(rules.targets_pct), mode, int(c["single_exit_target"])
+        )
+        return replace(rules, lots=lots, booking_mode=mode, book_fractions=fractions)
 
     def fixed_targets(self, entry: float) -> tuple[float, ...]:
         return tuple(entry * (1 + p / 100) for p in self.targets_pct)
+
+
+def booking_plan(
+    lots: int, n_targets: int, mode: str, single_exit_target: int = 2
+) -> tuple[list[int], tuple[float, ...]]:
+    """Whole lots booked at each target, and the same as fractions of the position.
+
+    per_lot: split lots evenly; a remainder goes to the last target (logged). With fewer lots
+             than targets, 1 lot per target and the position closes at target number `lots`.
+    single_exit: the whole position exits at `single_exit_target` (earlier targets only move
+             the stop: breakeven after T1, trail at T1 after T2).
+    Fractional lots are never produced.
+    """
+    if lots < 1 or n_targets < 1:
+        raise ValueError("need at least 1 lot and 1 target")
+    if mode == "single_exit":
+        k = min(max(single_exit_target, 1), n_targets)
+        plan = [0] * n_targets
+        plan[k - 1] = lots
+    elif mode == "per_lot":
+        if lots >= n_targets:
+            base = lots // n_targets
+            plan = [base] * n_targets
+            plan[-1] += lots - base * n_targets
+        else:
+            plan = [1] * lots + [0] * (n_targets - lots)
+        if lots % n_targets:
+            log.warning(
+                "LOTS_PER_SIGNAL=%d not divisible by %d targets: booking %s lots",
+                lots,
+                n_targets,
+                plan,
+            )
+    else:
+        raise ValueError(f"unknown PARTIAL_BOOKING_MODE {mode}")
+    return plan, tuple(p / lots for p in plan)
 
 
 @dataclass(frozen=True)
@@ -86,8 +138,11 @@ class Bar:
 @dataclass(frozen=True)
 class Fill:
     event: str
-    fraction: float  # of the original position
+    fraction: float  # of the original position (always a whole number of lots / lots)
     price: float
+    trigger: float | None = None  # premium level that triggered the exit (stop or target)
+    gap: bool = False  # filled worse than the trigger level (gap between observations)
+    spot_trigger: float | None = None  # stock level for underlying stops
 
 
 @dataclass(frozen=True)
@@ -149,8 +204,15 @@ class PositionState:
         return sum(f.fraction * (f.price / self.entry - 1) * 100 for f in self.fills)
 
 
-def _close(state: PositionState, event: str, price: float) -> PositionState:
-    fill = Fill(event, state.remaining, price)
+def _close(
+    state: PositionState,
+    event: str,
+    price: float,
+    trigger: float | None = None,
+    spot_trigger: float | None = None,
+) -> PositionState:
+    gap = trigger is not None and price < trigger - 1e-9
+    fill = Fill(event, state.remaining, price, trigger, gap, spot_trigger)
     return replace(state, remaining=0.0, closed=True, fills=(*state.fills, fill))
 
 
@@ -183,13 +245,13 @@ def step(state: PositionState, bar: Bar, rules: ExitRules) -> PositionState:
 
     # 1) gap through the premium stop at the open
     if bar.open <= state.stop:
-        return _close(state, _stop_event(state, rules), bar.open)
+        return _close(state, _stop_event(state, rules), bar.open, state.stop)
     # 2) underlying stop (thesis invalidated on the stock): conservative fill at the bar low
     if _underlying_breached(state, bar):
-        return _close(state, "USTOP", max(bar.low, 0.0))
+        return _close(state, "USTOP", max(bar.low, 0.0), None, state.spot_stop)
     # 3) premium stop touched inside the bar: assume it came first
     if bar.low <= state.stop:
-        return _close(state, _stop_event(state, rules), state.stop)
+        return _close(state, _stop_event(state, rules), state.stop, state.stop)
 
     # 4) targets, in order; gap above a target fills at the open
     n = len(state.targets)
@@ -201,6 +263,9 @@ def step(state: PositionState, bar: Bar, rules: ExitRules) -> PositionState:
         price = max(level, bar.open)
         last = k == n - 1
         frac = state.remaining if last else min(rules.book_fractions[k], state.remaining)
+        new_fills = (
+            state.fills if frac <= 1e-9 else (*state.fills, Fill(f"T{k + 1}", frac, price, level))
+        )
         hit = k + 1
         stop = state.stop
         if hit >= rules.trail_after:
@@ -212,7 +277,7 @@ def step(state: PositionState, bar: Bar, rules: ExitRules) -> PositionState:
             targets_hit=hit,
             remaining=round(state.remaining - frac, 6),
             stop=stop,
-            fills=(*state.fills, Fill(f"T{hit}", frac, price)),
+            fills=new_fills,
             closed=last or state.remaining - frac <= 1e-9,
         )
     if state.closed:
@@ -274,3 +339,8 @@ def rules_from_json(d: dict[str, Any]) -> ExitRules:
     """Rules a trade was opened with (trades keep their own rules if config changes later)."""
     fields: dict[str, Any] = {k: tuple(v) if isinstance(v, list) else v for k, v in d.items()}
     return replace(ExitRules(), **fields)
+
+
+def lots_of(fill: Fill, lots: int) -> int:
+    """Whole lots in a fill (fractions are exact multiples of 1/lots)."""
+    return int(round(fill.fraction * lots))

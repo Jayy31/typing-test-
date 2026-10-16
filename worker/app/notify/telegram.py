@@ -270,7 +270,14 @@ def _stats(s: Session) -> str:
 
     closed = list(s.scalars(select(PaperTrade).where(PaperTrade.status == "CLOSED")))
     fillable = [t for t in closed if t.fillability != "unfillable"]
-    return line("All", closed) + "\n" + line("Excluding unfillable", fillable)
+    slip = sum(t.slippage_inr or 0.0 for t in closed)
+    gaps = sum(1 for t in closed if (t.slippage_inr or 0) < 0)
+    return (
+        line("All", closed)
+        + "\n"
+        + line("Excluding unfillable", fillable)
+        + f"\nGap/slippage vs trigger levels: Rs {slip:+,.0f} across {gaps} trade(s)"
+    )
 
 
 def _portfolio(s: Session) -> str:
@@ -282,7 +289,8 @@ def _portfolio(s: Session) -> str:
     return (
         f"Equity Rs {snap.equity:,.0f} (capital {snap.capital:,.0f})\nRealised {snap.realised_inr:+,.0f}, "
         f"open {snap.unrealised_inr:+,.0f}\nDrawdown {snap.drawdown_pct:.2f}%  open trades {snap.open_trades}, "
-        f"premium at risk Rs {snap.premium_at_risk_inr:,.0f}\nas of {snap.ts:%d-%b %H:%M}"
+        f"premium at risk Rs {snap.premium_at_risk_inr:,.0f}, capital used Rs {snap.capital_used_inr or 0:,.0f}"
+        f"\nas of {snap.ts:%d-%b %H:%M}"
     )
 
 

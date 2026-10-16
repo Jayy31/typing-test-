@@ -188,7 +188,7 @@ class Signal(Base):
     p_t2: Mapped[float | None] = mapped_column(Float)
     p_t3: Mapped[float | None] = mapped_column(Float)
     expected_value: Mapped[float | None] = mapped_column(Float)  # % of premium after costs
-    expected_value_inr: Mapped[float | None] = mapped_column(Float)  # per lot
+    expected_value_inr: Mapped[float | None] = mapped_column(Float)  # per position (all lots)
     calibrator_id: Mapped[int | None] = mapped_column(
         ForeignKey("calibrators.id")
     )  # null = uncalibrated
@@ -287,6 +287,8 @@ class PaperTrade(Base):
     mae_pct: Mapped[float | None] = mapped_column(Float)  # worst premium vs entry, %
     attribution_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
     review_flag: Mapped[str | None] = mapped_column(Text)  # e.g. opposite signal (A5 flag mode)
+    booking_mode: Mapped[str | None] = mapped_column(String(16))  # per_lot / single_exit
+    slippage_inr: Mapped[float | None] = mapped_column(Float)  # total vs trigger levels; <0 = worse
 
 
 class TradeEvent(Base):
@@ -300,6 +302,12 @@ class TradeEvent(Base):
     premium: Mapped[float | None] = mapped_column(Float)
     note: Mapped[str | None] = mapped_column(Text)
     fraction: Mapped[float | None] = mapped_column(Float)  # of the position closed by this event
+    lots: Mapped[int | None] = mapped_column(Integer)  # whole lots bought/sold by this event
+    trigger_level: Mapped[float | None] = mapped_column(Float)  # stop/target level that fired
+    slippage_inr: Mapped[float | None] = mapped_column(
+        Float
+    )  # (fill - trigger) x units; <0 = worse
+    gap: Mapped[bool | None] = mapped_column(Boolean)  # filled worse than the level (gap/slippage)
     spot: Mapped[float | None] = mapped_column(Float)
     bid_qty: Mapped[int | None] = mapped_column(BigInteger)
     ask_qty: Mapped[int | None] = mapped_column(BigInteger)
@@ -577,6 +585,9 @@ class PortfolioSnapshot(Base):
     premium_at_risk_inr: Mapped[float] = mapped_column(Float)
     exposure_json: Mapped[dict[str, Any] | None] = mapped_column(Json)  # per theme
     realised_fillable_inr: Mapped[float | None] = mapped_column(Float)  # excl. unfillable (R2)
+    capital_used_inr: Mapped[float | None] = mapped_column(
+        Float
+    )  # entry premium x units, open trades
 
 
 class PredictionScore(Base):
