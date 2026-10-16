@@ -22,11 +22,22 @@ from app.ai.client import AiClient, CostEstimate
 from app.ai.schemas import TaggerOutput
 from app.db.models import Instrument
 from app.db.session import session_scope
+from app.history import universe
 from app.history.integrity import LABELS_ONLY
 from app.history.store import connect
 
 log = logging.getLogger(__name__)
 BATCH_SIZE = 10_000
+
+
+def _with_history_universe(
+    ctx: tagger.TagContext, con: duckdb.DuckDBPyConnection
+) -> tagger.TagContext:
+    """Allow every stock that was in F&O at any point in the history (incl. stocks since removed
+    or delisted), not just today's list: otherwise the tagger drops them (survivorship bias)."""
+    return tagger.TagContext(
+        sorted(set(ctx.universe) | universe.all_symbols(con)), ctx.sectors, ctx.mapper
+    )
 
 
 def pending(con: duckdb.DuckDBPyConnection) -> list[tuple[str, str, str | None, str]]:
@@ -44,7 +55,7 @@ def estimate(con: duckdb.DuckDBPyConnection) -> CostEstimate:
 
 def submit(con: duckdb.DuckDBPyConnection, ai: AiClient) -> list[str]:
     with session_scope() as s:
-        ctx = tagger.load_context(s)
+        ctx = _with_history_universe(tagger.load_context(s), con)
     rows = pending(con)
     batch_ids = []
     for i in range(0, len(rows), BATCH_SIZE):
@@ -62,7 +73,7 @@ def submit(con: duckdb.DuckDBPyConnection, ai: AiClient) -> list[str]:
 def collect(con: duckdb.DuckDBPyConnection, ai: AiClient) -> int:
     """Store labels from finished batches. Returns events written."""
     with session_scope() as s:
-        ctx = tagger.load_context(s)
+        ctx = _with_history_universe(tagger.load_context(s), con)
         sectors = {i.symbol: i.sector for i in s.query(Instrument)}
     written = 0
     batches = [

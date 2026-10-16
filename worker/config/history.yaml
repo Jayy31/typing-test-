@@ -32,10 +32,16 @@ sources:
               lot_size: NewBrdLotQty, underlying: UndrlygPric}
   index:                        # all NSE indices incl. NIFTY 50 and India VIX
     url: "https://archives.nseindia.com/content/indices/ind_close_all_{ddmmyyyy}.csv"
-    names: ["Nifty 50", "India VIX"]
+    # Nifty 50 (market), India VIX (regime) and the sector indices used as sector benchmarks
+    names: ["Nifty 50", "India VIX", "Nifty Bank", "Nifty IT", "Nifty Pharma", "Nifty Auto",
+            "Nifty Metal", "Nifty FMCG", "Nifty Realty", "Nifty Energy", "Nifty Oil & Gas",
+            "Nifty Financial Services", "Nifty Healthcare Index", "Nifty Infrastructure",
+            "Nifty India Defence", "Nifty Media", "Nifty PSU Bank"]
     columns: {name: "Index Name", close: "Closing Index Value"}
   announcements:                # NSE corporate announcements history, fetched in monthly chunks
     path: "/api/corporate-announcements?index=equities&from_date={from_ddmmyyyy}&to_date={to_ddmmyyyy}"
+  corporate_actions:            # NSE corporate actions history (ex-dates), monthly chunks
+    path: "/api/corporates-corporateActions?index=equities&from_date={from_ddmmyyyy}&to_date={to_ddmmyyyy}"
   gdelt:                        # GDELT DOC API covers only ~the last 3 months: used going forward
     url: "https://api.gdeltproject.org/api/v2/doc/doc"
     query: '(sourcecountry:IN) (Sensex OR Nifty OR "RBI" OR "SEBI")'
@@ -47,11 +53,42 @@ event_study:
   beta_lookback_days: 250
   beta_min_obs: 60
   market_index: "Nifty 50"
-  after_close_cutoff: "15:30"   # announcements after this count from the next trading day
+  # Reaction day from the announcement time (IST): before open -> same day (gap at the open);
+  # during market hours -> same day, flagged 'intraday' (part of the move may precede the news);
+  # after the close or on a non-trading day -> next trading day; no time -> same day, 'unknown'.
+  market_open: "09:15"
+  market_close: "15:30"
+  timing_weights: {pre_open: 1.0, intraday: 1.0, post_close: 1.0, non_trading_day: 1.0, unknown: 0.5}
+  point_in_time_universe: true  # only events on stocks that were in F&O on the reaction day
+  corporate_action_buffer_days: 3   # drop windows within +-3 trading days of a split/bonus/demerger/special dividend
+  confounding:                  # another major event for the same stock (or a sector-wide event) in the window
+    mode: downweight            # downweight | exclude
+    weight: 0.5
+    major_event_types: [results, mna, regulatory, legal_fraud, management, rating, block_deal,
+                        corporate_action, disaster, policy]
+  # Abnormal return vs the stock's sector index (fallback Nifty 50); both are stored.
+  # Market-wide event types always use Nifty 50 (a sector index would absorb the reaction).
+  market_benchmark_event_types: [policy, macro_data, geopolitical, commodity]
+  sector_index:
+    Banks: "Nifty Bank"
+    IT: "Nifty IT"
+    Pharma: "Nifty Pharma"
+    Healthcare: "Nifty Healthcare Index"
+    Auto: "Nifty Auto"
+    Metals: "Nifty Metal"
+    FMCG: "Nifty FMCG"
+    Realty: "Nifty Realty"
+    Power: "Nifty Energy"
+    "Oil & Gas": "Nifty Oil & Gas"
+    NBFC: "Nifty Financial Services"
+    Insurance: "Nifty Financial Services"
+    Infrastructure: "Nifty Infrastructure"
+    Defence: "Nifty India Defence"
   regimes:                      # market regime by India VIX at the event (no technical indicators)
     vix_low: 13
     vix_high: 20
-  min_n: 8                      # fewer analogues -> not used for prediction (shown only)
+  # Analogue weight in predictions = n / (n + ANALOGUE_PRIOR_N) (env, default 20), and only with
+  # at least ANALOGUE_MIN_N (env, default 5) events; n = effective (weighted) count.
   examples: 5
 
 iv_backfill:
@@ -59,8 +96,11 @@ iv_backfill:
   max_strikes_each_side: 3      # per expiry per day, around the day's ATM
   min_premium: 0.5
 
+corporate_actions:
+  manual_file: corporate_actions.yaml   # in data/: owner-verified factors (e.g. demergers)
+  max_move_without_action_pct: 25       # verify flags bigger one-day moves with no action recorded
+
 blend:                          # predicted move once analogues exist (before calibration in Phase 5)
-  analogue_weight: 0.5          # share of the analogue mean in the blended prediction
   analogue_window: 3            # which event-study window feeds predictions (trading days)
 
 backup:

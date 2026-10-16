@@ -5,6 +5,7 @@ No Postgres changes in this phase (history lives in DuckDB/Parquet on the VM). N
 ## 1. Env keys (names only; blank = default)
 - `HISTORY_DATA_DIR` (default `/data/history`), `DUCKDB_PATH` (default `/data/history/history.duckdb`)
 - `GDELT_ENABLED` (default true)
+- `ANALOGUE_PRIOR_N` (default 20) and `ANALOGUE_MIN_N` (default 5): analogue weight = n / (n + prior), none below the minimum
 - `AI_MODEL_KNOWLEDGE_CUTOFF` (YYYY-MM-DD, the training cutoff of the models you set). Empty = every
   historical date is treated as "AI knows the outcome": AI labels only, never predictions (R1).
 - Optional backup (off by default): `R2_BACKUP_ENABLED`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET`
@@ -22,7 +23,8 @@ IMG=news-options-worker
 RUN="docker run --rm --env-file worker/.env -v /data/history:/data/history $IMG"
 
 $RUN python -m app.history.backfill all            # equity, F&O, index bhavcopies, 5 years (~1 req/s, a few hours)
-$RUN python -m app.history.verify                   # STOP if it reports FAIL (see section 5)
+$RUN python -m app.history.corp_actions             # splits, bonus, demergers, special dividends (5 years)
+$RUN python -m app.history.verify                   # STOP and check if it says CHECK THE ITEMS ABOVE (section 5)
 $RUN python -m app.history.news_history announcements   # NSE announcements, monthly chunks
 $RUN python -m app.history.tagging estimate         # prints item count + cost estimate in INR
 ```
@@ -40,14 +42,26 @@ you get "being written by another process" — just retry later).
 
 ## 4. Scheduled jobs (automatic after deploy)
 - Mon-Fri 18:45 IST `history_nightly`: today's bhavcopies, live tagged news -> history, GDELT, IV.
-- Sun 06:30 IST `history_weekly`: curated events (`data/historical_events.yaml`), event study, R2 backup.
+- Sun 06:30 IST `history_weekly`: curated events (`data/historical_events.yaml`), your corporate-action
+  factors (`data/corporate_actions.yaml`), event study, R2 backup.
+- The nightly job also fetches corporate actions for the last and next 30 days.
 
 ## 5. Verification (`python -m app.history.verify`)
 Prints, per table: row counts, first/last date, missing weekdays (NSE holidays excluded where the
-file was a 404), symbols with gaps, and a PASS/FAIL line. If a source fails with "missing column",
+file was a 404), symbols with gaps, and a final line: `OK` or `CHECK THE ITEMS ABOVE` (exit code 1).
+It also lists:
+- corporate actions by kind, and any with no factor (usually demergers). Add the factor in
+  `data/corporate_actions.yaml` (it overrides the NSE text), then re-run `event_study`;
+- one-day moves above 25% with no corporate action recorded. Each one is either a missing
+  split/bonus/demerger (add it to the YAML) or a real move (leave it);
+- the point-in-time F&O universe: stocks ever in F&O, how many have since been removed (kept in
+  history), and lot sizes from the bhavcopy vs inferred (before July 2024, approximate);
+- the event study: events by timing (pre_open / intraday / post_close / non_trading_day /
+  unknown), how many were confounded or excluded, and how many used a sector benchmark. If a source fails with "missing column",
 NSE renamed a column: fix the mapping in `worker/config/history.yaml` and re-run the same command.
 
 ## 6. Check it works
 - `/why <id>` now has "HISTORICAL ANALOGUES" with n, average, hit rate and examples.
-- Predicted move source shows `blended` when at least `min_n` (8) analogues exist; else `scenario_tree`.
+- Predicted move source shows `blended` when at least 5 analogue events exist; their weight is
+  n / (n + 20), shown in `/why` with n and effective n. Otherwise `scenario_tree`.
 - Still "not yet calibrated" until Phase 5.

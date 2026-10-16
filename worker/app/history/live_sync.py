@@ -38,7 +38,7 @@ def sync_live_events(
                 (
                     f"live:{tag.id}",
                     when.date(),
-                    when.time().replace(tzinfo=None),
+                    when.time().replace(tzinfo=None) if item.published_at else None,  # unknown time
                     tag.symbol,
                     tag.sector or sectors.get(tag.symbol or ""),
                     tag.theme,

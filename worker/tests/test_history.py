@@ -95,7 +95,7 @@ def test_iv_backfill_recovers_vol():
 
 
 def _an(n: int) -> AnalogueResult:
-    return AnalogueResult("stock", "all", 3, n, 2.0, 1.8, 0.7, 1.5, 0.5, 3.0)
+    return AnalogueResult("stock", "all", 3, n, float(n), 2.0, 1.8, 0.7, 1.5, 0.5, 3.0)
 
 
 def _tree() -> list[Scenario]:
@@ -120,9 +120,9 @@ def _tree() -> list[Scenario]:
 
 
 def test_combine_blends_only_usable_analogues():
-    base, sc = combine(_tree(), "bullish", _an(2), True, 0.5)
+    base, sc = combine(_tree(), "bullish", _an(4), True)  # below ANALOGUE_MIN_N (5)
     assert base is not None and base.source == "scenario_tree" and len(sc) == 2
-    pred, sc = combine(_tree(), "bullish", _an(50), True, 0.5)
+    pred, sc = combine(_tree(), "bullish", _an(20), True)  # weight 20 / (20 + 20) = 0.5
     assert pred is not None and pred.source == "blended" and len(sc) == 5
     assert sum(s.probability for s in sc) == pytest.approx(1.0)
     assert pred.move_pct == pytest.approx(

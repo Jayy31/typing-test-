@@ -8,11 +8,13 @@ load errors, symbols with gaps, and option/IV coverage. Exit code 1 if anything 
 
 import sys
 from datetime import date
+from typing import Any
 
 import duckdb
 
 from app.history.backfill import KINDS, weekdays
 from app.history.store import connect
+from app.yaml_config import load_yaml
 
 TABLES = [
     "hist_prices",
@@ -25,6 +27,7 @@ TABLES = [
     "analogue_stats",
     "hist_iv",
     "hist_atm_iv",
+    "hist_corp_actions",
 ]
 
 
@@ -89,7 +92,89 @@ def report(con: duckdb.DuckDBPyConnection) -> tuple[list[str], bool]:
         lines.append(f"  {n_sym} stocks, {n_rows:,} option rows, {d_lo} .. {d_hi}")
     iv_days = con.execute("SELECT count(DISTINCT date) FROM hist_atm_iv").fetchone()[0]  # type: ignore[index]
     lines.append(f"  ATM IV history: {iv_days} days")
+
+    lines.append("\n== Corporate actions ==")
+    for kind, n, unknown in con.execute(
+        "SELECT kind, count(*), count(*) FILTER (WHERE factor IS NULL AND amount IS NULL) FROM hist_corp_actions GROUP BY 1 ORDER BY 1"
+    ).fetchall():
+        lines.append(
+            f"  {kind:17s} {n:>5}" + (f"  ({unknown} without a factor)" if unknown else "")
+        )
+    unknown = con.execute(
+        "SELECT symbol, ex_date, kind FROM hist_corp_actions WHERE factor IS NULL AND amount IS NULL ORDER BY ex_date LIMIT 10"
+    ).fetchall()
+    if unknown:
+        lines.append(
+            "  no factor (returns across these days unused; add the factor in data/corporate_actions.yaml):"
+        )
+        lines += [f"    {s} {d} {k}" for s, d, k in unknown]
+    limit = float(load_yaml("history.yaml")["corporate_actions"]["max_move_without_action_pct"])
+    big = big_moves_without_action(con, limit)
+    lines.append(f"  one-day moves > {limit:.0f}% with no corporate action recorded: {len(big)}")
+    lines += [f"    {s} {d0} -> {d1}: {r:+.1f}%" for s, d0, d1, r in big[:20]]
+    if big:
+        problems = True
+        lines.append(
+            "    check each: a missing split/bonus/demerger (add it to data/corporate_actions.yaml) or a real move"
+        )
+
+    lines.append("\n== Point-in-time F&O universe ==")
+    row = con.execute("SELECT count(DISTINCT symbol), max(date) FROM hist_fno_universe").fetchone()
+    if row and row[1]:
+        latest = con.execute(
+            "SELECT count(*) FROM hist_fno_universe WHERE date = ?", [row[1]]
+        ).fetchone()[0]  # type: ignore[index]
+        lines.append(
+            f"  {row[0]} stocks were in F&O at some point; {latest} on {row[1]}; "
+            f"{row[0] - latest} since removed or delisted (kept)"
+        )
+        for src, n in con.execute(
+            "SELECT coalesce(lot_source, 'missing'), count(*) FROM hist_fno_universe GROUP BY 1 ORDER BY 1"
+        ).fetchall():
+            lines.append(f"  lot sizes {src:9s} {n:>9,} stock-days")
+    else:
+        lines.append(
+            "  empty (load options first): analogues cannot use the point-in-time universe"
+        )
+        problems = True
+
+    lines.append("\n== Event study ==")
+    for timing, n in con.execute(
+        'SELECT timing, count(DISTINCT event_id) FROM event_reactions WHERE "window" = 0 GROUP BY 1 ORDER BY 1'
+    ).fetchall():
+        lines.append(f"  timing {timing:16s} {n:>8,} events")
+    stats = con.execute("""
+        SELECT count(DISTINCT event_id) FILTER (WHERE confounded),
+               count(DISTINCT event_id) FILTER (WHERE weight = 0),
+               count(DISTINCT event_id) FILTER (WHERE abnormal_sector IS NOT NULL),
+               count(DISTINCT event_id)
+        FROM event_reactions""").fetchone()
+    if stats and stats[3]:
+        lines.append(
+            f"  events: {stats[3]:,} | confounded in some window {stats[0]:,} | excluded (weight 0) {stats[1]:,} | "
+            f"with sector benchmark {stats[2]:,}"
+        )
     return lines, problems
+
+
+def big_moves_without_action(
+    con: duckdb.DuckDBPyConnection, limit_pct: float
+) -> list[tuple[Any, ...]]:
+    """Close-to-close moves above the limit between consecutive trading days of a stock, with no
+    corporate action whose ex-date falls in (previous day, day]."""
+    return con.execute(
+        """
+        WITH r AS (
+            SELECT symbol, date, lag(date) OVER w AS prev_date,
+                   (close / lag(close) OVER w - 1) * 100 AS ret
+            FROM hist_prices WINDOW w AS (PARTITION BY symbol ORDER BY date))
+        SELECT symbol, prev_date, date, ret FROM r
+        WHERE abs(ret) > ? AND NOT EXISTS (
+            SELECT 1 FROM hist_corp_actions c
+            WHERE c.symbol = r.symbol AND c.ex_date > r.prev_date AND c.ex_date <= r.date)
+        ORDER BY abs(ret) DESC""",
+        [limit_pct],
+    ).fetchall()
 
 
 def main() -> int:

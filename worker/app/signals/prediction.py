@@ -69,13 +69,13 @@ def combine(
     direction: str,
     analogue: "AnalogueResult | None",
     agree: bool,
-    analogue_weight: float,
 ) -> tuple[Prediction | None, list[Scenario]]:
-    """Scenario tree alone, or blended with analogues when there are enough of them."""
+    """Scenario tree alone, or blended with analogues weighted n / (n + ANALOGUE_PRIOR_N)
+    (zero below ANALOGUE_MIN_N events)."""
     base = from_scenarios(ai_scenarios, direction)
-    if base is None or analogue is None or not analogue.usable or analogue_weight <= 0:
+    if base is None or analogue is None or analogue.weight <= 0:
         return base, ai_scenarios
-    w = min(analogue_weight, 1.0)
+    w = min(analogue.weight, 1.0)
     window = max(1, analogue.window)
     mixed = [s.model_copy(update={"probability": s.probability * (1 - w)}) for s in ai_scenarios]
     mixed += analogue_scenarios(analogue, direction, agree, w, window)

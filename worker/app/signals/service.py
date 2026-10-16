@@ -53,9 +53,8 @@ class WorkItem:
 def predict(item: WorkItem, out: AnalystOutput) -> tuple[Prediction | None, list[Scenario]]:
     """Predicted move in our direction (+ the distribution the simulator samples):
     scenario tree alone, or blended with historical analogues once there are enough."""
-    weight = float(load_yaml("history.yaml")["blend"]["analogue_weight"])
     agree = out.direction == item.cand.direction  # analyst agrees with the news' direction
-    return combine(out.scenarios, out.direction, item.analogue, agree, weight)
+    return combine(out.scenarios, out.direction, item.analogue, agree)
 
 
 def _last_analysis(s: Session, symbol: str) -> Analysis | None:
@@ -480,6 +479,8 @@ def analogue_json(a: AnalogueResult) -> dict[str, Any]:
         "regime": a.regime,
         "window": a.window,
         "n": a.n,
+        "n_eff": round(a.n_eff, 2),
+        "weight": round(a.weight, 3),
         "mean": round(a.mean, 3),
         "median": round(a.median, 3),
         "hit_rate": round(a.hit_rate, 3),

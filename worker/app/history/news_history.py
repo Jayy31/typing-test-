@@ -10,7 +10,7 @@ import hashlib
 import logging
 import sys
 import time
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import duckdb
@@ -68,9 +68,7 @@ def announcements(start: date, end: date, con: duckdb.DuckDBPyConnection) -> int
         rows = [
             (
                 news_id(i.url, i.title),
-                (i.published_at or datetime.combine(lo, datetime.min.time(), IST)).replace(
-                    tzinfo=None
-                ),
+                i.published_at.astimezone(IST).replace(tzinfo=None),  # IST, naive
                 i.title.split(":")[0],
                 i.title,
                 i.body,
@@ -78,6 +76,7 @@ def announcements(start: date, end: date, con: duckdb.DuckDBPyConnection) -> int
                 "nse_announcements",
             )
             for i in items
+            if i.published_at is not None  # no timestamp -> no reliable reaction day
         ]
         added += store_news(con, rows)
         if hi < datetime.now(IST).date() - timedelta(days=3):  # only freeze complete past months
@@ -93,7 +92,9 @@ def parse_gdelt(payload: dict[str, Any]) -> list[tuple[Any, ...]]:
         seen = a.get("seendate")  # e.g. 20261015T093000Z
         if not (url and title and seen):
             continue
-        ts = datetime.strptime(seen, "%Y%m%dT%H%M%SZ")
+        # GDELT times are UTC; the history stores IST (reaction-day rules use IST)
+        utc = datetime.strptime(seen, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+        ts = utc.astimezone(IST).replace(tzinfo=None)
         rows.append(
             (news_id(url, title), ts, None, title, None, url, f"gdelt:{a.get('domain', '')}")
         )
