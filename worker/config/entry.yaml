@@ -1,0 +1,9 @@
+# Entry rules (DESIGN_V2 "Rules and outputs v2.1" A4/A5). Mode switches let the backtester compare.
+no_entry_first_minutes: 15         # after the 09:15 open
+max_premove_fraction: 0.6          # skip if the stock already moved > 60% of the predicted move
+event_iv_percentile_min: 70        # "high IV" before a known event
+require_post_crush_ev: true        # then require EV > 0 after the expected IV drop
+signal_entry_ttl_minutes: 120      # a signal not entered within this time expires (used in 3b)
+priced_in:
+  enabled: true
+  max_penalty: 30                  # score points, scaled by premove fraction (DESIGN.md section 8)
