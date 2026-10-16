@@ -1,0 +1,5 @@
+# Owner-verified corporate actions. They override what was parsed from NSE text.
+# Use this for demergers (NSE text has no ratio): factor = price multiplier for dates BEFORE the
+# ex-date, e.g. the parent's cost-of-acquisition share from the company's demerger announcement.
+#   - {symbol: ABC, ex_date: 2023-07-20, kind: demerger, factor: 0.95, note: "XYZ unit demerged"}
+actions: []

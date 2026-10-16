@@ -392,3 +392,27 @@ Added by the owner after Phase 3a. Values in config; nothing here is auto-applie
 |---|---|---|---|
 | L1 | Whole-lot booking | An option lot cannot be split. Default `LOTS_PER_SIGNAL=3`, `PARTIAL_BOOKING_MODE=per_lot`: 1 lot at T1, 1 at T2, 1 at T3 or the trailing stop. `single_exit`: the whole position exits at `single_exit_target` (default T2); earlier targets only move the stop. If lots don't divide by the number of targets, the remainder goes to the last target and is logged; with fewer lots than targets the position closes at target number `lots`. Fractional lots are never recorded. Alerts say "Sold 1 of 3 lots at ...". Portfolio tracks capital used. EV in Rs is per position. | 3c (backtester compares both modes in 6) |
 | L2 | Stop slippage visibility | Every stop/target fill stores its trigger level, the fill price, slippage in Rs (fill - level, x units) and a `gap` flag when filled worse than the level (price gapped between observations; fills are at the observed bid, never at an unseen level). Totals per trade, in `/stats`, and in the weekly digest (Phase 5). | 3c (digest in 5) |
+
+### Owner fixes to the history (Phase 4, before merge)
+- **H1 Corporate actions.** NSE corporate actions for 5 years (splits, bonus, demergers, special
+  dividends) in `hist_corp_actions`; owner-verified factors in `data/corporate_actions.yaml` win.
+  Prices are back-adjusted for the event study; any window within ±3 trading days of an action
+  is dropped; option contracts are followed through NSE's adjustment (strike × factor, lot ÷
+  factor). `verify` flags one-day moves > 25% with no action recorded.
+- **H2 Event timing.** Reaction day from the IST announcement time: before 09:15 → same day
+  (`pre_open`); 09:15–15:30 → same day, flagged `intraday`; after 15:30 → next trading day
+  (`post_close`); weekend/holiday → next trading day; no time → same day, `unknown`, weight 0.5.
+- **H3 Point-in-time universe.** F&O list and lot size as of each date from the bhavcopies,
+  including later removed or delisted stocks; the history tagger accepts those symbols too.
+  Lot sizes before July 2024 are inferred (marked `inferred`); owner-known values in
+  `data/lot_size_overrides.yaml` replace inferred ones (never exact bhavcopy lots). For trades or
+  events on inferred lots the backtester (Phase 6) reports **% of premium as the primary metric**
+  and marks rupee values "approximate (inferred lot size)" (`universe.value_report`).
+- **H4 Confounding.** Another major event of a different type for the same stock, or a
+  sector-wide event, inside the window → `confounded`; down-weighted (0.5) or excluded (config).
+  Several articles on one event count once.
+- **H5 Analogue weight.** weight = n / (n + `ANALOGUE_PRIOR_N`) (default 20), using the weighted
+  n, and 0 below `ANALOGUE_MIN_N` (5) events. `/why` shows n, effective n and the weight.
+- **H6 Sector benchmark.** Abnormal return vs the stock's sector index (map in `history.yaml`),
+  falling back to Nifty 50; both stored. Market-wide event types (policy, macro, geopolitical,
+  commodity) always use Nifty 50.

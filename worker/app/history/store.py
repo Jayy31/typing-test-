@@ -14,7 +14,7 @@ import duckdb
 
 from app.config import get_settings
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 
 DDL = [
     """CREATE TABLE IF NOT EXISTS hist_prices (
@@ -34,16 +34,38 @@ DDL = [
         theme VARCHAR, event_type VARCHAR, direction VARCHAR, source VARCHAR,
         sentiment DOUBLE, surprise DOUBLE, title VARCHAR, url VARCHAR,
         taxonomy_ver VARCHAR, prompt_ver VARCHAR)""",
+    # abnormal_ret = primary (vs sector index, else Nifty 50); abnormal_mkt / abnormal_sector both kept
     """CREATE TABLE IF NOT EXISTS event_reactions (
-        event_id VARCHAR, symbol VARCHAR, "window" INTEGER, raw_ret DOUBLE, abnormal_ret DOUBLE,
-        mfe DOUBLE, mae DOUBLE, atm_ce_ret DOUBLE, atm_pe_ret DOUBLE,
+        event_id VARCHAR, symbol VARCHAR, "window" INTEGER, reaction_day DATE, timing VARCHAR,
+        raw_ret DOUBLE, abnormal_ret DOUBLE, abnormal_mkt DOUBLE, abnormal_sector DOUBLE,
+        benchmark VARCHAR, mfe DOUBLE, mae DOUBLE, atm_ce_ret DOUBLE, atm_pe_ret DOUBLE,
+        confounded BOOLEAN, weight DOUBLE,
         PRIMARY KEY (event_id, symbol, "window"))""",
     """CREATE TABLE IF NOT EXISTS analogue_stats (
         event_type VARCHAR, sector VARCHAR, symbol VARCHAR, regime VARCHAR, "window" INTEGER,
-        n INTEGER, mean_abn_ret DOUBLE, median DOUBLE, hit_rate DOUBLE, std DOUBLE,
+        n INTEGER, n_eff DOUBLE, mean_abn_ret DOUBLE, median DOUBLE, hit_rate DOUBLE, std DOUBLE,
         p25 DOUBLE, p75 DOUBLE, computed_at TIMESTAMP)""",
     "CREATE TABLE IF NOT EXISTS store_meta (key VARCHAR PRIMARY KEY, value VARCHAR)",
+    # Phase 4
+    """CREATE TABLE IF NOT EXISTS loaded_files (
+        kind VARCHAR, date DATE, status VARCHAR, rows INTEGER, loaded_at TIMESTAMP,
+        PRIMARY KEY (kind, date))""",
+    """CREATE TABLE IF NOT EXISTS hist_raw_news (
+        news_id VARCHAR PRIMARY KEY, ts TIMESTAMP, symbol VARCHAR, title VARCHAR, body VARCHAR,
+        url VARCHAR, source VARCHAR, tag_status VARCHAR DEFAULT 'pending', batch_id VARCHAR)""",
+    """CREATE TABLE IF NOT EXISTS hist_iv (
+        date DATE, symbol VARCHAR, expiry DATE, strike DOUBLE, type VARCHAR, iv DOUBLE,
+        spot DOUBLE, PRIMARY KEY (date, symbol, expiry, strike, type))""",
+    """CREATE TABLE IF NOT EXISTS hist_atm_iv (
+        date DATE, symbol VARCHAR, expiry DATE, atm_iv DOUBLE, PRIMARY KEY (date, symbol))""",
+    # v3: corporate actions (price factor = multiplier for prices BEFORE the ex-date; NULL = unknown)
+    """CREATE TABLE IF NOT EXISTS hist_corp_actions (
+        symbol VARCHAR, ex_date DATE, kind VARCHAR, subject VARCHAR, factor DOUBLE, amount DOUBLE,
+        source VARCHAR, PRIMARY KEY (symbol, ex_date, kind))""",
+    "ALTER TABLE hist_fno_universe ADD COLUMN IF NOT EXISTS lot_source VARCHAR",
 ]
+# Derived tables rebuilt by the event study; dropped when their columns change.
+_REBUILD = {3: ["event_reactions", "analogue_stats"]}
 
 
 class StoreBusyError(RuntimeError):
@@ -62,6 +84,13 @@ def parquet_dir(kind: str) -> Path:
 
 
 def init_schema(con: duckdb.DuckDBPyConnection) -> None:
+    con.execute("CREATE TABLE IF NOT EXISTS store_meta (key VARCHAR PRIMARY KEY, value VARCHAR)")
+    row = con.execute("SELECT value FROM store_meta WHERE key = 'schema_version'").fetchone()
+    old = int(row[0]) if row else SCHEMA_VERSION
+    for ver, tables in _REBUILD.items():
+        if old < ver:
+            for tbl in tables:
+                con.execute(f"DROP TABLE IF EXISTS {tbl}")
     for stmt in DDL:
         con.execute(stmt)
     con.execute(
@@ -69,14 +98,31 @@ def init_schema(con: duckdb.DuckDBPyConnection) -> None:
     )
 
 
+def _needs_upgrade(path: Path) -> bool:
+    try:
+        con = duckdb.connect(str(path), read_only=True)
+    except duckdb.Error:
+        return False  # locked by a writer
+    try:
+        row = con.execute("SELECT value FROM store_meta WHERE key = 'schema_version'").fetchone()
+    except duckdb.Error:
+        return True
+    finally:
+        con.close()
+    return row is None or int(row[0]) < SCHEMA_VERSION
+
+
 @contextmanager
 def connect(path: Path | None = None, write: bool = False) -> Iterator[duckdb.DuckDBPyConnection]:
     path = path or db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     if not write:
-        if not path.exists():
-            with connect(path, write=True):
-                pass
+        if not path.exists() or _needs_upgrade(path):
+            try:
+                with connect(path, write=True):  # create / upgrade the schema
+                    pass
+            except StoreBusyError:
+                pass  # a writer is running; it upgrades the schema itself
         con = duckdb.connect(str(path), read_only=True)
         try:
             yield con

@@ -3,9 +3,8 @@
 import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
-import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -16,17 +15,29 @@ from app.rules.engine import RuleHit
 from app.signals.candidates import Candidate, evidence_for, weighted_sentiment
 from app.yaml_config import load_yaml
 
+if TYPE_CHECKING:
+    from app.history.analogues import AnalogueResult
+
 log = logging.getLogger(__name__)
 PROMPT_VERSION = "analyst_v2"
 SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "analyst_v2.md").read_text(encoding="utf-8")
-ANALOGUES_FILE = Path(__file__).resolve().parents[3] / "data" / "historical_events.yaml"
 
 
-def load_analogues(event_types: frozenset[str], sector: str, limit: int) -> list[dict[str, Any]]:
-    data = yaml.safe_load(ANALOGUES_FILE.read_text(encoding="utf-8")) or {}
-    events: list[dict[str, Any]] = data.get("events") or []
-    matches = [e for e in events if e.get("event_type") in event_types or e.get("sector") == sector]
-    return matches[:limit]
+def analogue_text(analogue: "AnalogueResult | None") -> str:
+    """Base rate from the event study (direction-adjusted abnormal returns), or a clear 'none'."""
+    if analogue is None:
+        return "none available (history not loaded yet)"
+    head = (
+        f"{analogue.line()}; median {analogue.median:+.1f}%, p25 {analogue.p25:+.1f}%, "
+        f"p75 {analogue.p75:+.1f}%, std {analogue.std:.1f}% (positive = moved in the news direction)"
+    )
+    if not analogue.usable:
+        head += " [too few events: indicative only]"
+    ex = "\n".join(
+        f"  - {e['date']} {e['symbol']} ({e['direction']}): {e['abnormal_pct']:+.1f}% | {e['title']}"
+        for e in analogue.examples
+    )
+    return head + ("\n" + ex if ex else "")
 
 
 def sector_context(s: Session, sector: str, symbol: str, now: datetime) -> str:
@@ -80,7 +91,12 @@ def calendar_text(s: Session, symbol: str, today: date) -> str:
 
 
 def build_user_message(
-    s: Session, cand: Candidate, hits: list[RuleHit], changes: dict[str, float], now: datetime
+    s: Session,
+    cand: Candidate,
+    hits: list[RuleHit],
+    changes: dict[str, float],
+    now: datetime,
+    analogue: "AnalogueResult | None" = None,
 ) -> tuple[str, set[int]]:
     """Assemble the full context. Returns (message, ids of provided news items)."""
     cfg = load_yaml("signals.yaml")["candidates"]
@@ -93,7 +109,6 @@ def build_user_message(
         f"  {i.title}\n  {(i.summary or '')[:600]}"
         for i in items
     )
-    analogues = load_analogues(cand.event_types, sector, int(cfg["analogues"]))
     rules = "\n".join(f"- {h.name} ({h.kind}): {h.direction}, {h.why}" for h in hits) or "- none"
     msg = (
         f"Today: {now:%Y-%m-%d %H:%M} IST\n"
@@ -107,7 +122,7 @@ def build_user_message(
         f"MACRO:\n{macro_text(s, changes)}\n\n"
         f"UPCOMING EVENTS:\n{calendar_text(s, cand.symbol, now.date())}\n\n"
         f"RULES ENGINE (for your information):\n{rules}\n\n"
-        f"HISTORICAL ANALOGUES:\n{analogues or 'none provided'}"
+        f"HISTORICAL ANALOGUES (event study, actual prices):\n{analogue_text(analogue)}"
     )
     return msg, {i.news_id for i in items}
 

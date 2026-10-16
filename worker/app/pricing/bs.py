@@ -116,3 +116,38 @@ def implied_vol(
         if hi - lo < 1e-6:
             break
     return (lo + hi) / 2
+
+
+def implied_vol_vec(
+    premium: ArrayLike,
+    s: ArrayLike,
+    k: ArrayLike,
+    t: ArrayLike,
+    r: float,
+    is_call: ArrayLike,
+    iters: int = 60,
+) -> F:
+    """Vectorised IV by bisection for many options at once (history backfill).
+    Returns NaN where the premium is outside no-arbitrage bounds or inputs are invalid."""
+    p = np.asarray(premium, dtype=np.float64)
+    s_ = np.asarray(s, dtype=np.float64)
+    k_ = np.asarray(k, dtype=np.float64)
+    t_ = np.maximum(np.asarray(t, dtype=np.float64), MIN_T)
+    call = np.asarray(is_call, dtype=bool)
+
+    def px(sig: F) -> F:
+        d1 = (np.log(s_ / k_) + (r + 0.5 * sig * sig) * t_) / (sig * np.sqrt(t_))
+        d2 = d1 - sig * np.sqrt(t_)
+        c = s_ * norm_cdf(d1) - k_ * np.exp(-r * t_) * norm_cdf(d2)
+        put = k_ * np.exp(-r * t_) * norm_cdf(-d2) - s_ * norm_cdf(-d1)
+        return np.asarray(np.where(call, c, put), dtype=np.float64)
+
+    lo = np.full(p.shape, 1e-3)
+    hi = np.full(p.shape, 5.0)
+    ok = (p > px(lo)) & (p < px(hi)) & (s_ > 0) & (k_ > 0) & (p > 0)
+    for _ in range(iters):
+        mid = (lo + hi) / 2
+        above = px(mid) > p
+        hi = np.where(above, mid, hi)
+        lo = np.where(above, lo, mid)
+    return np.asarray(np.where(ok, (lo + hi) / 2, np.nan), dtype=np.float64)

@@ -1,0 +1,6 @@
+# Optional: known historical lot sizes. They replace INFERRED lot sizes (days before July 2024,
+# whose bhavcopy has no lot column); exact lots from the bhavcopy are never changed.
+# `to` is optional (open-ended until the next exact lot). Re-run `python -m app.history.event_study`
+# (or wait for Sunday's job) after editing.
+#   - {symbol: ABC, from: 2023-01-01, to: 2023-06-29, lot_size: 1200}
+overrides: []

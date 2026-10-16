@@ -1,5 +1,7 @@
 """/why drill-down: the full reasoning behind a signal, rebuilt from stored data."""
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -21,6 +23,25 @@ from app.yaml_config import load_yaml
 
 def _bullets(items: list[str] | None, empty: str = "none recorded") -> str:
     return "\n".join(f"  - {x}" for x in items) if items else f"  - {empty}"
+
+
+def analogue_lines(a: dict[str, Any]) -> list[str]:
+    """n, effective n and the weight given to analogues: n / (n + ANALOGUE_PRIOR_N), 0 below the minimum."""
+    weight = float(a.get("weight", 0.0))
+    use = (
+        f"weight {weight:.0%} in the prediction"
+        if a.get("usable")
+        else "too few events: shown only, weight 0%"
+    )
+    out = [
+        f"  n={a['n']} (effective {float(a.get('n_eff', a['n'])):.1f}), {use}",
+        f"  avg {a['mean']:+.1f}%, median {a['median']:+.1f}%, hit {a['hit_rate']:.0%}, "
+        f"p25..p75 {a['p25']:+.1f}..{a['p75']:+.1f}% ({a['level']}, {a['regime']}, {a['window']}d)",
+    ]
+    return out + [
+        f"  - {e['date']} {e['symbol']} ({e['direction']}): {e['abnormal_pct']:+.1f}% | {e['title']}"
+        for e in a.get("examples", [])
+    ]
 
 
 def build_why(s: Session, signal_id: int) -> str | None:
@@ -191,10 +212,15 @@ def build_why(s: Session, signal_id: int) -> str | None:
         _bullets(js.get("invalidators")),
     ]
 
-    out += ["", "HISTORICAL ANALOGUES"]
-    out += [_bullets([str(a) for a in an.analogues or []], "none in the library yet")]
+    out += ["", "HISTORICAL ANALOGUES (event study, actual prices)"]
+    stats = [a for a in (an.analogues or []) if isinstance(a, dict) and "n" in a]
+    out += (
+        analogue_lines(stats[0])
+        if stats
+        else ["  - none yet (history not loaded or no similar events)"]
+    )
     if js.get("analogue_notes"):
-        out.append(f"  {js['analogue_notes']}")
+        out.append(f"  Analyst: {js['analogue_notes']}")
 
     out += ["", "TIMELINE"]
     for v in s.scalars(

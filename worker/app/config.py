@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     history_data_dir: str = "/data/history"
     duckdb_path: str = "/data/history/history.duckdb"
     gdelt_enabled: bool = True
+    # Analogue weight = n / (n + prior); analogues ignored below the minimum number of events
+    analogue_prior_n: float = 20
+    analogue_min_n: int = 5
 
     # Optional Cloudflare R2 backup of the Parquet history (Phase 4), off by default
     r2_backup_enabled: bool = False

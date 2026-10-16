@@ -25,6 +25,7 @@ from app.config import IST, get_settings
 from app.db.session import session_scope
 from app.health.cleanup import cleanup
 from app.health.heartbeat import failing_jobs
+from app.history import jobs as history_jobs
 from app.jobs import JobFn, run_job
 from app.market.live import (
     configured_poll_minutes,
@@ -174,6 +175,19 @@ def build_scheduler() -> BlockingScheduler:
             poll_universe_options,
             CronTrigger(day_of_week="mon-fri", hour=h, minute=m, timezone=IST),
         )
+    # History (Phase 4): one job at a time holds the DuckDB writer lock
+    _job(
+        sched,
+        "history_nightly",
+        history_jobs.nightly,
+        CronTrigger(day_of_week="mon-fri", hour=18, minute=45, timezone=IST),
+    )
+    _job(
+        sched,
+        "history_weekly",
+        history_jobs.weekly,
+        CronTrigger(day_of_week="sun", hour=6, minute=30, timezone=IST),
+    )
     return sched
 
 

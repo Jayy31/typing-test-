@@ -1,5 +1,6 @@
-# Curated library of past events and how stocks/sectors reacted. Used as "historical analogues".
-# Empty on purpose: entries must be verified facts, never guesses. Phase 5 builds this library.
-# Entry shape:
-#   - {event_type: results, sector: IT, description: "...", outcome: "...", move_pct: -4.2, date: 2024-01-12}
+# Owner-verified past events, loaded into the history store every Sunday (source 'curated').
+# Entries must be verified facts, never guesses. Price reactions come from the event study.
+# Entry shape (symbol OR sector; time optional, IST):
+#   - {date: 2024-01-12, symbol: INFY, sector: IT, event_type: results, direction: bearish,
+#      title: "Q3 revenue guidance cut", time: "16:10"}
 events: []
