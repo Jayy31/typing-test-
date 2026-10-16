@@ -45,6 +45,8 @@ class Instrument(Base):
     aliases: Mapped[list[str]] = mapped_column(Json, default=list)
     is_fno: Mapped[bool] = mapped_column(Boolean, default=False)
     lot_size: Mapped[int | None] = mapped_column(Integer)
+    isin: Mapped[str | None] = mapped_column(String(16))
+    instrument_key: Mapped[str | None] = mapped_column(String(64))  # broker key, e.g. NSE_EQ|INE...
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
 
 
@@ -197,6 +199,16 @@ class Signal(Base):
     edge_ratio: Mapped[float | None] = mapped_column(Float)
     iv_percentile: Mapped[float | None] = mapped_column(Float)
     event_iv_premium: Mapped[float | None] = mapped_column(Float)
+    # option choice and pricing state
+    option_type: Mapped[str | None] = mapped_column(String(2))  # CE / PE
+    pricing_status: Mapped[str | None] = mapped_column(String(16))  # priced / pending / failed
+    # latency and freshness (v2.1 B7)
+    news_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    news_to_signal_s: Mapped[float | None] = mapped_column(Float)
+    premove_pct: Mapped[float | None] = mapped_column(
+        Float
+    )  # stock move in our direction before signal
+    data_age_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
 
 
 class SignalVersion(Base):
@@ -457,3 +469,41 @@ class BacktestTrade(Base):
     pnl_pct: Mapped[float | None] = mapped_column(Float)
     pnl_inr: Mapped[float | None] = mapped_column(Float)
     details_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+
+
+class RejectedCandidate(Base):
+    """Every candidate rejected from the candidate stage onward, with stage and reason (v2.1 B1).
+
+    The counterfactual tracker (Phase 3b) fills the outcome columns: what the stock and the
+    would-be option did afterwards under the same exit rules.
+    """
+
+    __tablename__ = "rejected_candidates"
+    __table_args__ = (UniqueConstraint("dedupe_key"),)
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    dedupe_key: Mapped[str] = mapped_column(String(128))
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    stage: Mapped[str] = mapped_column(
+        String(24)
+    )  # candidate/score/eligibility/liquidity/edge/entry/ev
+    reason: Mapped[str] = mapped_column(Text)
+    direction: Mapped[str | None] = mapped_column(String(8))  # bullish / bearish
+    score: Mapped[float | None] = mapped_column(Float)
+    analysis_id: Mapped[int | None] = mapped_column(ForeignKey("analyses.id"))
+    signal_id: Mapped[int | None] = mapped_column(ForeignKey("signals.id"))
+    spot_at_reject: Mapped[float | None] = mapped_column(Float)
+    predicted_move_pct: Mapped[float | None] = mapped_column(Float)
+    window_days: Mapped[int | None] = mapped_column(Integer)
+    ref_expiry: Mapped[date | None] = mapped_column(Date)
+    ref_strike: Mapped[float | None] = mapped_column(Float)
+    ref_option_type: Mapped[str | None] = mapped_column(String(2))
+    ref_premium: Mapped[float | None] = mapped_column(Float)  # ask at rejection time
+    details_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    # counterfactual outcome (Phase 3b tracker)
+    outcome_status: Mapped[str] = mapped_column(String(16), default="open", server_default="open")
+    stock_return_pct: Mapped[float | None] = mapped_column(Float)
+    option_return_pct: Mapped[float | None] = mapped_column(Float)
+    exit_reason: Mapped[str | None] = mapped_column(String(16))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -1,0 +1,39 @@
+# Live options, liquidity, implied move and simulator settings (Phase 3a). All tunable.
+market_hours: {open: "09:15", close: "15:30"}
+polling:
+  active_every_min_env: OPTION_POLL_ACTIVE_MIN   # stocks with live signals / open trades
+  universe_times: ["09:35", "12:30"]             # full F&O universe snapshots
+  strikes_each_side: 6                           # strikes stored around ATM per chain
+  store_full_res_days: 7                         # older quotes are thinned to one per strike per day
+
+liquidity:                    # per option strike; all must pass
+  min_oi: 50000               # open interest (shares)
+  min_volume: 500             # contracts traded today
+  max_spread_pct: 5.0         # (ask - bid) / mid, % of premium
+  min_premium: 2.0            # avoid lottery tickets
+  max_quote_age_min: 10       # stale quotes are rejected
+  score_weights: {spread: 0.5, oi: 0.25, volume: 0.25}   # liquidity score 0-100 (scoring component)
+
+iv:
+  lookback_days: 120          # IV percentile window (own history from option_quotes)
+  min_samples: 20             # fewer daily samples -> percentile unknown (shown as n/a)
+
+candidates:                   # strikes/expiries the simulator evaluates
+  itm_strikes: 2
+  otm_strikes: 3
+  expiries: 2                 # current + next monthly
+
+simulator:
+  horizon_cap_days: 20        # max simulated holding (also capped by expiry - time stop)
+  scenario_sd_fraction: 0.5   # spread of each scenario's move around its mean (x |move|)
+  min_scenario_sd_pct: 1.0    # floor for that spread, in stock %
+  use_iv_noise: true          # add daily noise from the option's own IV
+  iv_crush_points: 8.0        # IV drop (vol points) after a known event inside the window
+  iv_change_on_no_event: 0.0
+  seed: 7
+  # Trading costs per round trip, % of premium (brokerage + STT + exchange + slippage beyond spread)
+  costs_pct_of_premium: 1.5
+  brokerage_inr_per_order: 20
+
+implied_move:
+  edge_gate_flag: feat.implied_move_gate   # gate threshold comes from env EDGE_RATIO_MIN

@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     ai_model_bear: str = ""  # mid
     ai_model_judge: str = ""  # strongest
     ai_multi_agent_max_per_day: int = 30
+    # Latest training cutoff of any AI model used (YYYY-MM-DD). Before it, AI gives labels only
+    # (DESIGN_V2 "Research integrity" R1); empty = treat all history as contaminated.
+    ai_model_knowledge_cutoff: str = ""
     ai_daily_budget_inr: float = 100
     ai_monthly_budget_inr: float = 2000
 
@@ -42,6 +45,7 @@ class Settings(BaseSettings):
     broker_client_id: str = ""
     broker_access_token: str = ""
     broker_totp_secret: str = ""
+    broker_token_issued_on: str = ""  # YYYY-MM-DD; Upstox analytics token lasts 1 year
 
     # Market / macro data
     macro_provider: str = "yfinance"

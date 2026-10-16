@@ -1,9 +1,28 @@
-# Exit rules (DESIGN.md section 2/9). Shared by live paper trading, the simulator and the backtester.
-stop_loss_pct: -50          # premium % from entry
-targets_pct: [25, 50, 100]  # T1, T2, T3
-book_fractions: [0.3333, 0.3333, 0.3334]   # booked at T1, T2, T3 (last third also closes at T3)
-move_sl_to_entry_after: 1   # after T1 the stop moves to entry
-trail_after: 2              # after T2 the stop trails at the T1 level
-no_move_sessions: 2         # sessions after the event with no meaningful move -> exit
-no_move_threshold_pct: 10   # "meaningful" = premium moved at least this much either way
-time_stop_trading_days: 5   # exit this many trading days before expiry
+# Exit rules. Shared by live paper trading, the simulator and the backtester.
+# Mode switches let the backtester compare the original fixed rules with the v2.1 rules
+# (DESIGN_V2 "Rules and outputs v2.1", A1-A3) on the same signals.
+
+stop:
+  mode: underlying+premium        # underlying+premium (v2.1 A1) | premium (original)
+  premium_backstop_pct: -50       # hard stop on the option premium (always on)
+  underlying_adverse_pct: 3.0     # stock moves this % against us from entry -> exit
+  use_pre_news_level: true        # also exit if the stock goes back beyond its pre-news level
+
+targets:
+  mode: fixed                     # fixed (+25/+50/+100%) | predicted_move (v2.1 A2)
+  fixed_pct: [25, 50, 100]
+  predicted_fractions: [0.5, 1.0, 1.5]   # of the predicted stock move, repriced with Black-Scholes
+  min_step_pct: 5                 # each repriced target at least this % above the previous level
+
+book_fractions: [0.3333, 0.3333, 0.3334]   # booked at T1, T2, T3 (last third closes at T3)
+move_sl_to_entry_after: 1         # after T1 the stop moves to entry
+trail_after: 2                    # after T2 the stop trails at the T1 level
+
+window_stop:                      # v2.1 A3: move must start within the scenario window + buffer
+  enabled: true
+  buffer_days: 1
+  started_fraction: 0.25          # "started" = stock moved >= 25% of the predicted move our way
+
+no_move_sessions: 2               # sessions after the event with no meaningful move -> exit
+no_move_threshold_pct: 10         # "meaningful" = premium moved at least this much either way
+time_stop_trading_days: 5         # backstop: exit this many trading days before expiry

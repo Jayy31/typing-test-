@@ -292,3 +292,89 @@ GDELT_ENABLED=true
 | 10 | Analytics + monthly report + learning loop + hardening |
 
 Each phase: branch, tests, PR, update CLAUDE.md.
+
+---
+
+## Rules and outputs v2.1
+
+Added by the owner after Phase 2.5. Same principles: **every value lives in config** (`config/exits.yaml`,
+`config/entry.yaml`, `config/portfolio.yaml`, `config/signals.yaml`), and **every rule has a mode switch
+so the backtester (Phase 6) can run the v2.1 rules and the original fixed rules on the same signals**
+and compare them. The live system runs one configured set at a time (single pipeline, single output);
+each trade stores the rule config hash it ran under.
+
+### A. Trading rules
+
+| # | Rule | Detail | Config (examples) | Phase |
+|---|---|---|---|---|
+| A1 | Underlying-based stop | Primary stop on the **stock**: thesis invalidation = price back beyond the pre-news level, or adverse stock move of X% from entry. Premium -50% stays as a hard backstop (whichever hits first). | `exits.stop.mode: underlying+premium \| premium`, `exits.stop.underlying_adverse_pct`, `exits.stop.use_pre_news_level`, `exits.stop.premium_backstop_pct: -50` | 3 (live), 6 (backtest) |
+| A2 | Target modes | `fixed`: premium +25/+50/+100%. `predicted_move`: T1/T2/T3 = option premium (Black-Scholes repriced at entry IV, expected holding time) when the stock has moved 50% / 100% / 150% of the predicted move. Booking (1/3 each), SL-to-entry and trailing stay the same. | `exits.targets.mode: fixed \| predicted_move`, `exits.targets.fixed_pct`, `exits.targets.predicted_fractions: [0.5, 1.0, 1.5]` | 3 (live), 6 (compare) |
+| A3 | Scenario time stop | Exit if the move has not started within the scenario tree's expected window (probability-weighted timing of the winning scenarios) plus a buffer. "Started" = stock moved at least N% of the predicted move in our direction. Near-expiry time stop (5 trading days) stays as backstop. | `exits.window_stop.enabled`, `exits.window_stop.buffer_days`, `exits.window_stop.started_fraction` | 3 |
+| A4 | Entry rules | (a) no entries in the first 15 minutes after the open; (b) skip if the stock already moved > 60% of the predicted move since the pre-news reference; (c) before a known event with high IV (IV percentile above threshold), enter only if the simulator shows positive EV **after** the expected IV drop. | `entry.no_entry_first_minutes: 15`, `entry.max_premove_fraction: 0.6`, `entry.event_iv_percentile_min`, `entry.require_post_crush_ev: true` | 3 |
+| A5 | Overlap and expiry of signals | Signals are grouped by thesis/theme (cluster + taxonomy theme + sector); exposure per theme is reported (open premium at risk, delta-equivalent notional). Opposite signal on a stock with an open trade: `flag` for review (alert) or `close` the trade (config). A signal not entered within a set time expires. | `portfolio.theme_keys`, `portfolio.opposite_signal_action: flag \| close`, `entry.signal_entry_ttl_minutes` | 3 |
+| A6 | Notional capital | Paper portfolio with notional capital (default Rs 5,00,000) for portfolio-level P&L, equity curve and drawdown. Position sizing stays 1 lot per signal; capital is for measurement. | `portfolio.notional_capital_inr: 500000` | 3 (track), 9 (dashboard) |
+
+### B. Outputs
+
+| # | Output | Detail | Phase |
+|---|---|---|---|
+| B1 | Rejected candidates + counterfactual | Every candidate rejected anywhere in the pipeline (relevance aside: from candidate stage onward: score, eligibility, liquidity, edge ratio, entry rules, EV, probability gates) is stored with stage and reason. A tracker records what the stock and the would-be option did afterwards (same exit rules applied hypothetically). Dashboard "Rejected" page. | 3 (store + track), 9 (page) |
+| B2 | P&L attribution | Per trade, split P&L into delta, theta, vega and residual, from Black-Scholes greeks at each observation (sum over intervals). | 3 |
+| B3 | Prediction scorecard | For every prediction, traded or not: direction hit, move-size error (predicted vs realised), timing error. Feeds calibration and analytics. | 3 (record + score), 5 (calibration), 10 (reports) |
+| B4 | AI post-mortem | Automatic AI review of every closed trade (what the thesis said, what happened, which rule exited, lesson). Cheap model, budget-capped. Monthly report summarises them. | 5 (post-mortem), 10 (monthly summary) |
+| B5 | Metrics | Expectancy, profit factor, average win/loss, max drawdown, MFE/MAE, time to target; broken down by event type, sector, regime, score band and entry time. One metrics module shared by live analytics and the backtester. | 6 (module + backtest), 9 (dashboard), 10 (reports) |
+| B6 | Benchmarks | Same signals traded as stock/future instead of option; random entries on the same days; fixed-rule (pre-v2.1) version. | 3 (record stock benchmark per live trade), 6 (all benchmarks in backtests) |
+| B7 | Latency and freshness | Per signal: news publish → signal time, stock move between news and signal, age of each data input used (news, quotes, macro). | 3 |
+| B8 | Evening summary | Includes the day's top rejected candidates and why (with counterfactual so far). | 9 (with the summary jobs) |
+
+### C. Phase placement summary
+- **Phase 3:** A1-A6, B1 (store + counterfactual tracker), B2, B3 (record + score), B6 (live stock benchmark), B7.
+- **Phase 5:** B3 into calibration, B4 post-mortems.
+- **Phase 6:** A1-A3 backtest comparisons (fixed vs v2.1), B5 metrics module, B6 random/fixed-rule benchmarks.
+- **Phase 9:** "Rejected" page, portfolio equity/drawdown views, B5 dashboards, B8 evening summary.
+- **Phase 10:** B3/B4/B5 in the monthly report.
+
+---
+
+## Research integrity and review
+
+Added by the owner after Phase 3a. Values in config; nothing here is auto-applied.
+
+### R1. AI look-ahead protection in backtests
+- The AI models know market outcomes up to their training cutoff, so AI predictions on older news are contaminated.
+- `AI_MODEL_KNOWLEDGE_CUTOFF` (env, YYYY-MM-DD; the latest cutoff of any model used) splits history:
+  - **Before the cutoff:** AI is used only for fact/label extraction (event type, entities, sentiment, surprise) via the batch tagger. It is never asked for direction, move size, probabilities or outcomes.
+  - The event study and the backtester use only these labels plus actual price data. Rule-based and analogue-based predictions are backtestable; AI-predicted ones are not.
+  - **After the cutoff:** multi-agent predictions, probabilities and calibration are evaluated only on live (post-cutoff) data.
+- Every backtest run stores which components used AI and how (`labels_only` / `predictions`). Runs that would use AI predictions on pre-cutoff dates are refused.
+- The Backtest UI shows a clear note: which parts used AI labels, which used AI predictions, and the cutoff date.
+
+### R2. Realistic fills for illiquid options
+- At entry and exit, record bid/ask prices **and quantities** and check whether 1 lot could have filled at that price.
+- Each trade is flagged `fillable` / `partial` / `unfillable` (entry and exit checked separately; the worse one wins).
+- All performance metrics are reported with and without unfillable trades (dashboard toggle; reports show both).
+- Backtester: the same check where quantity data exists; otherwise a conservative filter from daily volume/OI (config thresholds), with excluded trades counted and reported.
+
+### R3. Weekly review digest (Sunday, Telegram + dashboard page)
+- Week's P&L (incl. notional-capital portfolio view) and open trades.
+- Top 3 winning and top 3 losing trades, each with a short AI post-mortem.
+- Rejected signals that would have won (from the counterfactual tracker).
+- Unfillable trades flagged this week.
+- Data source errors and job failures (source health, `job_runs`).
+- AI spend for the week vs budget.
+- Rules or thresholds the system suggests reviewing, with reasons and evidence. **Suggestions only, never auto-applied.**
+
+### Phase placement
+| Item | Phase |
+|---|---|
+| R1 config key `AI_MODEL_KNOWLEDGE_CUTOFF` | added now (Phase 3a PR) |
+| R1 batch tagging = labels only, pre-cutoff enforcement in the event study | 4 |
+| R1 calibration and probability evaluation on post-cutoff live data only | 5 |
+| R1 backtester enforcement, run metadata, refusal of contaminated runs | 6 |
+| R1 Backtest UI note | 9 |
+| R2 bid/ask quantities captured, fillability check and flags on paper trades and rejected-candidate counterfactuals | 3b |
+| R2 metrics with/without unfillable trades (metrics module), backtester volume/OI filter | 6 |
+| R2 dashboard toggle | 9 |
+| R3 weekly digest on Telegram (needs post-mortems + counterfactuals) | 5 |
+| R3 dashboard page | 9 |
+| R3 rule-review suggestions: basic evidence-based suggestions in 5, full learning-loop suggestions | 10 |

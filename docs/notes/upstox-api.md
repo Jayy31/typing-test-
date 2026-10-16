@@ -60,6 +60,14 @@ the first run and adjust the parsers). Parsers must be pure functions with tests
   zero bids and abnormal spreads (design section 20).
 - Weekly/other expiries: only monthly stock options are traded; pass the monthly `expiry_date`.
 
+## Implementation decisions (Phase 3a)
+- Expiries and lot sizes come from the instrument master (`NSE.json.gz`, daily), keeping the last
+  expiry of each month per underlying. The option-contract endpoint is not used.
+- Prior close = `last_price - net_change` (fallback `ohlc.close`).
+- IV of 0 in the chain is treated as missing; ATM IV falls back to the average of available legs.
+- First raw response per endpoint per day is saved under `<HISTORY_DATA_DIR>/raw_samples/upstox/`.
+- Requests are throttled to ~4 per second (`min_interval_s=0.25`).
+
 ## Phase 3 plan (agreed scope, from docs/DESIGN.md section 19 and the owner)
 1. `collectors/upstox.py`: read-only client (GET only; a test already forbids order-placement names),
    instrument sync (symbol -> instrument_key/ISIN), option chain + quote parsers, raw-response logging.

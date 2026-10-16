@@ -38,7 +38,7 @@ SOURCE_LABEL = {
 
 
 def pct(x: float | None, signed: bool = True) -> str:
-    return "n/a" if x is None else (f"{x:+.1f}%" if signed else f"{x:.0f}%")
+    return "n/a" if x is None else (f"{x:+.1f}%" if signed else f"{x:.1f}%")
 
 
 def v2_lines(sig: Signal, analogues_line: str | None = None) -> list[str]:

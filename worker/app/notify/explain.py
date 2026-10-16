@@ -10,6 +10,7 @@ from app.db.models import (
     NewsItem,
     NewsTag,
     Signal,
+    SignalCandidate,
     SignalVersion,
 )
 from app.db.models import Scenario as ScenarioRow
@@ -95,12 +96,50 @@ def build_why(s: Session, signal_id: int) -> str | None:
         ),
     ]
 
-    out += [
-        "",
-        "OPTION DATA",
-        "  Strike, premium, IV, OI and spread arrive with live options (Phase 3).",
-        f"  Chosen expiry: {js.get('expiry')}",
-    ]
+    out += ["", "OPTION DATA"]
+    opt = js.get("options") or {}
+    chosen = s.scalars(
+        select(SignalCandidate).where(
+            SignalCandidate.signal_id == sig.id, SignalCandidate.chosen.is_(True)
+        )
+    ).first()
+    if chosen is not None:
+        out += [
+            f"  Chosen: {sig.symbol} {chosen.strike:g} {chosen.option_type} {chosen.expiry}  "
+            f"bid {chosen.bid} / ask {chosen.ask} (spread {chosen.spread_pct or 0:.1f}%)",
+            f"  IV {chosen.iv or 0:.1f}% (percentile {sig.iv_percentile if sig.iv_percentile is not None else 'n/a, building history'}), "
+            f"OI {chosen.oi}, volume {chosen.volume}",
+            f"  EV {chosen.ev_pct:+.1f}% (Rs {chosen.ev_inr:,.0f}/lot), P(T1 before SL) {(chosen.p_t1_before_sl or 0) * 100:.0f}%, "
+            f"max loss Rs {chosen.max_loss_inr:,.0f}, theta Rs {chosen.theta_per_day:,.0f}/day, "
+            f"breakeven move {chosen.breakeven_move_pct}%",
+            f"  Why this strike/expiry: best expected value among {len(opt.get('candidates') or [])} "
+            "candidates that passed liquidity rules (see candidate table)",
+        ]
+    else:
+        out.append(
+            f"  Pricing {sig.pricing_status or 'pending'}: "
+            + "; ".join(opt.get("notes") or ["no live option data"])
+        )
+    out.append(f"  Expiry: {sig.expiry}")
+    if opt.get("implied_move_pct") is not None:
+        out.append(
+            f"  Implied move {opt['implied_move_pct']:.2f}% vs predicted {sig.predicted_move_pct or 0:.2f}% "
+            f"-> edge ratio {opt.get('edge_ratio')}"
+            + (
+                f", event IV premium {opt['event_iv_premium']:+.1f} pts"
+                if opt.get("event_iv_premium") is not None
+                else ""
+            )
+        )
+    if opt.get("premove_pct") is not None:
+        out.append(
+            f"  Stock already moved {opt['premove_pct']:+.2f}% since the pre-news level ({opt.get('pre_news_spot')})"
+        )
+    if sig.news_to_signal_s is not None:
+        ages = ", ".join(f"{k} {v:.0f}s" for k, v in (sig.data_age_json or {}).items())
+        out.append(
+            f"  Latency: news -> signal {sig.news_to_signal_s / 60:.1f} min; data age: {ages}"
+        )
 
     out += ["", "PREDICTION"]
     out += [f"  {line}" for line in v2_lines(sig)] or ["  no prediction yet"]
