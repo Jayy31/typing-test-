@@ -108,11 +108,30 @@ def test_entry_then_targets_then_trailing_exit(engine: Engine) -> None:
         float(gross or 0) * tr.lot_size * tr.lots, abs=1.0
     )  # parts add up
     assert (tr.mfe_pct or 0) > 0
+    assert tr.lots == 3 and tr.booking_mode == "per_lot"
+    with session_scope(engine) as s:
+        evs = s.scalars(select(TradeEvent).order_by(TradeEvent.id)).all()
+        assert [(e.event, e.lots) for e in evs] == [("ENTRY", 3), ("T1", 1), ("TRAIL", 2)]
+        trail = evs[-1]
+        # the BHARTIARTL case: stop at entry, next poll's bid was lower -> gap fill at the bid
+        assert trail.gap and trail.trigger_level == pytest.approx(tr.entry_premium)
+        assert trail.slippage_inr == pytest.approx(
+            (trail.premium - tr.entry_premium) * 475 * 2, abs=0.05
+        )
+        assert trail.note and trail.note.startswith("gap/slippage")
+    assert tr.slippage_inr == pytest.approx(trail.slippage_inr, abs=0.05) and tr.slippage_inr < 0
     with session_scope(engine) as s:
         texts = [
             a.text.split("\n")[0] for a in s.scalars(select(Alert).where(Alert.kind == "trade"))
         ]
     assert texts[0].startswith("PAPER ENTRY") and any(t.startswith("TARGET 1 HIT") for t in texts)
+    with session_scope(engine) as s:
+        bodies = [a.text for a in s.scalars(select(Alert).where(Alert.kind == "trade"))]
+    assert any("Sold 1 of 3 lots at" in b for b in bodies) and any(
+        "Sold 2 of 3 lots at" in b for b in bodies
+    )
+    assert any("Gap/slippage: level" in b for b in bodies)
+    assert "Gap/slippage vs trigger levels" in bot(engine, Recorder()).reply_for("/stats")
     assert texts[-1].startswith("TRADE CLOSED")
 
 
@@ -185,6 +204,7 @@ def test_portfolio_snapshot_and_exposure(engine: Engine) -> None:
     with session_scope(engine) as s:
         snap = s.scalars(select(PortfolioSnapshot)).one()
         assert snap.capital == 500000 and snap.open_trades == 1 and snap.equity != snap.capital
+        assert snap.capital_used_inr and snap.capital_used_inr > 0
         assert snap.exposure_json and "theme:tariffs" in snap.exposure_json
     b = bot(engine, Recorder())
     assert "Equity Rs" in b.reply_for("/portfolio")
