@@ -1,0 +1,38 @@
+# ONE shared, versioned taxonomy for live tagging, historical (batch) tagging, rules and the event study.
+# Bump `version` whenever a label is added, renamed or removed; every tag row stores the version it used.
+# Never reuse a removed label for a different meaning (history would mix meanings).
+version: tx1
+
+event_types:
+  results: "Quarterly/annual results, results vs expectations"
+  order_win: "Orders, contracts, tenders won"
+  mna: "Mergers, acquisitions, stake sales, demergers announced"
+  regulatory: "SEBI/RBI/USFDA/CCI actions, approvals, penalties"
+  policy: "Government policy, budget, tariffs, PLI, cabinet decisions"
+  macro_data: "GDP, CPI/WPI, IIP, GST collections, central bank decisions"
+  geopolitical: "War, sanctions, elections, terror events"
+  commodity: "Crude, metals and other commodity price shocks"
+  management: "CEO/CFO changes, governance"
+  rating: "Credit rating or broker rating changes"
+  corporate_action: "Dividend, split, bonus, buyback, rights"
+  block_deal: "Block/bulk deals, promoter buying, selling or pledging"
+  legal_fraud: "Fraud allegations, short-seller reports, litigation"
+  disaster: "Natural disasters, fires, plant shutdowns"
+  business_update: "Monthly sales, volumes, operational updates, guidance"
+  other: "Anything else"
+
+# Macro themes: keyword list used by the keyword pass (case-insensitive substring of title+body).
+themes:
+  crude: ["crude oil", "brent", "opec", "oil prices", "wti"]
+  rates: ["repo rate", "rate cut", "rate hike", "mpc", "federal reserve", "fed rate", "bond yield", "treasury yield"]
+  inflation: ["inflation", "cpi ", "wpi "]
+  war: ["war ", "missile", "airstrike", "geopolitical", "ceasefire", "sanctions"]
+  tariffs: ["tariff", "trade deal", "export duty", "import duty", "anti-dumping"]
+  monsoon: ["monsoon", "rainfall", "imd "]
+  currency: ["rupee", "dollar index", "usd/inr", "forex reserves"]
+  budget_policy: ["union budget", "gst council", "cabinet approves", "pli scheme", "disinvestment"]
+  flows: ["fii", "fpi", "dii", "foreign investors"]
+  regulation: ["sebi order", "sebi bans", "rbi penalty", "cci", "usfda", "warning letter"]
+
+# Aliases never matched as company names (too ambiguous in plain text).
+ambiguous_aliases: ["Vi", "Oil", "Eternal", "Trent Rockman"]

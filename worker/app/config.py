@@ -26,7 +26,12 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     ai_model_tagger: str = ""
     ai_model_analyst: str = ""
-    ai_model_reviewer: str = ""
+    ai_model_researcher: str = ""  # cheap
+    ai_model_novelty: str = ""  # cheap
+    ai_model_bull: str = ""  # mid
+    ai_model_bear: str = ""  # mid
+    ai_model_judge: str = ""  # strongest
+    ai_multi_agent_max_per_day: int = 30
     ai_daily_budget_inr: float = 100
     ai_monthly_budget_inr: float = 2000
 
@@ -52,6 +57,23 @@ class Settings(BaseSettings):
     news_poll_min: int = 5
     option_poll_active_min: int = 2
     signal_score_threshold: int = 65
+
+    # Engine (DESIGN_V2)
+    risk_free_rate: float = 0.065
+    edge_ratio_min: float = 1.2
+    mc_paths: int = 10000
+
+    # History store (DuckDB + Parquet on the worker VM)
+    history_data_dir: str = "/data/history"
+    duckdb_path: str = "/data/history/history.duckdb"
+    gdelt_enabled: bool = True
+
+    # Optional Cloudflare R2 backup of the Parquet history (Phase 4), off by default
+    r2_backup_enabled: bool = False
+    r2_account_id: str = ""
+    r2_access_key: str = ""
+    r2_secret_key: str = ""
+    r2_bucket: str = ""
 
     # Health
     job_failure_alert_threshold: int = 3

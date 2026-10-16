@@ -3,7 +3,7 @@
 import re
 from dataclasses import dataclass, field
 
-from app.yaml_config import load_yaml
+from app import taxonomy
 
 
 @dataclass(frozen=True)
@@ -27,11 +27,8 @@ class EntityMapper:
     what remains ambiguous."""
 
     def __init__(self, instruments: list[InstrumentInfo]) -> None:
-        cfg = load_yaml("themes.yaml")
-        blocked = {a.lower() for a in cfg.get("ambiguous_aliases", [])}
-        self._themes: dict[str, list[str]] = {
-            k: [w.lower() for w in v] for k, v in cfg["themes"].items()
-        }
+        blocked = taxonomy.ambiguous_aliases()
+        self._themes = taxonomy.theme_keywords()
         self._sector_of = {i.symbol: i.sector for i in instruments}
         self._patterns: list[tuple[str, re.Pattern[str]]] = []
         for inst in instruments:

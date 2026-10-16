@@ -17,8 +17,8 @@ from app.signals.candidates import Candidate, evidence_for, weighted_sentiment
 from app.yaml_config import load_yaml
 
 log = logging.getLogger(__name__)
-PROMPT_VERSION = "analyst_v1"
-SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "analyst_v1.md").read_text(encoding="utf-8")
+PROMPT_VERSION = "analyst_v2"
+SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "analyst_v2.md").read_text(encoding="utf-8")
 ANALOGUES_FILE = Path(__file__).resolve().parents[3] / "data" / "historical_events.yaml"
 
 
