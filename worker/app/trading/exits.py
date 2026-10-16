@@ -240,3 +240,37 @@ def step(state: PositionState, bar: Bar, rules: ExitRules) -> PositionState:
     ):
         return _close(state, "NOMOVE", bar.close)
     return state
+
+
+def state_to_json(state: PositionState) -> dict[str, Any]:
+    d = dict(state.__dict__)
+    d["targets"] = list(state.targets)
+    d["fills"] = [f.__dict__ for f in state.fills]
+    return d
+
+
+def state_from_json(d: dict[str, Any]) -> PositionState:
+    data = dict(d)
+    data["targets"] = tuple(data.get("targets") or ())
+    data["fills"] = tuple(Fill(**f) for f in data.get("fills") or ())
+    return PositionState(**data)
+
+
+def rules_to_json(rules: ExitRules) -> dict[str, Any]:
+    d = dict(rules.__dict__)
+    return {k: list(v) if isinstance(v, tuple) else v for k, v in d.items()}
+
+
+def rules_hash(rules: ExitRules) -> str:
+    """Short stable id of a rule configuration (trades store it; backtests compare by it)."""
+    import hashlib
+    import json
+
+    blob = json.dumps(rules_to_json(rules), sort_keys=True).encode()
+    return hashlib.sha256(blob).hexdigest()[:12]
+
+
+def rules_from_json(d: dict[str, Any]) -> ExitRules:
+    """Rules a trade was opened with (trades keep their own rules if config changes later)."""
+    fields: dict[str, Any] = {k: tuple(v) if isinstance(v, list) else v for k, v in d.items()}
+    return replace(ExitRules(), **fields)

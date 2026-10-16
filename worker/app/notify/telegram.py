@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from app.config import IST, Settings, get_settings
@@ -210,12 +210,11 @@ class TelegramBot:
             if cmd == "/closed":
                 return _closed_trades(s)
             if cmd == "/stats":
-                n, pnl = s.execute(
-                    select(func.count(), func.coalesce(func.sum(PaperTrade.pnl), 0)).where(
-                        PaperTrade.status != "OPEN"
-                    )
-                ).one()
-                return f"Closed trades: {n}\nTotal P&L: {pnl}"
+                return _stats(s)
+            if cmd == "/portfolio":
+                return _portfolio(s)
+            if cmd == "/exposure":
+                return _exposure(s)
             if cmd in ("/mute", "/unmute"):
                 set_config(s, "alerts_muted", cmd == "/mute")
                 return (
@@ -228,7 +227,8 @@ class TelegramBot:
 
 HELP = (
     "Commands:\n/why S-<id>  full reasoning for a signal\n/signals  live signals\n"
-    "/open  open paper trades\n/closed  recent closed trades\n/stats  performance\n"
+    "/open  open paper trades\n/closed  recent closed trades\n/stats  performance (with/without unfillable)\n"
+    "/portfolio  equity and drawdown\n/exposure  open risk per theme\n"
     "/mute  /unmute  pause or resume signal alerts (health alerts always arrive)"
 )
 
@@ -245,9 +245,59 @@ def _live_signals(s: Session) -> str:
 
 
 def _open_trades(s: Session) -> str:
+    from app.trading.portfolio import open_value
+
     trades = s.scalars(select(PaperTrade).where(PaperTrade.status == "OPEN").limit(20)).all()
-    lines = [f"T{t.id} signal #{sid(t.signal_id)} entry {t.entry_premium}" for t in trades]
+    lines = []
+    for t in trades:
+        unreal, _, _ = open_value(t)
+        mark = t.last_premium if t.last_premium is not None else t.entry_premium
+        flag = f"  [{t.review_flag}]" if t.review_flag else ""
+        lines.append(
+            f"T{t.id} {t.symbol} {t.strike:g} {t.option_type} {t.expiry:%d-%b}: entry {t.entry_premium:.2f} "
+            f"now {mark:.2f}, P&L Rs {unreal:+,.0f}{flag}"
+        )
     return "\n".join(lines) or "No open paper trades."
+
+
+def _stats(s: Session) -> str:
+    def line(label: str, trades: list[PaperTrade]) -> str:
+        if not trades:
+            return f"{label}: no closed trades"
+        pnl = [t.pnl or 0.0 for t in trades]
+        wins = [p for p in pnl if p > 0]
+        return f"{label}: {len(pnl)} trades, win rate {len(wins) / len(pnl):.0%}, P&L Rs {sum(pnl):+,.0f}"
+
+    closed = list(s.scalars(select(PaperTrade).where(PaperTrade.status == "CLOSED")))
+    fillable = [t for t in closed if t.fillability != "unfillable"]
+    return line("All", closed) + "\n" + line("Excluding unfillable", fillable)
+
+
+def _portfolio(s: Session) -> str:
+    from app.db.models import PortfolioSnapshot
+
+    snap = s.scalars(select(PortfolioSnapshot).order_by(PortfolioSnapshot.ts.desc())).first()
+    if snap is None:
+        return "No portfolio snapshot yet."
+    return (
+        f"Equity Rs {snap.equity:,.0f} (capital {snap.capital:,.0f})\nRealised {snap.realised_inr:+,.0f}, "
+        f"open {snap.unrealised_inr:+,.0f}\nDrawdown {snap.drawdown_pct:.2f}%  open trades {snap.open_trades}, "
+        f"premium at risk Rs {snap.premium_at_risk_inr:,.0f}\nas of {snap.ts:%d-%b %H:%M}"
+    )
+
+
+def _exposure(s: Session) -> str:
+    from app.trading.portfolio import exposure
+
+    ex = exposure(s)
+    return (
+        "\n".join(
+            f"{k}: {v['trades']} trade(s) {', '.join(v['symbols'])}, at risk Rs {v['at_risk_inr']:,.0f}, "
+            f"delta notional Rs {v['delta_notional_inr']:,.0f}"
+            for k, v in sorted(ex.items())
+        )
+        or "No open exposure."
+    )
 
 
 def _closed_trades(s: Session) -> str:
@@ -257,7 +307,11 @@ def _closed_trades(s: Session) -> str:
         .order_by(PaperTrade.id.desc())
         .limit(10)
     ).all()
-    lines = [f"T{t.id} #{sid(t.signal_id)} pnl {t.pnl} ({t.exit_reason})" for t in trades]
+    lines = [
+        f"T{t.id} {t.symbol} {t.option_type}: Rs {t.pnl or 0:+,.0f} ({t.pnl_pct or 0:+.1f}%) {t.exit_reason}"
+        + ("" if t.fillability in (None, "fillable") else f" [{t.fillability}]")
+        for t in trades
+    ]
     return "\n".join(lines) or "No closed trades yet."
 
 

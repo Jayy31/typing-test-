@@ -43,6 +43,9 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
 "app/notify/explain.py" = ["E501"]  # message text formatting
+"app/notify/templates.py" = ["E501"]
+"app/notify/telegram.py" = ["E501"]
+"tests/*" = ["E501"]  # long assertion messages and fixtures
 
 [tool.mypy]
 python_version = "3.12"

@@ -23,12 +23,14 @@ class FakeSource:
 
     def __init__(
         self,
-        iv: float = 15.0,
+        iv: float = 8.0,
         spot: float = 4000.0,
         prev_close: float = 3990.0,
         oi: int = 200_000,
         spread: float = 1.0,
+        qty: int | None = 10_000,
     ) -> None:
+        self.qty = qty
         self.iv, self.spot, self.prev, self.oi, self.spread = iv, spot, prev_close, oi, spread
         today = datetime.now(IST).date()
         self.exp = [today + timedelta(days=24), today + timedelta(days=52)]
@@ -58,6 +60,8 @@ class FakeSource:
                         5000,
                         self.spot,
                         now,
+                        self.qty,
+                        self.qty,
                     )
                 )
         return OptionChain(symbol, expiry, self.spot, now, tuple(rows))
@@ -103,8 +107,16 @@ def test_priced_signal_with_strike_ev_and_candidates(engine: Engine) -> None:
             and sig.expected_value_inr is not None
         )
         assert 0 <= (sig.p_t1_before_sl or -1) <= 1 and sig.p_t3 is not None
-        assert sig.implied_move_pct == pytest.approx(15 * (4.2 / 365) ** 0.5, abs=0.01)
-        assert sig.edge_ratio == pytest.approx(2.85 / sig.implied_move_pct, abs=0.01)
+        assert sig.implied_move_pct == pytest.approx(8 * (4.2 / 365) ** 0.5, abs=0.01)
+        assert sig.edge_ratio == pytest.approx(1.425 / sig.implied_move_pct, abs=0.01)  # shrunk
+        assert sig.edge_ratio_raw == pytest.approx(2.85 / sig.implied_move_pct, abs=0.01)
+        assert sig.predicted_move_pct == pytest.approx(
+            1.425
+        ) and sig.predicted_move_raw_pct == pytest.approx(2.85)
+        assert sig.shrink_weight == 0.5 and sig.expected_value_raw is not None
+        assert (
+            sig.expected_value_raw > sig.expected_value
+        )  # AI alone is more optimistic than the blend
         assert sig.premove_pct == pytest.approx((4000 / 3990 - 1) * 100, abs=0.01)
         assert sig.news_to_signal_s is not None and "quote_s" in (sig.data_age_json or {})
         cands = s.scalars(select(SignalCandidate).where(SignalCandidate.signal_id == sig.id)).all()
@@ -132,7 +144,10 @@ def test_edge_ratio_gate_rejects_and_records(engine: Engine) -> None:
             and rej.ref_premium
             and rej.ref_option_type == "CE"
         )
-        assert rej.predicted_move_pct == pytest.approx(2.85) and rej.outcome_status == "open"
+        assert rej.predicted_move_pct == pytest.approx(1.425) and rej.outcome_status == "open"
+        assert rej.details_json and rej.details_json["predicted_move_raw_pct"] == pytest.approx(
+            2.85
+        )
 
 
 def test_premove_rule_rejects(engine: Engine) -> None:

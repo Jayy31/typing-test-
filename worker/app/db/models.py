@@ -125,6 +125,8 @@ class OptionQuote(Base):
     oi: Mapped[int | None] = mapped_column(BigInteger)
     volume: Mapped[int | None] = mapped_column(BigInteger)
     spot: Mapped[float | None] = mapped_column(Float)
+    bid_qty: Mapped[int | None] = mapped_column(BigInteger)
+    ask_qty: Mapped[int | None] = mapped_column(BigInteger)
 
 
 class EventCalendar(Base):
@@ -197,6 +199,12 @@ class Signal(Base):
         String(16)
     )  # scenario_tree/analogues/blended
     edge_ratio: Mapped[float | None] = mapped_column(Float)
+    # raw (unshrunk AI) values next to the shrunk ones used for gating/ranking until calibration
+    shrink_weight: Mapped[float | None] = mapped_column(Float)
+    predicted_move_raw_pct: Mapped[float | None] = mapped_column(Float)
+    edge_ratio_raw: Mapped[float | None] = mapped_column(Float)
+    expected_value_raw: Mapped[float | None] = mapped_column(Float)
+    p_t1_before_sl_raw: Mapped[float | None] = mapped_column(Float)
     iv_percentile: Mapped[float | None] = mapped_column(Float)
     event_iv_premium: Mapped[float | None] = mapped_column(Float)
     # option choice and pricing state
@@ -209,6 +217,7 @@ class Signal(Base):
         Float
     )  # stock move in our direction before signal
     data_age_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    theme_key: Mapped[str | None] = mapped_column(String(64), index=True)  # overlap grouping (A5)
 
 
 class SignalVersion(Base):
@@ -237,8 +246,47 @@ class PaperTrade(Base):
     status: Mapped[str] = mapped_column(String(16), index=True)
     exit_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     exit_premium: Mapped[float | None] = mapped_column(Float)
-    pnl: Mapped[float | None] = mapped_column(Float)
+    pnl: Mapped[float | None] = mapped_column(Float)  # Rs per position, after costs
     exit_reason: Mapped[str | None] = mapped_column(String(32))
+    # Phase 3b: contract, rules and live state
+    symbol: Mapped[str | None] = mapped_column(String(32), index=True)
+    option_type: Mapped[str | None] = mapped_column(String(2))
+    strike: Mapped[float | None] = mapped_column(Float)
+    expiry: Mapped[date | None] = mapped_column(Date)
+    lot_size: Mapped[int | None] = mapped_column(Integer)
+    theme_key: Mapped[str | None] = mapped_column(String(64), index=True)
+    rules_hash: Mapped[str | None] = mapped_column(String(16))
+    rules_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    state_json: Mapped[dict[str, Any] | None] = mapped_column(Json)  # exits.PositionState
+    last_premium: Mapped[float | None] = mapped_column(Float)  # latest bid
+    last_spot: Mapped[float | None] = mapped_column(Float)
+    last_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    pnl_pct: Mapped[float | None] = mapped_column(Float)  # % of entry premium, after costs
+    # fills (DESIGN_V2 R2)
+    entry_bid: Mapped[float | None] = mapped_column(Float)
+    entry_ask: Mapped[float | None] = mapped_column(Float)
+    entry_bid_qty: Mapped[int | None] = mapped_column(BigInteger)
+    entry_ask_qty: Mapped[int | None] = mapped_column(BigInteger)
+    exit_bid_qty: Mapped[int | None] = mapped_column(BigInteger)
+    entry_fill: Mapped[str | None] = mapped_column(
+        String(12)
+    )  # fillable/partial/unfillable/unknown
+    exit_fill: Mapped[str | None] = mapped_column(String(12))
+    fillability: Mapped[str | None] = mapped_column(String(12), index=True)  # worse of the two
+    # underlying, benchmark and attribution (v2.1 B2, B6)
+    spot_entry: Mapped[float | None] = mapped_column(Float)
+    spot_exit: Mapped[float | None] = mapped_column(Float)
+    pre_news_spot: Mapped[float | None] = mapped_column(Float)
+    benchmark_stock_pct: Mapped[float | None] = mapped_column(
+        Float
+    )  # stock move our way, same period
+    benchmark_stock_inr: Mapped[float | None] = mapped_column(
+        Float
+    )  # 1 lot of stock/future instead
+    mfe_pct: Mapped[float | None] = mapped_column(Float)  # best premium vs entry, %
+    mae_pct: Mapped[float | None] = mapped_column(Float)  # worst premium vs entry, %
+    attribution_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    review_flag: Mapped[str | None] = mapped_column(Text)  # e.g. opposite signal (A5 flag mode)
 
 
 class TradeEvent(Base):
@@ -251,6 +299,10 @@ class TradeEvent(Base):
     event: Mapped[str] = mapped_column(String(16))  # ENTRY/T1/T2/T3/SL/TRAIL/THESIS/TIME/NOMOVE
     premium: Mapped[float | None] = mapped_column(Float)
     note: Mapped[str | None] = mapped_column(Text)
+    fraction: Mapped[float | None] = mapped_column(Float)  # of the position closed by this event
+    spot: Mapped[float | None] = mapped_column(Float)
+    bid_qty: Mapped[int | None] = mapped_column(BigInteger)
+    ask_qty: Mapped[int | None] = mapped_column(BigInteger)
 
 
 class Rule(Base):
@@ -507,3 +559,52 @@ class RejectedCandidate(Base):
     option_return_pct: Mapped[float | None] = mapped_column(Float)
     exit_reason: Mapped[str | None] = mapped_column(String(16))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PortfolioSnapshot(Base):
+    """Notional paper portfolio (v2.1 A6): equity curve and drawdown."""
+
+    __tablename__ = "portfolio_snapshots"
+
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    capital: Mapped[float] = mapped_column(Float)
+    realised_inr: Mapped[float] = mapped_column(Float)
+    unrealised_inr: Mapped[float] = mapped_column(Float)
+    equity: Mapped[float] = mapped_column(Float)
+    peak_equity: Mapped[float] = mapped_column(Float)
+    drawdown_pct: Mapped[float] = mapped_column(Float)
+    open_trades: Mapped[int] = mapped_column(Integer)
+    premium_at_risk_inr: Mapped[float] = mapped_column(Float)
+    exposure_json: Mapped[dict[str, Any] | None] = mapped_column(Json)  # per theme
+    realised_fillable_inr: Mapped[float | None] = mapped_column(Float)  # excl. unfillable (R2)
+
+
+class PredictionScore(Base):
+    """Scorecard for every directional prediction, traded or not (v2.1 B3)."""
+
+    __tablename__ = "prediction_scores"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    analysis_id: Mapped[int] = mapped_column(ForeignKey("analyses.id"), unique=True)
+    signal_id: Mapped[int | None] = mapped_column(ForeignKey("signals.id"))
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    direction: Mapped[str] = mapped_column(String(8))
+    predicted_move_pct: Mapped[float] = mapped_column(Float)  # our direction, shrunk (gating value)
+    predicted_move_raw_pct: Mapped[float | None] = mapped_column(Float)  # AI scenario tree alone
+    predicted_source: Mapped[str | None] = mapped_column(String(16))
+    p_move: Mapped[float | None] = mapped_column(Float)
+    window_days: Mapped[int] = mapped_column(Integer)
+    spot_start: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    path_json: Mapped[list[Any] | None] = mapped_column(Json)  # [[date, close], ...]
+    status: Mapped[str] = mapped_column(
+        String(12), default="open", server_default="open", index=True
+    )
+    realised_move_pct: Mapped[float | None] = mapped_column(Float)  # our direction, at window end
+    direction_hit: Mapped[bool | None] = mapped_column(Boolean)
+    move_error_pct: Mapped[float | None] = mapped_column(Float)  # realised - predicted
+    days_to_half_move: Mapped[int | None] = mapped_column(Integer)
+    timing_error_days: Mapped[int | None] = mapped_column(Integer)
+    max_favourable_pct: Mapped[float | None] = mapped_column(Float)
+    max_adverse_pct: Mapped[float | None] = mapped_column(Float)
+    scored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

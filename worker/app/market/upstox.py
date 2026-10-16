@@ -38,6 +38,10 @@ class Quote:
     bid: float | None
     ask: float | None
     ts: datetime
+    bid_qty: int | None = None  # best level
+    ask_qty: int | None = None
+    bid_qty_depth: int | None = None  # all depth levels shown (up to 5)
+    ask_qty_depth: int | None = None
 
 
 @dataclass(frozen=True)
@@ -54,6 +58,11 @@ def _f(x: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return v if v == v else None  # drop NaN
+
+
+def _int(x: Any) -> int | None:
+    v = _f(x)
+    return int(v) if v is not None else None
 
 
 def _pos(x: Any) -> float | None:
@@ -91,6 +100,9 @@ def parse_option_chain(raw: dict[str, Any], symbol: str, expiry: date, ts: datet
                     volume=int(vol) if vol is not None else None,
                     spot=None,
                     ts=ts,
+                    bid_qty=_int(md.get("bid_qty")),
+                    ask_qty=_int(md.get("ask_qty")),
+                    instrument_key=leg.get("instrument_key"),
                 )
             )
     rows = [OptionQuoteRow(**{**r.__dict__, "spot": spot}) for r in rows]
@@ -110,7 +122,18 @@ def parse_quotes(raw: dict[str, Any], ts: datetime) -> dict[str, Quote]:
         prev = last - change if change is not None else _pos((entry.get("ohlc") or {}).get("close"))
         depth = entry.get("depth") or {}
         buy, sell = depth.get("buy") or [{}], depth.get("sell") or [{}]
-        out[key] = Quote(key, last, prev, _pos(buy[0].get("price")), _pos(sell[0].get("price")), ts)
+        out[key] = Quote(
+            key,
+            last,
+            prev,
+            _pos(buy[0].get("price")),
+            _pos(sell[0].get("price")),
+            ts,
+            bid_qty=_int(buy[0].get("quantity")),
+            ask_qty=_int(sell[0].get("quantity")),
+            bid_qty_depth=sum(_int(x.get("quantity")) or 0 for x in buy) or None,
+            ask_qty_depth=sum(_int(x.get("quantity")) or 0 for x in sell) or None,
+        )
     return out
 
 

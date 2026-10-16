@@ -378,3 +378,11 @@ Added by the owner after Phase 3a. Values in config; nothing here is auto-applie
 | R3 weekly digest on Telegram (needs post-mortems + counterfactuals) | 5 |
 | R3 dashboard page | 9 |
 | R3 rule-review suggestions: basic evidence-based suggestions in 5, full learning-loop suggestions | 10 |
+
+### Owner additions during Phase 3b
+| # | Item | Detail | Phase |
+|---|---|---|---|
+| R4 | Raw quote archive | Before Supabase option quotes are thinned, every full-resolution row (all fields incl. bid/ask quantities) is written to Parquet on the VM via the history store, partitioned by IST date (`parquet/option_quotes/date=YYYY-MM-DD/`). Idempotent (last archived id in config). Quotes of stocks with open paper trades or live signals are never thinned until 2 days after they close (`protect_days_after_close`). | 3b |
+| R5 | EV shrinkage until calibration | Simulated paths blend the AI scenario distribution with the option-implied market distribution (no drift, ATM IV): share `SCENARIO_SHRINK_WEIGHT` (default 0.5) from the AI, the rest from the market. Predicted move is shrunk the same way (market expectation = 0) and P(move) toward 0.5. Raw and shrunk values are both stored; **shrunk values drive gating (pre-move, edge ratio) and ranking (EV)**. Phase 5 calibration replaces the fixed weight with fitted weights. | 3b (replaced in 5) |
+| R6 | IV history backfill | From 5 years of NSE F&O bhavcopy EOD option prices, invert Black-Scholes per strike per day (underlying close, days to expiry, `RISK_FREE_RATE`) and load daily IV into the IV history so IV percentile works from day one (up to 1 year lookback). | 4 |
+| R2 detail | Quantities source | Upstox's option chain gives bid/ask quantity at the best price for each strike (stored per poll). If the live feed omits them, the engine reads the option's own full market quote (5-level depth) at entry and exit only. If neither has quantities, the fill flag is `unknown` and reports count it separately. | 3b |

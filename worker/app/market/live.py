@@ -1,6 +1,7 @@
 """Live market data: Upstox instrument sync, option-chain polling and storage, IV history."""
 
 import logging
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -12,7 +13,7 @@ from app.config import IST, get_settings
 from app.db.config_store import get_config, set_config
 from app.db.models import Instrument, OptionQuote, Signal
 from app.db.session import session_scope
-from app.market.options import OptionChain
+from app.market.options import OptionChain, OptionQuoteRow
 from app.market.upstox import (
     FnoInstrument,
     Quote,
@@ -105,6 +106,26 @@ class UpstoxOptionData:
             return None
         return parse_quotes(self.client.quotes([key]), datetime.now(IST)).get(key)
 
+    def with_depth(self, row: OptionQuoteRow) -> OptionQuoteRow:
+        """Fallback when the chain carries no bid/ask quantities: read the option's own
+        market-depth quote (best level) for the fill check. Used only at entry and exit."""
+        if (row.bid_qty is not None and row.ask_qty is not None) or not row.instrument_key:
+            return row
+        try:
+            q = parse_quotes(self.client.quotes([row.instrument_key]), datetime.now(IST)).get(
+                row.instrument_key
+            )
+        except Exception as exc:  # noqa: BLE001 - fill check degrades to "unknown"
+            log.warning("depth fallback failed for %s: %s", row.instrument_key, exc)
+            return row
+        if q is None:
+            return row
+        return replace(
+            row,
+            bid_qty=row.bid_qty if row.bid_qty is not None else q.bid_qty,
+            ask_qty=row.ask_qty if row.ask_qty is not None else q.ask_qty,
+        )
+
     def spot(self, symbol: str, as_of: date | None = None) -> float | None:
         q = self.quote(symbol)
         return q.last_price if q else None
@@ -133,6 +154,8 @@ def store_chain(s: Session, chain: OptionChain) -> int:
                     oi=r.oi,
                     volume=r.volume,
                     spot=chain.spot,
+                    bid_qty=r.bid_qty,
+                    ask_qty=r.ask_qty,
                 )
             )
             added += 1
