@@ -9,11 +9,13 @@ import io
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import httpx
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine, select
 
+from app.collectors.base import Collector
 from app.config import IST
 from app.db.models import Instrument
 from app.db.session import session_scope
@@ -101,7 +103,20 @@ def sync_instruments(
     return len(rows)
 
 
-def refresh_fno_universe(engine: Engine | None = None) -> int:
-    """Job entrypoint: reload symbol master, fetch lot sizes, upsert."""
-    rows = parse_symbol_master(SYMBOL_MASTER.read_text(encoding="utf-8"))
-    return sync_instruments(rows, fetch_lot_sizes(), engine)
+class FnoMetaCollector(Collector[SymbolRow]):
+    """Symbol master (local CSV) + NSE lot sizes -> instruments."""
+
+    name = "nse_fno_meta"
+
+    def fetch(self) -> Any:
+        return SYMBOL_MASTER.read_text(encoding="utf-8"), fetch_lot_sizes(self.timeout_s)
+
+    def parse(self, raw: Any) -> list[SymbolRow]:
+        text, self._lots = raw
+        return parse_symbol_master(text)
+
+    def store(self, items: list[SymbolRow], engine: Engine | None) -> int:
+        return sync_instruments(items, self._lots, engine)
+
+
+refresh_fno_universe = FnoMetaCollector().run
