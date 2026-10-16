@@ -36,6 +36,7 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 - All jobs idempotent (unique keys), retries with backoff, log to `job_runs`
 - Every external call has a timeout
 - Tests required for parsers, entity mapping, scoring, exit rules
+- **End of every phase:** give the owner a setup checklist in the final reply and save it as `docs/setup/phase-N.md`: accounts to create, API keys/env values to set (names only, never values), any SQL to run (also saved under `docs/setup/`, tested on a real Postgres), and any other external steps, in the order to do them
 - Small commits; one branch per phase (`phase-0-foundation`, ...); open a PR per phase
 
 ## Commands
