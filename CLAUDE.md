@@ -36,9 +36,10 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 - All jobs idempotent (unique keys), retries with backoff, log to `job_runs`
 - Every external call has a timeout
 - Tests required for parsers, entity mapping, scoring, exit rules
+- **End of every phase:** give the owner a setup checklist in the final reply and save it as `docs/setup/phase-N.md`: accounts to create, API keys/env values to set (names only, never values), any SQL to run (also saved under `docs/setup/`, tested on a real Postgres), and any other external steps, in the order to do them
 - Small commits; one branch per phase (`phase-0-foundation`, ...); open a PR per phase
 
-## Commands (create these in Phase 0)
+## Commands
 - `make setup` – install deps
 - `make migrate` – run Alembic migrations
 - `make test` – run pytest
@@ -47,7 +48,7 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 - `cd dashboard && npm run dev`
 
 ## Current phase
-Phase 0 – Foundation (see `docs/DESIGN.md` §19). Update this line when a phase is done.
+Phase 1 – News intelligence (see `docs/DESIGN.md` §19). Update this line when a phase is done.
 
 ## Progress log
-- (add one line per completed phase/PR)
+- Phase 0 (PR `phase-0-foundation`): worker skeleton, full §14 schema + Alembic migrations (RLS enabled on all tables), settings, job runner with `job_runs` + retries, health heartbeat, symbol master (148 stocks) + NSE lot-size loader, APScheduler, Dockerfile, Makefile, CI. No Sentry (owner decision). NSE lot-size fetch untested against live NSE (blocked in build sandbox); Dockerfile untested (no Docker daemon).

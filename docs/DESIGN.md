@@ -391,7 +391,7 @@ Next.js dashboard with: Live Signals, Open Trades, Closed Trades, News Feed, Sto
 | Alerts | Telegram Bot API (python-telegram-bot) | Free, instant, supports commands |
 | Dashboard | Next.js + Tailwind + shadcn/ui + Recharts, Supabase JS client | Free hosting on Vercel |
 | Worker hosting | Oracle Cloud Always Free VM or a small VPS; alternative: GitHub Actions cron (limited) | Continuous process needed for 1-5 min polling |
-| Logging / errors | Structured logs + Sentry free tier | Visibility into failures |
+| Logging / errors | Structured logs + `job_runs` table + Telegram health alerts (no Sentry, per owner decision) | Visibility into failures |
 | Tests / CI | pytest + GitHub Actions | Catch regressions from AI-written code |
 
 > **Hosting note:** GitHub Actions cron is free but runs at best every ~5 min and can be delayed; it cannot hold a live websocket. For true near-real-time tracking, a continuously running free VM (Oracle Cloud Always Free) is the recommended choice. Verify free-tier availability at signup.
@@ -494,9 +494,6 @@ TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 DASHBOARD_BASE_URL=https://your-app.vercel.app
 
-# --- Monitoring ---
-SENTRY_DSN=
-
 # --- Schedules (minutes) ---
 NEWS_POLL_MIN=5
 OPTION_POLL_ACTIVE_MIN=2
@@ -532,8 +529,7 @@ DASHBOARD_ALLOWED_EMAIL=            # only your login can access
 | 5 | Broker demat account + API app (key, secret, client ID) | Upstox / Angel One / Dhan developer portals | Free to ~Rs 500/month |
 | 6 | Telegram bot token (BotFather) + your chat ID | Telegram | Free |
 | 7 | Free VM for the worker | Oracle Cloud Always Free (or any small VPS) | Free |
-| 8 | Sentry project (optional) | sentry.io | Free |
-| 9 | Twelve Data / Alpha Vantage key (optional backup) | Their sites | Free tier |
+| 8 | Twelve Data / Alpha Vantage key (optional backup) | Their sites | Free tier |
 
 
 ## 18. Cost breakdown (monthly estimate)
@@ -569,7 +565,7 @@ DASHBOARD_ALLOWED_EMAIL=            # only your login can access
 
 - Repo, Python project, Docker, .env.example, Supabase schema + migrations.
 - Symbol master with sectors and aliases; F&O universe and lot sizes loader.
-- Job runner, job_runs logging, health heartbeat, Sentry.
+- Job runner, job_runs logging, health heartbeat.
 
 
 ### Phase 1 - News intelligence (4-6 days)
