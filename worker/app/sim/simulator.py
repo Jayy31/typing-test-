@@ -69,8 +69,12 @@ def simulate_stock(
     days: int,
     paths: int,
     seed: int,
+    ai_weight: float = 1.0,
 ) -> StockPaths:
-    """Paths from the scenario mixture. daily_vol is a decimal (e.g. IV / sqrt(252))."""
+    """Paths from the scenario mixture. daily_vol is a decimal (e.g. IV / sqrt(252)).
+
+    ai_weight < 1 shrinks toward the market: that share of paths follows the AI scenario tree;
+    the rest follow the option-implied distribution (no drift, IV noise only)."""
     cfg = load_yaml("options.yaml")["simulator"]
     rng = np.random.default_rng(seed)
     probs = np.array([s.probability for s in scenarios])
@@ -81,6 +85,8 @@ def simulate_stock(
         float(cfg["min_scenario_sd_pct"]), float(cfg["scenario_sd_fraction"]) * np.abs(means)
     )
     final = means + sd * rng.standard_normal(paths)
+    market = rng.random(paths) >= ai_weight
+    final[market] = 0.0
     t = np.arange(1, days + 1)[None, :]
     drift = final[:, None] * np.minimum(t / timing[:, None], 1.0) / 100  # fraction of spot
     noise = np.zeros((paths, days))

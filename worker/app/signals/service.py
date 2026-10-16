@@ -27,10 +27,11 @@ from app.signals.expiry import choose_expiry
 from app.signals.filters import Check, check_eligibility, load_holidays
 from app.signals.lifecycle import LifecycleEvent, apply_analysis, expire_stale, live_signal
 from app.signals.options_stage import OptionPlan, candidate_rows_json, plan_options
-from app.signals.prediction import from_scenarios
+from app.signals.prediction import from_scenarios, shrink
 from app.signals.rejections import record_rejection
 from app.signals.scoring import Score, compute_score
 from app.timeutil import as_ist
+from app.tracking.scorecard import create_score
 from app.trading.exits import ExitRules
 from app.yaml_config import load_yaml
 
@@ -270,10 +271,39 @@ def store_result(
         assert sig is not None
         if sig.status != "CANCELLED":
             stamp_signal(s, sig, out, item, plan, now)
+    _score_prediction(s, analysis, out, plan, events, now)
     if not any(ev.kind == "new" for ev in events) and live_signal(s, cand.symbol) is None:
         _record_not_signalled(s, item, out, analysis, score, checks, plan, now)
     _enqueue_events(s, events, analysis, cand, out)
     return events
+
+
+def _score_prediction(
+    s: Session,
+    analysis: Analysis,
+    out: AnalystOutput,
+    plan: OptionPlan | None,
+    events: list[LifecycleEvent],
+    now: datetime,
+) -> None:
+    """Every directional prediction with a known starting price goes on the scorecard (v2.1 B3)."""
+    pred = from_scenarios(out.scenarios, out.direction)
+    if pred is None or plan is None or plan.spot is None:
+        return
+    shrunk = shrink(pred, float(get_settings().scenario_shrink_weight))
+    new = next((ev.signal_id for ev in events if ev.kind == "new"), None)
+    create_score(
+        s,
+        analysis,
+        out.direction,
+        shrunk.move_pct,
+        pred.move_pct,
+        shrunk.p_move,
+        plan.spot,
+        now,
+        new,
+        pred.source,
+    )
 
 
 def _plan_json(plan: OptionPlan | None) -> dict[str, Any] | None:
@@ -291,6 +321,11 @@ def _plan_json(plan: OptionPlan | None) -> dict[str, Any] | None:
         "iv_percentile": plan.iv_percentile,
         "event_iv_premium": plan.event_iv_premium,
         "implied_move_pct": plan.implied_move_pct,
+        "ai_weight": plan.ai_weight,
+        "predicted_move_raw": plan.predicted_move_raw,
+        "predicted_move_shrunk": plan.predicted_move,
+        "edge_ratio_raw": plan.edge_ratio_raw,
+        "raw_result": plan.raw_result.__dict__ if plan.raw_result else None,
         "edge_ratio": plan.edge_ratio,
         "event_in_window": plan.event_in_window,
         "liquidity_score": plan.liquidity_score,
@@ -349,13 +384,16 @@ def _record_not_signalled(
         score=score.final,
         analysis_id=analysis.id,
         spot_at_reject=plan.spot if plan else None,
-        predicted_move_pct=pred.move_pct if pred else None,
+        predicted_move_pct=(
+            shrink(pred, float(get_settings().scenario_shrink_weight)).move_pct if pred else None
+        ),
         window_days=out.window_days,
         ref_expiry=best.row.expiry if best else None,
         ref_strike=best.row.strike if best else None,
         ref_option_type=best.row.option_type if best else None,
         ref_premium=best.row.ask if best else None,
         details_json={
+            "predicted_move_raw_pct": pred.move_pct if pred else None,
             "edge_ratio": plan.edge_ratio if plan else None,
             "ev_pct": best.result.ev_pct if best and best.result else None,
         },
@@ -373,11 +411,17 @@ def stamp_signal(
     """Configuration provenance, prediction, option choice, EV and latency on a live signal."""
     sig.engine_version = ENGINE_VERSION
     sig.flags_json = flags.snapshot(s)
+    w = float(get_settings().scenario_shrink_weight)
     pred = from_scenarios(out.scenarios, out.direction)
     if pred is not None:
-        sig.predicted_move_pct = pred.move_pct
+        shrunk = shrink(pred, w)
+        sig.shrink_weight = w
+        sig.predicted_move_raw_pct = pred.move_pct
+        sig.predicted_move_pct = shrunk.move_pct  # gating/ranking value until calibration
         sig.predicted_move_source = pred.source
-        sig.p_move = pred.p_move
+        sig.p_move = shrunk.p_move
+    if item is not None:
+        sig.theme_key = theme_key(item)
     if item is not None and now is not None:
         first_news = min(i.published_at for i in item.cand.items)
         newest = max(i.published_at for i in item.cand.items)
@@ -397,6 +441,10 @@ def stamp_signal(
     sig.premove_pct = plan.premove_pct
     sig.implied_move_pct = plan.implied_move_pct
     sig.edge_ratio = plan.edge_ratio
+    sig.edge_ratio_raw = plan.edge_ratio_raw
+    if plan.raw_result is not None:
+        sig.expected_value_raw = plan.raw_result.ev_pct
+        sig.p_t1_before_sl_raw = plan.raw_result.p_t1_before_sl
     sig.iv_percentile = plan.iv_percentile
     sig.event_iv_premium = plan.event_iv_premium
     if plan.chosen and plan.chosen.result:
@@ -407,6 +455,17 @@ def stamp_signal(
         sig.expected_value, sig.expected_value_inr = r.ev_pct, r.ev_inr
         sig.p_t1_before_sl, sig.p_t2, sig.p_t3 = r.p_t1_before_sl, r.p_t2, r.p_t3
     _store_candidates(s, sig, plan, now or datetime.now(IST))
+
+
+def theme_key(item: WorkItem) -> str:
+    """Overlap grouping (v2.1 A5): first configured key that exists: theme, then sector."""
+    keys = load_yaml("portfolio.yaml")["theme_keys"]
+    for key in keys:
+        if key == "theme" and item.cand.themes:
+            return f"theme:{sorted(item.cand.themes)[0]}"
+        if key == "sector":
+            return f"sector:{item.sector}"
+    return f"stock:{item.cand.symbol}"
 
 
 def _store_candidates(s: Session, sig: Signal, plan: OptionPlan, now: datetime) -> None:

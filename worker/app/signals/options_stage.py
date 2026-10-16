@@ -52,7 +52,12 @@ class OptionPlan:
     iv_percentile: float | None = None
     event_iv_premium: float | None = None
     implied_move_pct: float | None = None
-    edge_ratio: float | None = None
+    edge_ratio: float | None = None  # shrunk prediction / implied (used for the gate)
+    edge_ratio_raw: float | None = None  # raw AI prediction / implied (reported)
+    ai_weight: float = 1.0
+    predicted_move_raw: float | None = None
+    predicted_move: float | None = None  # shrunk toward the market until calibration
+    raw_result: SimResult | None = None  # chosen candidate simulated with AI-only paths
     event_in_window: bool = False
     candidates: list[EvaluatedCandidate] = field(default_factory=list)
     chosen: EvaluatedCandidate | None = None
@@ -151,11 +156,21 @@ def plan_options(
     engine: Engine | None = None,
 ) -> OptionPlan:
     settings = get_settings()
+    # Until calibration, gates and ranking use the prediction shrunk toward the market
+    # (DESIGN_V2 R-shrink): raw AI values are kept alongside for reporting.
+    ai_w = min(max(float(settings.scenario_shrink_weight), 0.0), 1.0)
+    predicted_raw = predicted_move_pct
+    predicted_move_pct = predicted_raw * ai_w
     opt_type = "CE" if direction == "bullish" else "PE"
     sign = 1 if direction == "bullish" else -1
     today = now.date()
     entry_cfg = load_yaml("entry.yaml")
-    plan = OptionPlan(status="priced")
+    plan = OptionPlan(
+        status="priced",
+        ai_weight=ai_w,
+        predicted_move_raw=predicted_raw,
+        predicted_move=round(predicted_move_pct, 3),
+    )
 
     expiries = source.expiries(symbol)[: int(load_yaml("options.yaml")["candidates"]["expiries"])]
     quote = source.quote(symbol)
@@ -206,6 +221,8 @@ def plan_options(
     if plan.atm_iv_pct:
         plan.implied_move_pct = round(n_day_move_pct(plan.atm_iv_pct, window_days * 7 / 5), 3)
         er = edge_ratio(predicted_move_pct, plan.implied_move_pct)
+        er_raw = edge_ratio(predicted_raw, plan.implied_move_pct)
+        plan.edge_ratio_raw = round(er_raw, 3) if er_raw is not None else None
         plan.edge_ratio = round(er, 3) if er is not None else None
         with session_scope(engine) as s:
             gate = flags.active(s, "feat.implied_move_gate")
@@ -233,6 +250,7 @@ def plan_options(
         horizon,
         settings.mc_paths,
         seed_for(f"{symbol}:{now:%Y%m%d}"),
+        ai_weight=ai_w,
     )
     event_day = None
     if events:
@@ -300,6 +318,29 @@ def plan_options(
         )
     if plan.rejection is None:
         plan.chosen = best
+    if best.input is not None and ai_w < 1.0:  # report what the AI alone would have implied
+        raw_paths = simulate_stock(
+            quote.last_price,
+            scenarios,
+            daily_vol,
+            horizon,
+            settings.mc_paths,
+            seed_for(f"{symbol}:{now:%Y%m%d}"),
+            ai_weight=1.0,
+        )
+        plan.raw_result = evaluate(
+            best.input,
+            raw_paths,
+            rules,
+            sign,
+            predicted_raw,
+            window_days,
+            settings.risk_free_rate,
+            event_day,
+            plan.pre_news_spot,
+        )
+    elif best.result is not None:
+        plan.raw_result = best.result
     return plan
 
 

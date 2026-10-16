@@ -31,3 +31,9 @@ def from_scenarios(scenarios: list[Scenario], direction: str) -> Prediction | No
     move = sign * scenario_expected_move(scenarios)
     p_dir = sum(s.probability for s in scenarios if sign * s.stock_move_pct > 0)
     return Prediction(round(move, 3), "scenario_tree", round(p_dir, 4))
+
+
+def shrink(pred: Prediction, ai_weight: float) -> Prediction:
+    """Blend with the market's view (no expected move, 50/50 direction) until calibrated."""
+    p = None if pred.p_move is None else round(ai_weight * pred.p_move + (1 - ai_weight) * 0.5, 4)
+    return Prediction(round(pred.move_pct * ai_weight, 3), pred.source, p)

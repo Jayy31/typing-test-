@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     risk_free_rate: float = 0.065
     edge_ratio_min: float = 1.2
     mc_paths: int = 10000
+    # Until calibration (Phase 5): share of simulated paths from the AI scenario tree; the rest
+    # follow the option-implied market distribution (no drift, ATM IV). 1.0 = AI only.
+    scenario_shrink_weight: float = 0.5
 
     # History store (DuckDB + Parquet on the worker VM)
     history_data_dir: str = "/data/history"
