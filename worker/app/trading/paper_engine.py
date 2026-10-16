@@ -42,7 +42,9 @@ from app.trading.costs import trade_costs_inr
 from app.trading.exits import (
     Bar,
     ExitRules,
+    Fill,
     PositionState,
+    lots_of,
     rules_from_json,
     rules_hash,
     rules_to_json,
@@ -202,7 +204,7 @@ def open_trade(
     rules = ExitRules.from_config()
     inst = s.get(Instrument, sig.symbol)
     lot = int(inst.lot_size or 0) if inst else 0
-    lots = int(load_yaml("portfolio.yaml")["lots_per_signal"])
+    lots = rules.lots  # whole lots (LOTS_PER_SIGNAL); booking plan is inside the rules
     an = s.get(Analysis, sig.analysis_id) if sig.analysis_id else None
     window = int(an.window_days or 3) if an else 3
     targets = targets_for(
@@ -247,6 +249,7 @@ def open_trade(
         lot_size=lot,
         theme_key=sig.theme_key,
         rules_hash=rules_hash(rules),
+        booking_mode=rules.booking_mode,
         rules_json=rules_to_json(rules),
         state_json=state_to_json(state),
         last_premium=row.bid,
@@ -284,6 +287,7 @@ def open_trade(
             event="ENTRY",
             premium=row.ask,
             fraction=1.0,
+            lots=lots,
             spot=chain.spot,
             bid_qty=row.bid_qty,
             ask_qty=row.ask_qty,
@@ -350,6 +354,16 @@ def monitor_trades(
         tr.mfe_pct = max(tr.mfe_pct or 0.0, move)
         tr.mae_pct = min(tr.mae_pct or 0.0, move)
         for f in new.fills[len(state.fills) :]:
+            n_lots = lots_of(f, tr.lots)
+            slip = slippage_inr(f, tr.lot_size or 0, n_lots)
+            note = None
+            if f.gap:
+                note = (
+                    f"gap/slippage: trigger {f.trigger:.2f}, filled {f.price:.2f} "
+                    "at the next observation"
+                )
+            elif f.spot_trigger is not None:
+                note = f"stock crossed {f.spot_trigger:.2f} (spot {chain.spot:.2f}); filled at bid"
             s.add(
                 TradeEvent(
                     trade_id=tr.id,
@@ -357,16 +371,21 @@ def monitor_trades(
                     event=f.event,
                     premium=f.price,
                     fraction=f.fraction,
+                    lots=n_lots,
+                    trigger_level=f.trigger,
+                    slippage_inr=slip,
+                    gap=f.gap,
                     spot=chain.spot,
                     bid_qty=row.bid_qty,
                     ask_qty=row.ask_qty,
+                    note=note,
                 )
             )
             sig = s.get(Signal, tr.signal_id)
             enqueue_alert(
                 s,
                 "trade",
-                templates.trade_event(tr, f.event, f.price, f.fraction, new),
+                templates.trade_event(tr, f, n_lots, slip, new),
                 f"trade:{tr.id}:{f.event}:{len(new.fills)}",
                 sig.id if sig else None,
             )
@@ -423,6 +442,13 @@ def _opposite_signal(s: Session, tr: PaperTrade, now: datetime, action: str) -> 
     return False
 
 
+def slippage_inr(fill: Fill, lot_size: int, n_lots: int) -> float | None:
+    """(fill - trigger level) x units: negative = filled worse than the level (gap/slippage)."""
+    if fill.trigger is None:
+        return None
+    return round((fill.price - fill.trigger) * lot_size * n_lots, 2)
+
+
 def close_trade(
     s: Session,
     tr: PaperTrade,
@@ -434,7 +460,10 @@ def close_trade(
     """Final P&L after costs, fill check, stock benchmark (v2.1 B6) and attribution residual."""
     lot, lots = tr.lot_size or 0, tr.lots
     gross_pct = state.realised_pct()
-    orders = 1 + len(state.fills)
+    orders = 1 + len(state.fills)  # entry + one order per booked group of lots
+    tr.slippage_inr = round(
+        sum(min(slippage_inr(f, lot, lots_of(f, lots)) or 0.0, 0.0) for f in state.fills), 2
+    )
     costs = trade_costs_inr(tr.entry_premium, lot, lots, orders)
     gross_inr = gross_pct / 100 * tr.entry_premium * lot * lots
     tr.pnl = round(gross_inr - costs, 2)

@@ -14,7 +14,10 @@ targets:
   predicted_fractions: [0.5, 1.0, 1.5]   # of the predicted stock move, repriced with Black-Scholes
   min_step_pct: 5                 # each repriced target at least this % above the previous level
 
-book_fractions: [0.3333, 0.3333, 0.3334]   # booked at T1, T2, T3 (last third closes at T3)
+# Booking is in WHOLE LOTS (an option lot cannot be split). Lots and mode come from env
+# LOTS_PER_SIGNAL (default 3) and PARTIAL_BOOKING_MODE (per_lot | single_exit, default per_lot).
+# per_lot with 3 lots: 1 lot at T1, 1 at T2, 1 at T3 (or the trailing stop).
+single_exit_target: 2             # single_exit mode: full exit at this target (T2); T1 moves the stop
 move_sl_to_entry_after: 1         # after T1 the stop moves to entry
 trail_after: 2                    # after T2 the stop trails at the T1 level
 

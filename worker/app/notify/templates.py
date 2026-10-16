@@ -159,29 +159,42 @@ def trade_entry(tr: Any, sig: Signal, spot_stop: float | None) -> str:
         if tr.entry_fill == "fillable"
         else f"\nFill check: {tr.entry_fill} (ask qty {tr.entry_ask_qty})"
     )
+    plan = "1 lot at each target" if tr.booking_mode == "per_lot" else "all lots at one target"
     return (
-        f"PAPER ENTRY  T{tr.id}  (signal #{sid(sig.id)})\n{_contract(tr)}  x{tr.lots} lot ({tr.lot_size})\n"
+        f"PAPER ENTRY  T{tr.id}  (signal #{sid(sig.id)})\n{_contract(tr)}  {tr.lots} lot(s) x {tr.lot_size}\n"
         f"Entry (ask): {tr.entry_premium:.2f}   SL: {tr.sl:.2f}{ustop}\n"
-        f"T1: {tr.t1:.2f}  T2: {tr.t2:.2f}  T3: {tr.t3:.2f}+   Spot: {tr.spot_entry:.2f}{fill}"
+        f"T1: {tr.t1:.2f}  T2: {tr.t2:.2f}  T3: {tr.t3:.2f}+   Spot: {tr.spot_entry:.2f}\n"
+        f"Booking: {tr.booking_mode} ({plan}); capital used Rs {tr.entry_premium * tr.lot_size * tr.lots:,.0f}{fill}"
     )
 
 
-def trade_event(tr: Any, event: str, price: float, fraction: float, state: Any) -> str:
-    pct = (price / tr.entry_premium - 1) * 100
+def trade_event(tr: Any, fill: Any, n_lots: int, slippage: float | None, state: Any) -> str:
+    pct = (fill.price / tr.entry_premium - 1) * 100
+    left_lots = int(round(state.remaining * tr.lots))
     left = (
-        f"{state.remaining:.0%} open, stop now {state.stop:.2f}"
+        f"{left_lots} lot(s) open, stop now {state.stop:.2f}"
         if not state.closed
         else "position closed"
     )
-    return (
-        f"{EVENT_LABEL.get(event, event)}  T{tr.id}  {_contract(tr)}\n"
-        f"Sold {fraction:.0%} at {price:.2f} ({pct:+.1f}% vs entry {tr.entry_premium:.2f}); {left}"
-    )
+    lines = [
+        f"{EVENT_LABEL.get(fill.event, fill.event)}  T{tr.id}  {_contract(tr)}",
+        f"Sold {n_lots} of {tr.lots} lots at {fill.price:.2f} ({pct:+.1f}% vs entry {tr.entry_premium:.2f}); {left}",
+    ]
+    if fill.trigger is not None:
+        if fill.gap:
+            lines.append(
+                f"Gap/slippage: level {fill.trigger:.2f}, filled {fill.price:.2f} (Rs {slippage or 0:+,.0f})"
+            )
+        elif fill.price > fill.trigger + 1e-9:
+            lines.append(
+                f"Filled above the level {fill.trigger:.2f} (Rs {slippage or 0:+,.0f} better)"
+            )
+    return "\n".join(lines)
 
 
 def trade_closed(tr: Any) -> str:
     bench = (
-        f"\nSame period, stock instead: {tr.benchmark_stock_pct:+.2f}% (Rs {tr.benchmark_stock_inr:,.0f}/lot)"
+        f"\nSame period, stock instead: {tr.benchmark_stock_pct:+.2f}% (Rs {tr.benchmark_stock_inr:,.0f})"
         if tr.benchmark_stock_pct is not None
         else ""
     )
@@ -190,11 +203,14 @@ def trade_closed(tr: Any) -> str:
         f"\nP&L split: delta {a.get('delta', 0):+,.0f}, theta {a.get('theta', 0):+,.0f}, "
         f"vega {a.get('vega', 0):+,.0f}, spread {a.get('spread', 0):+,.0f}, other {a.get('residual', 0):+,.0f}"
     )
+    slip = (
+        f"\nGap/slippage vs trigger levels: Rs {tr.slippage_inr:+,.0f}" if tr.slippage_inr else ""
+    )
     fill = "" if tr.fillability == "fillable" else f"\nFill check: {tr.fillability}"
     return (
-        f"TRADE CLOSED  T{tr.id}  {_contract(tr)}  ({tr.exit_reason})\n"
+        f"TRADE CLOSED  T{tr.id}  {_contract(tr)}  {tr.lots} lot(s)  ({tr.exit_reason})\n"
         f"P&L after costs: Rs {tr.pnl:,.0f} ({tr.pnl_pct:+.1f}%)   avg exit {tr.exit_premium:.2f}\n"
-        f"Best/worst during trade: {tr.mfe_pct:+.0f}% / {tr.mae_pct:+.0f}%{bench}{attr}{fill}"
+        f"Best/worst during trade: {tr.mfe_pct:+.0f}% / {tr.mae_pct:+.0f}%{bench}{attr}{slip}{fill}"
     )
 
 
