@@ -1,0 +1,42 @@
+# Relevance gate. Items that match neither a stock, a sector nor a theme are dropped.
+# Items whose title matches a drop pattern are dropped unless they carry a fact trigger.
+drop_title_patterns:
+  - "stocks to watch"
+  - "stocks to buy"
+  - "stocks to track"
+  - "buzzing stocks"
+  - "top gainers"
+  - "top losers"
+  - "market wrap"
+  - "closing bell"
+  - "opening bell"
+  - "technical view"
+  - "technical picks"
+  - "horoscope"
+  - "how to invest"
+  - "should you buy"
+fact_triggers:
+  - "announces"
+  - "bags order"
+  - "wins order"
+  - "acquires"
+  - "acquisition"
+  - "merger"
+  - "q1 results"
+  - "q2 results"
+  - "q3 results"
+  - "q4 results"
+  - "net profit"
+  - "dividend"
+  - "sebi"
+  - "rbi"
+  - "approves"
+  - "penalty"
+  - "downgrade"
+  - "upgrade"
+min_title_chars: 15
+# Items older than this are ignored (hours).
+max_age_hours: 48
+# Clustering: Jaccard similarity of title tokens, within window hours.
+cluster_similarity: 0.6
+cluster_window_hours: 48

@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Test</title>
+<item><title>Bharti Airtel hikes tariffs by 10% across plans</title>
+<link>https://example.com/a?utm_source=x</link>
+<description>&lt;p&gt;Airtel announces &lt;b&gt;tariff hike&lt;/b&gt; effective next week.&lt;/p&gt;</description>
+<pubDate>Mon, 12 Oct 2026 04:30:00 GMT</pubDate></item>
+<item><title>Airtel hikes tariffs by 10 percent across plans</title>
+<link>https://other.com/story-1</link><description>Same story elsewhere</description>
+<pubDate>Mon, 12 Oct 2026 04:40:00 GMT</pubDate></item>
+<item><title>Stocks to watch: TCS, Infosys, Wipro</title><link>https://example.com/c</link></item>
+<item><title></title><link>https://example.com/empty</link></item>
+</channel></rss>

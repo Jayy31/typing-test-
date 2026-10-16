@@ -1,0 +1,19 @@
+# News feeds polled by the RSS collector. Edit freely: each feed fails independently.
+# URLs could not be verified from the build sandbox; check them once after deploy
+# (System Health / job_runs shows per-feed errors) and fix or remove any that moved.
+feeds:
+  - {name: economic_times_markets, url: "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms", kind: news}
+  - {name: economic_times_stocks, url: "https://economictimes.indiatimes.com/markets/stocks/rssfeeds/2146842.cms", kind: news}
+  - {name: moneycontrol_business, url: "https://www.moneycontrol.com/rss/business.xml", kind: news}
+  - {name: moneycontrol_markets, url: "https://www.moneycontrol.com/rss/marketreports.xml", kind: news}
+  - {name: business_standard_markets, url: "https://www.business-standard.com/rss/markets-106.rss", kind: news}
+  - {name: livemint_markets, url: "https://www.livemint.com/rss/markets", kind: news}
+  - {name: rbi_press_releases, url: "https://rbi.org.in/pressreleases_rss.xml", kind: official}
+  - {name: rbi_notifications, url: "https://rbi.org.in/notifications_rss.xml", kind: official}
+  - {name: sebi, url: "https://www.sebi.gov.in/sebirss.xml", kind: official}
+  - {name: pib, url: "https://pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=3", kind: official}
+  # Reuters has no public RSS; Google News queries carry Reuters and other global wires.
+  - {name: gnews_global_markets, url: "https://news.google.com/rss/search?q=crude+oil+OR+tariff+OR+%22federal+reserve%22+OR+geopolitical+when:1d&hl=en-IN&gl=IN&ceid=IN:en", kind: global}
+  - {name: gnews_india_business, url: "https://news.google.com/rss/search?q=India+stocks+OR+Sensex+OR+Nifty+when:1d&hl=en-IN&gl=IN&ceid=IN:en", kind: news}
+# Source weight used later for sentiment/source-quality scoring (official highest).
+kind_weights: {official: 1.0, news: 0.6, global: 0.5}
