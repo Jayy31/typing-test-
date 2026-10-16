@@ -1,0 +1,68 @@
+# History store (Phase 4). URL templates and column names are from NSE archive conventions and
+# community sources; they could NOT be checked from the build sandbox. If a backfill reports
+# "missing column", fix the mapping here (no code change needed) and re-run: loads are idempotent.
+years: 5
+http:
+  min_interval_s: 1.0           # polite: at most 1 request per second
+  timeout_s: 30
+  retries: 2
+
+sources:
+  equity:                       # daily OHLC + volume + delivery % (security-wise full bhavdata)
+    url: "https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{ddmmyyyy}.csv"
+    series: ["EQ"]
+    columns: {symbol: SYMBOL, series: SERIES, open: OPEN_PRICE, high: HIGH_PRICE, low: LOW_PRICE,
+              close: CLOSE_PRICE, volume: TTL_TRD_QNTY, delivery_pct: DELIV_PER}
+  fo_old:                       # F&O bhavcopy, old format (discontinued mid-2024)
+    until: "2024-07-05"
+    url: "https://archives.nseindia.com/content/historical/DERIVATIVES/{yyyy}/{mmm}/fo{ddMMMyyyy}bhav.csv.zip"
+    instrument: OPTSTK
+    expiry_format: "%d-%b-%Y"
+    columns: {instrument: INSTRUMENT, symbol: SYMBOL, expiry: EXPIRY_DT, strike: STRIKE_PR,
+              type: OPTION_TYP, open: OPEN, high: HIGH, low: LOW, close: CLOSE, settle: SETTLE_PR,
+              oi: OPEN_INT, chg_oi: CHG_IN_OI, volume: CONTRACTS}
+  fo_udiff:                     # F&O bhavcopy, UDiFF format (from July 2024)
+    from: "2024-07-08"
+    url: "https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{yyyymmdd}_F_0000.csv.zip"
+    instrument: STO
+    expiry_format: "%Y-%m-%d"
+    columns: {instrument: FinInstrmTp, symbol: TckrSymb, expiry: XpryDt, strike: StrkPric,
+              type: OptnTp, open: OpnPric, high: HghPric, low: LwPric, close: ClsPric,
+              settle: SttlmPric, oi: OpnIntrst, chg_oi: ChngInOpnIntrst, volume: TtlTradgVol,
+              lot_size: NewBrdLotQty, underlying: UndrlygPric}
+  index:                        # all NSE indices incl. NIFTY 50 and India VIX
+    url: "https://archives.nseindia.com/content/indices/ind_close_all_{ddmmyyyy}.csv"
+    names: ["Nifty 50", "India VIX"]
+    columns: {name: "Index Name", close: "Closing Index Value"}
+  announcements:                # NSE corporate announcements history, fetched in monthly chunks
+    path: "/api/corporate-announcements?index=equities&from_date={from_ddmmyyyy}&to_date={to_ddmmyyyy}"
+  gdelt:                        # GDELT DOC API covers only ~the last 3 months: used going forward
+    url: "https://api.gdeltproject.org/api/v2/doc/doc"
+    query: '(sourcecountry:IN) (Sensex OR Nifty OR "RBI" OR "SEBI")'
+    max_records: 250
+
+event_study:
+  windows: [0, 1, 3, 5, 10]     # trading days after the event (0 = event day)
+  pre_drift_days: 5             # pre-event drift window (-5..-1)
+  beta_lookback_days: 250
+  beta_min_obs: 60
+  market_index: "Nifty 50"
+  after_close_cutoff: "15:30"   # announcements after this count from the next trading day
+  regimes:                      # market regime by India VIX at the event (no technical indicators)
+    vix_low: 13
+    vix_high: 20
+  min_n: 8                      # fewer analogues -> not used for prediction (shown only)
+  examples: 5
+
+iv_backfill:
+  lookback_days: 365            # IV percentile window once history exists
+  max_strikes_each_side: 3      # per expiry per day, around the day's ATM
+  min_premium: 0.5
+
+blend:                          # predicted move once analogues exist (before calibration in Phase 5)
+  analogue_weight: 0.5          # share of the analogue mean in the blended prediction
+  analogue_window: 3            # which event-study window feeds predictions (trading days)
+
+backup:
+  every_days: 7
+  include: ["parquet", "history.duckdb"]

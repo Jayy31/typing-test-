@@ -14,7 +14,7 @@ import duckdb
 
 from app.config import get_settings
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 DDL = [
     """CREATE TABLE IF NOT EXISTS hist_prices (
@@ -43,6 +43,18 @@ DDL = [
         n INTEGER, mean_abn_ret DOUBLE, median DOUBLE, hit_rate DOUBLE, std DOUBLE,
         p25 DOUBLE, p75 DOUBLE, computed_at TIMESTAMP)""",
     "CREATE TABLE IF NOT EXISTS store_meta (key VARCHAR PRIMARY KEY, value VARCHAR)",
+    # Phase 4
+    """CREATE TABLE IF NOT EXISTS loaded_files (
+        kind VARCHAR, date DATE, status VARCHAR, rows INTEGER, loaded_at TIMESTAMP,
+        PRIMARY KEY (kind, date))""",
+    """CREATE TABLE IF NOT EXISTS hist_raw_news (
+        news_id VARCHAR PRIMARY KEY, ts TIMESTAMP, symbol VARCHAR, title VARCHAR, body VARCHAR,
+        url VARCHAR, source VARCHAR, tag_status VARCHAR DEFAULT 'pending', batch_id VARCHAR)""",
+    """CREATE TABLE IF NOT EXISTS hist_iv (
+        date DATE, symbol VARCHAR, expiry DATE, strike DOUBLE, type VARCHAR, iv DOUBLE,
+        spot DOUBLE, PRIMARY KEY (date, symbol, expiry, strike, type))""",
+    """CREATE TABLE IF NOT EXISTS hist_atm_iv (
+        date DATE, symbol VARCHAR, expiry DATE, atm_iv DOUBLE, PRIMARY KEY (date, symbol))""",
 ]
 
 
