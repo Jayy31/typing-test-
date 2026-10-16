@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     ai_model_bear: str = ""  # mid
     ai_model_judge: str = ""  # strongest
     ai_multi_agent_max_per_day: int = 30
-    # Latest training cutoff of any AI model used (YYYY-MM-DD). Before it, AI is used for labels only
+    # Latest training cutoff of any AI model used (YYYY-MM-DD). Before it, AI gives labels only
     # (DESIGN_V2 "Research integrity" R1); empty = treat all history as contaminated.
     ai_model_knowledge_cutoff: str = ""
     ai_daily_budget_inr: float = 100
