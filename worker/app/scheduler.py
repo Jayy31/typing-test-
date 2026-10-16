@@ -1,7 +1,7 @@
 """All job schedules live here. One worker process, APScheduler inside."""
 
 import logging
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.base import BaseTrigger
@@ -26,11 +26,18 @@ from app.db.session import session_scope
 from app.health.cleanup import cleanup
 from app.health.heartbeat import failing_jobs
 from app.jobs import JobFn, run_job
+from app.market.live import (
+    configured_poll_minutes,
+    poll_active_options,
+    poll_universe_options,
+    sync_instruments_job,
+)
 from app.notify import templates
 from app.notify.outbox import enqueue_alert
 from app.notify.telegram import poll_telegram_job, send_alerts_job
 from app.processing.pipeline import gate_news
 from app.signals.service import run_signal_cycle
+from app.yaml_config import load_yaml
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +57,26 @@ def heartbeat(engine: Engine | None = None) -> int:
                 templates.health_problem(h.job, h.consecutive_failures, h.last_error),
                 f"health:{h.job}:{now.date()}:{now.hour // 6}",
             )
+        warning = token_expiry_warning(now)
+        if warning:
+            enqueue_alert(s, "health", warning, f"broker_token:{now.date()}")
     return len(bad)
+
+
+def token_expiry_warning(now: datetime, warn_days: int = 14) -> str | None:
+    """Upstox analytics tokens last one year: warn daily during the last two weeks."""
+    issued = get_settings().broker_token_issued_on
+    if not issued:
+        return None
+    expires = date.fromisoformat(issued) + timedelta(days=365)
+    left = (expires - now.date()).days
+    if left > warn_days:
+        return None
+    return (
+        f"SYSTEM PROBLEM\nUpstox analytics token expires on {expires} ({left} days left). "
+        "Generate a new one in the Upstox developer portal and update BROKER_ACCESS_TOKEN and "
+        "BROKER_TOKEN_ISSUED_ON."
+    )
 
 
 def _job(sched: BlockingScheduler, name: str, fn: JobFn, trigger: BaseTrigger) -> None:
@@ -104,6 +130,27 @@ def build_scheduler() -> BlockingScheduler:
         CronTrigger(hour=7, minute=50, timezone=IST),
     )
     _job(sched, "cleanup", cleanup, CronTrigger(hour=3, minute=30, timezone=IST))
+    # Live options (Phase 3a, Upstox analytics token; jobs no-op until BROKER_ACCESS_TOKEN is set)
+    _job(
+        sched,
+        "upstox_instruments",
+        sync_instruments_job,
+        CronTrigger(day_of_week="mon-fri", hour=7, minute=35, timezone=IST),
+    )
+    _job(
+        sched,
+        "options_active",
+        poll_active_options,
+        IntervalTrigger(minutes=configured_poll_minutes()),
+    )
+    for hhmm in load_yaml("options.yaml")["polling"]["universe_times"]:
+        h, m = (int(x) for x in hhmm.split(":"))
+        _job(
+            sched,
+            f"options_universe_{h:02d}{m:02d}",
+            poll_universe_options,
+            CronTrigger(day_of_week="mon-fri", hour=h, minute=m, timezone=IST),
+        )
     return sched
 
 

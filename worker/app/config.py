@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     broker_client_id: str = ""
     broker_access_token: str = ""
     broker_totp_secret: str = ""
+    broker_token_issued_on: str = ""  # YYYY-MM-DD; Upstox analytics token lasts 1 year
 
     # Market / macro data
     macro_provider: str = "yfinance"
