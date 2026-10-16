@@ -404,7 +404,10 @@ Added by the owner after Phase 3a. Values in config; nothing here is auto-applie
   (`post_close`); weekend/holiday → next trading day; no time → same day, `unknown`, weight 0.5.
 - **H3 Point-in-time universe.** F&O list and lot size as of each date from the bhavcopies,
   including later removed or delisted stocks; the history tagger accepts those symbols too.
-  Lot sizes before July 2024 are inferred (marked `inferred`).
+  Lot sizes before July 2024 are inferred (marked `inferred`); owner-known values in
+  `data/lot_size_overrides.yaml` replace inferred ones (never exact bhavcopy lots). For trades or
+  events on inferred lots the backtester (Phase 6) reports **% of premium as the primary metric**
+  and marks rupee values "approximate (inferred lot size)" (`universe.value_report`).
 - **H4 Confounding.** Another major event of a different type for the same stock, or a
   sector-wide event, inside the window → `confounded`; down-weighted (0.5) or excluded (config).
   Several articles on one event count once.

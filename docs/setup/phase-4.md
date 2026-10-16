@@ -44,6 +44,9 @@ you get "being written by another process" — just retry later).
 - Mon-Fri 18:45 IST `history_nightly`: today's bhavcopies, live tagged news -> history, GDELT, IV.
 - Sun 06:30 IST `history_weekly`: curated events (`data/historical_events.yaml`), your corporate-action
   factors (`data/corporate_actions.yaml`), event study, R2 backup.
+- Optional: known historical lot sizes in `data/lot_size_overrides.yaml` replace inferred ones
+  (before July 2024). Without them, backtest results on those dates lead with % of premium and
+  mark rupee values "approximate (inferred lot size)".
 - The nightly job also fetches corporate actions for the last and next 30 days.
 
 ## 5. Verification (`python -m app.history.verify`)

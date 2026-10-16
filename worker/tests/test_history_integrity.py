@@ -264,3 +264,32 @@ def test_why_shows_n_and_weight():
     assert "n=12 (effective 10.0), weight 33% in the prediction" in text
     small = analogue_json(AnalogueResult("sector", "all", 3, 3, 3.0, 1, 1, 1, 1, 0, 2))
     assert "too few events: shown only, weight 0%" in analogue_lines(small)[0]
+
+
+def test_lot_overrides_replace_inferred_only(hist, tmp_path):
+    con, cal = hist
+    universe.fill_lots(con)
+    f = tmp_path / "lots.yaml"
+    f.write_text(
+        f"overrides:\n  - {{symbol: INFY, from: {cal[0]}, to: {cal[99]}, lot_size: 250}}\n"
+        f"  - {{symbol: INFY, from: {cal[255]}, lot_size: 999}}\n"
+    )
+    universe.apply_overrides(con, f)
+    assert universe.lot_on(con, "INFY", cal[50]) == (250, "override")
+    assert universe.lot_on(con, "INFY", cal[150]) == (200, "inferred")
+    assert universe.lot_on(con, "INFY", cal[260]) == (
+        400,
+        "bhavcopy",
+    )  # exact lots never overridden
+
+
+def test_value_report_pct_primary_for_inferred_lots():
+    r = universe.value_report(12.5, 3000, "inferred")
+    assert (
+        r.primary == "pct"
+        and r.text() == "+12.5% of premium (Rs +3,000, approximate (inferred lot size))"
+    )
+    assert universe.value_report(12.5, 3000, None).primary == "pct"
+    exact = universe.value_report(12.5, 3000, "bhavcopy")
+    assert exact.primary == "inr" and exact.note is None
+    assert universe.value_report(-5, 1000, "override").text() == "Rs +1,000 (-5.0% of premium)"

@@ -31,7 +31,7 @@ def weekly() -> int:
     """Sunday: refresh curated events, recompute the event study, back up (if enabled)."""
     with connect(write=True) as con:
         live_sync.load_curated(con)
-        corp_actions.load_manual(con)
+        corp_actions.load_manual(con)  # event_study.run re-applies lot overrides (fill_lots)
         reactions, stats = event_study.run(con)
     log.info("event study: %d reactions, %d stats (%s)", reactions, stats, datetime.now(IST))
     return reactions + backup()
