@@ -4,7 +4,9 @@ Project guide for Claude Code. Read this first, then BOTH design docs:
 `docs/DESIGN.md` and `docs/DESIGN_V2.md`. Together they define ONE final system (no v1/v2 split, no
 shadow mode, one pipeline, one output). **Where they conflict, `docs/DESIGN_V2.md` wins.** Its section
 "Rules and outputs v2.1" adds owner rules: all values in config, each rule switchable by mode so the
-backtester can compare v2.1 rules with the original fixed rules.
+backtester can compare v2.1 rules with the original fixed rules. Section "Research integrity and
+review" adds R1 AI look-ahead protection (pre-`AI_MODEL_KNOWLEDGE_CUTOFF` history: AI labels only, never
+predictions), R2 realistic fills (fillable/partial/unfillable), R3 weekly Sunday digest (suggestions only).
 Phase-specific research notes live in `docs/notes/` (e.g. `docs/notes/upstox-api.md`).
 
 ## What this is
@@ -83,13 +85,13 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 | 2 | Signals and alerts | done |
 | 2.5 | Refactor 0-2 for DESIGN_V2 (schema, taxonomy, tagger batch, collector base, option interface, DuckDB, flags, scenario tree, V2 signal fields/templates) | done |
 | 3a | Upstox live data, option polling, implied move / edge ratio, Monte Carlo simulator (strike/expiry by EV), entry rules A4 b/c, priced-in + liquidity scoring, rejected candidates (B1 store), latency (B7) | done |
-| 3b | Paper engine with v2.1 exits A1-A3, entry timing A4a, overlap A5, notional capital A6, counterfactual tracker (B1), P&L attribution (B2), prediction scorecard (B3), live stock benchmark (B6), trade alerts | next |
-| 4 | History: 5y backfill (bhavcopy, announcements, GDELT, events YAML), batch tagging, event study + analogue lookup, R2 backup | |
-| 5 | Multi-agent analysis + probability blending + calibration + EV ranking + AI post-mortems (B4) | |
-| 6 | Backtester (walk-forward, costs, no look-ahead / survivorship) + fixed vs v2.1 rule comparison, metrics module (B5), benchmarks (B6) | |
+| 3b | Paper engine with v2.1 exits A1-A3, entry timing A4a, overlap A5, notional capital A6, counterfactual tracker (B1), P&L attribution (B2), prediction scorecard (B3), live stock benchmark (B6), trade alerts, R2 fill quantities + fillability flags | next |
+| 4 | History: 5y backfill (bhavcopy, announcements, GDELT, events YAML), batch tagging (R1: labels only before cutoff), event study + analogue lookup, R2 backup | |
+| 5 | Multi-agent analysis + probability blending + calibration + EV ranking + AI post-mortems (B4) + R1 post-cutoff-only evaluation + R3 weekly digest (Telegram) | |
+| 6 | Backtester (walk-forward, costs, no look-ahead / survivorship) + fixed vs v2.1 rule comparison, metrics module (B5), benchmarks (B6), R1 enforcement, R2 with/without unfillable metrics | |
 | 7 | Deeper data sources (+ their tables) incl. results fast-path | |
 | 8 | Knowledge graph + 2nd/3rd-order signals | |
-| 9 | Dashboard (all pages from both docs + Rejected page, portfolio views) + morning brief / evening summary incl. top rejected (B8) | |
+| 9 | Dashboard (all pages from both docs + Rejected page, portfolio views) + morning brief / evening summary incl. top rejected (B8), R1 backtest note, R2 toggle, R3 digest page | |
 | 10 | Analytics, monthly report, learning loop, hardening | |
 
 ## Current phase

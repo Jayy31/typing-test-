@@ -333,3 +333,48 @@ each trade stores the rule config hash it ran under.
 - **Phase 6:** A1-A3 backtest comparisons (fixed vs v2.1), B5 metrics module, B6 random/fixed-rule benchmarks.
 - **Phase 9:** "Rejected" page, portfolio equity/drawdown views, B5 dashboards, B8 evening summary.
 - **Phase 10:** B3/B4/B5 in the monthly report.
+
+---
+
+## Research integrity and review
+
+Added by the owner after Phase 3a. Values in config; nothing here is auto-applied.
+
+### R1. AI look-ahead protection in backtests
+- The AI models know market outcomes up to their training cutoff, so AI predictions on older news are contaminated.
+- `AI_MODEL_KNOWLEDGE_CUTOFF` (env, YYYY-MM-DD; the latest cutoff of any model used) splits history:
+  - **Before the cutoff:** AI is used only for fact/label extraction (event type, entities, sentiment, surprise) via the batch tagger. It is never asked for direction, move size, probabilities or outcomes.
+  - The event study and the backtester use only these labels plus actual price data. Rule-based and analogue-based predictions are backtestable; AI-predicted ones are not.
+  - **After the cutoff:** multi-agent predictions, probabilities and calibration are evaluated only on live (post-cutoff) data.
+- Every backtest run stores which components used AI and how (`labels_only` / `predictions`). Runs that would use AI predictions on pre-cutoff dates are refused.
+- The Backtest UI shows a clear note: which parts used AI labels, which used AI predictions, and the cutoff date.
+
+### R2. Realistic fills for illiquid options
+- At entry and exit, record bid/ask prices **and quantities** and check whether 1 lot could have filled at that price.
+- Each trade is flagged `fillable` / `partial` / `unfillable` (entry and exit checked separately; the worse one wins).
+- All performance metrics are reported with and without unfillable trades (dashboard toggle; reports show both).
+- Backtester: the same check where quantity data exists; otherwise a conservative filter from daily volume/OI (config thresholds), with excluded trades counted and reported.
+
+### R3. Weekly review digest (Sunday, Telegram + dashboard page)
+- Week's P&L (incl. notional-capital portfolio view) and open trades.
+- Top 3 winning and top 3 losing trades, each with a short AI post-mortem.
+- Rejected signals that would have won (from the counterfactual tracker).
+- Unfillable trades flagged this week.
+- Data source errors and job failures (source health, `job_runs`).
+- AI spend for the week vs budget.
+- Rules or thresholds the system suggests reviewing, with reasons and evidence. **Suggestions only, never auto-applied.**
+
+### Phase placement
+| Item | Phase |
+|---|---|
+| R1 config key `AI_MODEL_KNOWLEDGE_CUTOFF` | added now (Phase 3a PR) |
+| R1 batch tagging = labels only, pre-cutoff enforcement in the event study | 4 |
+| R1 calibration and probability evaluation on post-cutoff live data only | 5 |
+| R1 backtester enforcement, run metadata, refusal of contaminated runs | 6 |
+| R1 Backtest UI note | 9 |
+| R2 bid/ask quantities captured, fillability check and flags on paper trades and rejected-candidate counterfactuals | 3b |
+| R2 metrics with/without unfillable trades (metrics module), backtester volume/OI filter | 6 |
+| R2 dashboard toggle | 9 |
+| R3 weekly digest on Telegram (needs post-mortems + counterfactuals) | 5 |
+| R3 dashboard page | 9 |
+| R3 rule-review suggestions: basic evidence-based suggestions in 5, full learning-loop suggestions | 10 |
