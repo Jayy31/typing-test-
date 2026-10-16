@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy import Engine
 
-from app.ai.schemas import AnalystOutput
+from app.ai.schemas import AnalystOutput, Scenario
 from app.collectors.fno_meta import SYMBOL_MASTER, parse_symbol_master, sync_instruments
 from app.config import IST
 from app.db.models import NewsItem, NewsTag
@@ -48,6 +48,32 @@ def analyst_output(**kw: Any) -> AnalystOutput:
         risks=["competitor holds tariffs"],
         counter_arguments=["already priced in"],
         invalidators=["tariff hike rolled back"],
+        scenarios=[
+            Scenario(
+                name="hike sticks",
+                probability=0.6,
+                stock_move_pct=5.0,
+                timing_days=3,
+                triggers=["peers follow"],
+                invalidation="rollback",
+            ),
+            Scenario(
+                name="muted reaction",
+                probability=0.3,
+                stock_move_pct=0.5,
+                timing_days=3,
+                triggers=["priced in"],
+                invalidation="strong volumes",
+            ),
+            Scenario(
+                name="sell the news",
+                probability=0.1,
+                stock_move_pct=-3.0,
+                timing_days=2,
+                triggers=["profit booking"],
+                invalidation="fresh buying",
+            ),
+        ],
         cited_news_ids=[1],
         analogue_notes=None,
     )
