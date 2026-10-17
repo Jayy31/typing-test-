@@ -21,6 +21,7 @@ from app.db.models import (
     Digest,
     PaperTrade,
     PostMortem,
+    RegulatoryAction,
     RejectedCandidate,
     Signal,
 )
@@ -119,6 +120,23 @@ def build(s: Session, week_start: date) -> tuple[str, dict[str, Any]]:
         ),
         0,
     )
+    data["regulator_review"] = [
+        {
+            "regulator": r.regulator,
+            "title": r.title[:140],
+            "confidence": r.match_confidence,
+            "guesses": [f"{c['symbol']} {c['score']:.2f}" for c in (r.match_candidates or [])],
+            "url": r.url,
+        }
+        for r in s.scalars(
+            select(RegulatoryAction).where(
+                RegulatoryAction.symbol.is_(None),
+                RegulatoryAction.disclosed_at >= start_dt,
+                RegulatoryAction.disclosed_at < start_dt + timedelta(days=7),
+            )
+        )
+        if (r.match_confidence or 0) > 0  # items naming no stock at all are not worth a look
+    ]
     data["suggestions"] = suggestions(data)
     return render(data), data
 
@@ -226,6 +244,12 @@ def render(d: dict[str, Any]) -> str:
         f"  {k}: {v['n']} resolved, {v['would_win']} would have won, avg {v['avg_option_pct']:+.1f}%"
         for k, v in d["rejected"].items()
     ] or ["  none resolved"]
+    lines += ["", "REGULATOR ITEMS TO REVIEW (name match below threshold: no evidence created)"]
+    lines += [
+        f"  {x['regulator'].upper()}: {x['title']} | best {x['confidence']:.2f}: "
+        f"{', '.join(x['guesses'])}"
+        for x in d.get("regulator_review", [])
+    ] or ["  none"]
     lines += ["", "POST-MORTEM CAUSES"]
     lines += [f"  {k}: {v}" for k, v in d["post_mortem_causes"].items()] or ["  none"]
     lines += [

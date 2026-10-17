@@ -203,6 +203,57 @@ class HistoryData:
             )
         return sorted(out, key=lambda e: (e.day, e.symbol))
 
+    def linked_events(self, direct: list[Event], depth: int) -> list[Event]:
+        """Graph-propagated events (Phase 8) up to `depth` hops along edges valid on the day.
+        Direction = source direction x each hop's default sign ('same' when unknown: the stats
+        must then confirm it). A stock with a direct event that day gets no propagated one (no
+        double counting); one propagated event per stock and day."""
+        from app import taxonomy
+        from app.kg.signs import SIGN, default_sign
+
+        edges: dict[str, list[tuple[str, str, str | None, date | None, date | None]]] = defaultdict(
+            list
+        )
+        for src, dst, typ, sec, vf, vt in self.con.execute(
+            "SELECT src, dst, type, dst_sector, valid_from, valid_to FROM hist_kg_edges"
+        ).fetchall():
+            edges[src].append((dst, typ, sec, vf, vt))
+        taken = {(e.symbol, e.day) for e in direct}
+        out: list[Event] = []
+        for ev in direct:
+            frontier = [(ev.symbol, ev.direction, [ev.symbol])]
+            for _ in range(depth):
+                nxt = []
+                for sym, direction, path in frontier:
+                    for dst, typ, sec, vf, vt in edges.get(sym, []):
+                        if dst in path or (vf and vf > ev.day) or (vt and vt < ev.day):
+                            continue
+                        flip = SIGN.get(default_sign(typ, ev.event_type), 1) < 0
+                        d2 = (
+                            ("bearish" if direction == "bullish" else "bullish")
+                            if flip
+                            else direction
+                        )
+                        nxt.append((dst, d2, [*path, dst]))
+                        if (dst, ev.day) in taken:
+                            continue
+                        taken.add((dst, ev.day))
+                        out.append(
+                            Event(
+                                f"kg:{'>'.join([*path, dst])}:{ev.key}",
+                                ev.event_ids,
+                                dst,
+                                sec,
+                                f"kg:{typ}:{taxonomy.parent(ev.event_type) or 'other'}",
+                                d2,
+                                ev.day,
+                                ev.timing,
+                                f"via graph from {ev.symbol}: {ev.title or ''}"[:120],
+                            )
+                        )
+                frontier = nxt
+        return out
+
 
 def at_close(d: date) -> datetime:
     return datetime.combine(d, time(15, 30))

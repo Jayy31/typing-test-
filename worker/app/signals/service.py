@@ -20,6 +20,7 @@ from app.db.models import Scenario as ScenarioRow
 from app.db.session import session_scope
 from app.flags import ENGINE_VERSION
 from app.history.analogues import AnalogueResult, lookup
+from app.kg.propagate import propagate
 from app.market.live import UpstoxOptionData
 from app.notify import templates
 from app.notify.outbox import enqueue_alert
@@ -220,6 +221,7 @@ def store_result(
             prompt_ver=_prompt_ver(item),
             created_at=now,
             prediction_source=item.source,
+            impact_order=cand.impact_order,
         )
         s.add(failed)
         s.flush()
@@ -289,6 +291,7 @@ def store_result(
         prompt_ver=_prompt_ver(item),
         created_at=now,
         prediction_source=item.source,
+        impact_order=cand.impact_order,
     )
     s.add(analysis)
     s.flush()
@@ -569,6 +572,7 @@ def stamp_signal(
         sig.p_move = shrunk.p_move
     if item is not None:
         sig.theme_key = theme_key(item)
+        sig.impact_order = item.cand.impact_order
     if item is not None and now is not None:
         first_news = min(i.published_at for i in item.cand.items)
         newest = max(i.published_at for i in item.cand.items)
@@ -767,6 +771,9 @@ def run_signal_cycle(
     """Job entrypoint. Returns the number of analyses run. `only` limits it to some stocks."""
     now = datetime.now(IST)
     with session_scope(engine) as s:
+        if flags.active(s, "feat.knowledge_graph"):
+            propagate(s, now)  # 2nd/3rd-order evidence along graph edges (Phase 8)
+    with session_scope(engine) as s:
         work, changes = plan_work(s, now, only)
         sector_watch(s, now)
         expire_stale(s, now)
@@ -777,7 +784,7 @@ def run_signal_cycle(
     source = source or UpstoxOptionData(engine)
     for item in work:
         with session_scope(engine) as s:
-            mode, why = choose_mode(s, ai, now)
+            mode, why = choose_mode(s, ai, now, item.cand.impact_order)
             if mode is None:
                 record_rejection(
                     s,

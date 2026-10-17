@@ -33,10 +33,16 @@ ROLES = (
     "postmortem",
     "extractor",
     "extractor_fallback",
+    "kg_extractor",
 )
 # roles that reuse another role's model id. Phase 7 extraction (results, auto sales): the cheap
 # model first, the mid model as the fallback.
-MODEL_ROLE = {"postmortem": "analyst", "extractor": "tagger", "extractor_fallback": "analyst"}
+MODEL_ROLE = {
+    "postmortem": "analyst",
+    "extractor": "tagger",
+    "extractor_fallback": "analyst",
+    "kg_extractor": "tagger",  # Phase 8 company-link extraction (cheap)
+}
 RESERVED_ROLES = ("tagger",)  # may spend the AI_TAGGER_RESERVE_INR kept back from other roles
 PAUSED_FIRST = "multi-agent panel, single analyst and post-mortems"
 

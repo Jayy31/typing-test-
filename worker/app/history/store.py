@@ -14,7 +14,7 @@ import duckdb
 
 from app.config import get_settings
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 DDL = [
     """CREATE TABLE IF NOT EXISTS hist_prices (
@@ -66,6 +66,10 @@ DDL = [
     # v4 (Phase 7): structured events keep the date the thing HAPPENED in event_date; `date`/`time`
     # are always the public disclosure time, which is all the event study and backtests may use.
     "ALTER TABLE hist_events ADD COLUMN IF NOT EXISTS event_date DATE",
+    # v5 (Phase 8): company graph edges as of each date (copied nightly from Postgres kg_edges)
+    """CREATE TABLE IF NOT EXISTS hist_kg_edges (
+        src VARCHAR, dst VARCHAR, type VARCHAR, weight DOUBLE, dst_sector VARCHAR,
+        valid_from DATE, valid_to DATE, PRIMARY KEY (src, dst, type))""",
 ]
 # Positional inserts into hist_events (the v4 event_date column is filled only for structured events)
 HIST_EVENTS_INSERT = (

@@ -50,14 +50,14 @@ def resolve(
     symbol: str | None,
     sector: str | None,
     when: datetime,
-    lookup: Lookup = analogues.lookup,  # injectable for tests
+    lookup: Lookup | None = None,  # injectable for tests
 ) -> Resolved | None:
     cfg = load_yaml("deep_data.yaml")["evidence"]
     rule = rule_value(subtype)
     if rule == 0.0:
         return None
     rule_dir = "bullish" if rule > 0 else "bearish"
-    res = lookup(
+    res = (lookup or analogues.lookup)(
         [subtype], sector, symbol or "", rule_dir, when.date(), int(cfg["base_rate_window"])
     )
     if res is not None and res.usable:
@@ -85,6 +85,8 @@ def resolve(
 
 def counts_as_official(source: str) -> bool:
     """Structured evidence that passes the candidate gate's 'official filing' test."""
+    if source.startswith("kg:"):  # graph evidence with a learned sign counts like a base rate
+        return source.split(":")[3] == "base_rate"
     if not source.startswith("deep:"):
         return False
     _, category, kind = source.split(":", 2)
@@ -111,7 +113,7 @@ def emit(
     title: str,
     url: str | None,
     detail: str,
-    lookup: Lookup = analogues.lookup,
+    lookup: Lookup | None = None,
 ) -> int | None:
     """Create (once per ref + subtype) the evidence row. Returns its news id, None if no rule
     applies."""

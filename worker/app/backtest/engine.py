@@ -50,6 +50,7 @@ class Variant:
     direction_mode: str = "signal"  # signal | random (benchmark B6)
     threshold: str = "strict"  # rules mode direction rule (config rules_mode.thresholds)
     selection: str = "ev"  # ev (live gates) | atm (benchmark: ATM, nearest expiry, no gates)
+    kg_depth: int = 0  # Phase 8: 0 = no graph; 2 = live default; 3 = comparison variant
 
     def rules(self) -> ExitRules:
         over = dict(_cfg()["rule_sets"][self.rule_set])

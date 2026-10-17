@@ -27,8 +27,8 @@ from app.db.models import (
     StockStats,
 )
 from app.db.session import session_scope
-from app.deep import evidence, parsers, rules
-from app.processing.pipeline import build_mapper
+from app.deep import evidence, matching, parsers, rules
+from app.processing.entity_map import InstrumentInfo
 from app.yaml_config import load_yaml
 
 log = logging.getLogger(__name__)
@@ -359,17 +359,23 @@ class RegulatorCollector(Collector[parsers.RegulatorItem]):
 
 
 def store_regulatory(items: list[parsers.RegulatorItem], engine: Engine | None = None) -> int:
-    """Regulator items naming one of our stocks become evidence (sebi_order / usfda_adverse).
-    Unmapped items are stored with symbol NULL (useful for reviewing the alias list)."""
-    mapper = build_mapper(engine)
+    """Regulator items whose company name matches one stock with confidence >= the threshold
+    become evidence (sebi_order / usfda_adverse). Others are stored with their best guesses and
+    scores for review (weekly digest) and create nothing."""
     added = 0
     with session_scope(engine) as s:
-        fno = fno_symbols(s)
+        insts = [
+            InstrumentInfo(i.symbol, i.name, i.sector, tuple(i.aliases or []))
+            for i in s.scalars(select(Instrument))
+            if i.is_fno
+        ]
+        th = matching.threshold()
         for r in items:
             if s.scalar(select(RegulatoryAction.id).where(RegulatoryAction.ref == r.ref)):
                 continue
-            syms = [x for x in mapper.map(r.entity).symbols if x in fno]
-            symbol = syms[0] if len(syms) == 1 else None
+            cands = matching.match(r.entity, insts)
+            best = cands[0] if cands else None
+            symbol = best.symbol if best and best.score >= th else None
             subtype = "sebi_order" if r.regulator == "sebi" else "usfda_adverse"
             row = RegulatoryAction(
                 ref=r.ref,
@@ -382,7 +388,11 @@ def store_regulatory(items: list[parsers.RegulatorItem], engine: Engine | None =
                 url=r.url,
                 subtype=subtype,
                 material=symbol is not None,
-                materiality_json={"mapped": syms},
+                match_confidence=best.score if best else 0.0,
+                match_candidates=[
+                    {"symbol": m.symbol, "score": m.score, "via": m.via} for m in cands
+                ],
+                materiality_json={"entity": r.entity, "threshold": th},
             )
             if symbol:
                 row.news_id = evidence.emit(
@@ -394,7 +404,8 @@ def store_regulatory(items: list[parsers.RegulatorItem], engine: Engine | None =
                     disclosed_at=r.disclosed_at,
                     title=r.title[:200],
                     url=r.url,
-                    detail=f"{r.regulator.upper()} {r.action_type}: {r.title}",
+                    detail=f"{r.regulator.upper()} {r.action_type}: {r.title} "
+                    f"(name match {best.score:.2f} via '{best.via}')",  # type: ignore[union-attr]
                 )
             s.add(row)
             added += 1

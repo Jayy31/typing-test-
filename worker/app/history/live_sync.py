@@ -33,8 +33,10 @@ def sync_live_events(
             select(NewsTag, NewsItem).join(NewsItem, NewsItem.id == NewsTag.news_id)
         ).all():
             when = as_ist(item.published_at or item.fetched_at)
-            if when < since or item.source.startswith("deep:"):
-                continue  # structured events are synced by app.deep.history (with event_date)
+            if when < since or item.source.startswith(("deep:", "kg:")):
+                # structured events are synced by app.deep.history (with event_date); graph rows
+                # are derived from other events, not events themselves
+                continue
             rows.append(
                 (
                     f"live:{tag.id}",

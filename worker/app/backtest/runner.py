@@ -20,6 +20,7 @@ from app.db.models import Signal as LiveSignal
 from app.db.session import session_scope
 from app.history.event_study import (
     grouped_values,
+    kg_reaction_rows,
     reaction_day,
     reaction_rows,
     summarize,
@@ -102,12 +103,16 @@ def run_rules(
     res = RunResult(variant, start, end, folds=folds(start, end))
     vix = vix_series(con)
     for f in res.folds:
-        groups = grouped_values(
-            reaction_rows(con, before=f.test_start), vix
-        )  # nothing from the fold on
+        groups = grouped_values(  # nothing from the fold on
+            reaction_rows(con, before=f.test_start) + kg_reaction_rows(con, before=f.test_start),
+            vix,
+        )
         stats = summarize(groups)
         sigs: list[Signal] = []
-        for ev in data.events(f.test_start, f.test_end):
+        evs = data.events(f.test_start, f.test_end)
+        if variant.kg_depth:  # graph-propagated events as of each date (no look-ahead)
+            evs = evs + data.linked_events(evs, variant.kg_depth)
+        for ev in evs:
             out = rules_signal(ev, stats, data, variant, groups)
             (res.skips.append(out) if isinstance(out, Skip) else sigs.append(out))
         _execute(sigs, data, variant, res)
