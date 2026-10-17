@@ -16,4 +16,4 @@ feeds:
   - {name: gnews_global_markets, url: "https://news.google.com/rss/search?q=crude+oil+OR+tariff+OR+%22federal+reserve%22+OR+geopolitical+when:1d&hl=en-IN&gl=IN&ceid=IN:en", kind: global}
   - {name: gnews_india_business, url: "https://news.google.com/rss/search?q=India+stocks+OR+Sensex+OR+Nifty+when:1d&hl=en-IN&gl=IN&ceid=IN:en", kind: news}
 # Source weight used later for sentiment/source-quality scoring (official highest).
-kind_weights: {official: 1.0, news: 0.6, global: 0.5, structured_rule: 0.3, structured_base_rate: 1.0}
+kind_weights: {official: 1.0, news: 0.6, global: 0.5, structured_rule: 0.3, structured_base_rate: 1.0, kg_rule: 0.3, kg_base_rate: 1.0}

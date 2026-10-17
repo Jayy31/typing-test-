@@ -162,6 +162,7 @@ class Analysis(Base):
     prompt_ver: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
     prediction_source: Mapped[str | None] = mapped_column(String(8))  # panel / single (Phase 5)
+    impact_order: Mapped[int | None] = mapped_column(Integer)  # 1 direct, 2-3 via graph (Phase 8)
 
 
 class Signal(Base):
@@ -514,6 +515,36 @@ class KgEdge(Base):
     source: Mapped[str | None] = mapped_column(Text)
     confidence: Mapped[float | None] = mapped_column(Float)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+    # Phase 8: exposure (scales the weight), point-in-time validity, provenance
+    exposure_kind: Mapped[str | None] = mapped_column(
+        String(24)
+    )  # revenue_share/input_cost_share/stake
+    exposure_pct: Mapped[float | None] = mapped_column(Float)
+    valid_from: Mapped[date | None] = mapped_column(Date)  # null = structural (always)
+    valid_to: Mapped[date | None] = mapped_column(Date)
+    origin: Mapped[str | None] = mapped_column(String(16))  # seed / sub_sector / insider / ai
+    evidence_news_id: Mapped[int | None] = mapped_column(ForeignKey("news_items.id"))
+
+
+class KgPath(Base):
+    """Phase 8: one graph propagation (or a support-only / unknown-sign path) for /why."""
+
+    __tablename__ = "kg_paths"
+    __table_args__ = (UniqueConstraint("source_news_id", "target", "path_key", name="uq_kg_paths"),)
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+    source_news_id: Mapped[int] = mapped_column(ForeignKey("news_items.id"), index=True)
+    source_symbol: Mapped[str] = mapped_column(String(32))
+    target: Mapped[str] = mapped_column(String(32), index=True)
+    path_key: Mapped[str] = mapped_column(String(256))  # A>type>B>type>C
+    hops: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str] = mapped_column(String(12))  # propagated / support / unknown / capped
+    sign_basis: Mapped[str] = mapped_column(String(12))  # default / base_rate / unknown
+    weight: Mapped[float] = mapped_column(Float)  # product of hop weights x decay
+    sentiment: Mapped[float | None] = mapped_column(Float)
+    news_id: Mapped[int | None] = mapped_column(ForeignKey("news_items.id"))  # evidence row
+    detail_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
 
 
 class BacktestRun(Base):
@@ -783,6 +814,8 @@ class RegulatoryAction(_Structured, Base):
     id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
     ref: Mapped[str] = mapped_column(String(64))
     regulator: Mapped[str] = mapped_column(String(16))  # sebi / usfda
+    match_confidence: Mapped[float | None] = mapped_column(Float)  # Phase 8 name match (0-1)
+    match_candidates: Mapped[list[dict[str, Any]] | None] = mapped_column(Json)
     action_type: Mapped[str | None] = mapped_column(String(64))
     symbol: Mapped[str | None] = mapped_column(
         String(32), index=True

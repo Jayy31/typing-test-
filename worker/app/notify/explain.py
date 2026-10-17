@@ -9,6 +9,7 @@ from app.db.models import (
     AgentRun,
     Analysis,
     EventCalendar,
+    KgPath,
     NewsItem,
     NewsTag,
     Signal,
@@ -17,9 +18,12 @@ from app.db.models import (
 )
 from app.db.models import Scenario as ScenarioRow
 from app.deep.evidence import source_label
+from app.kg.propagate import kg_label
 from app.notify.templates import sid, v2_lines
 from app.timeutil import as_ist
 from app.yaml_config import load_yaml
+
+ORDER_NAMES = {1: "direct", 2: "via graph, 1 hop", 3: "via graph, 2 hops"}
 
 
 def _bullets(items: list[str] | None, empty: str = "none recorded") -> str:
@@ -122,7 +126,8 @@ def build_why(s: Session, signal_id: int) -> str | None:
         )
     )
 
-    out += ["", "LINKED NEWS"]
+    order = sig.impact_order or 1
+    out += ["", f"LINKED NEWS (impact order {order}: {ORDER_NAMES.get(order, 'via graph')})"]
     ids = js.get("cited_news_ids") or js.get("news_ids") or []
     rows = s.execute(
         select(NewsItem, NewsTag)
@@ -138,8 +143,20 @@ def build_why(s: Session, signal_id: int) -> str | None:
         if label:  # structured event: which source set its direction and strength
             basis = (item.body or "").rsplit("Evidence: ", 1)[-1]
             out.append(f"    Direction from: {label} - {basis}")
+        if item.source.startswith("kg:"):  # graph path: each hop and where its sign came from
+            out.append(f"    {kg_label(item.source)}")
+            out += [f"    {line}" for line in (item.body or "").splitlines()]
     if not rows:
         out.append("  - none recorded")
+    others = s.scalars(
+        select(KgPath)
+        .where(KgPath.target == sig.symbol, KgPath.role.in_(("unknown", "capped")))
+        .order_by(KgPath.id.desc())
+        .limit(5)
+    ).all()
+    if others:
+        out.append("  Graph paths not used (sign unknown = support only, or daily cap):")
+        out += [f"  - {p.path_key.replace('>', ' > ')} ({p.role})" for p in others]
 
     out += [
         "",

@@ -276,6 +276,11 @@ def _stats(s: Session) -> str:
     slip = sum(t.slippage_inr or 0.0 for t in closed)
     gaps = sum(1 for t in closed if (t.slippage_inr or 0) < 0)
     src = dict(s.execute(select(Signal.id, Signal.prediction_source)).all())
+    order = dict(s.execute(select(Signal.id, Signal.impact_order)).all())
+    by_order = "\n".join(
+        line(f"Order {k} ({name})", [t for t in closed if (order.get(t.signal_id) or 1) == k])
+        for k, name in ((1, "direct"), (2, "via graph, 1 hop"), (3, "via graph, 2 hops"))
+    )
     return (
         line("All", closed)
         + "\n"
@@ -284,6 +289,8 @@ def _stats(s: Session) -> str:
         + line("Panel predictions", [t for t in closed if src.get(t.signal_id) == "panel"])
         + "\n"
         + line("Single analyst", [t for t in closed if src.get(t.signal_id) == "single"])
+        + "\n"
+        + by_order
         + f"\nGap/slippage vs trigger levels: Rs {slip:+,.0f} across {gaps} trade(s)"
     )
 

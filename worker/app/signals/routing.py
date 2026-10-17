@@ -39,13 +39,36 @@ def runs_today(s: Session, source: str, now: datetime) -> int:
     )
 
 
-def choose_mode(s: Session, ai: AiClient, now: datetime) -> tuple[str | None, str]:
-    """('panel' | 'single' | None, why)."""
+def graph_panels_today(s: Session, now: datetime) -> int:
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(
+        s.scalar(
+            select(func.count(Analysis.id)).where(
+                Analysis.prediction_source == "panel",
+                Analysis.impact_order > 1,
+                Analysis.created_at >= start,
+            )
+        )
+        or 0
+    )
+
+
+def choose_mode(
+    s: Session, ai: AiClient, now: datetime, impact_order: int = 1
+) -> tuple[str | None, str]:
+    """('panel' | 'single' | None, why). Graph-propagated candidates (impact_order > 1) may use at
+    most KG_MAX_PANEL_SLOTS of the daily panels; the rest go to the single analyst."""
     st = ai.settings
     panel_n, single_n = runs_today(s, "panel", now), runs_today(s, "single", now)
     panel_ok = flags.active(s, "feat.multi_agent") and ai.configured(*PANEL_ROLES)
-    if panel_ok and panel_n < st.ai_multi_agent_max_per_day:
+    kg_full = impact_order > 1 and graph_panels_today(s, now) >= st.kg_max_panel_slots
+    if panel_ok and panel_n < st.ai_multi_agent_max_per_day and not kg_full:
         return "panel", f"panel {panel_n + 1}/{st.ai_multi_agent_max_per_day} today"
+    if kg_full and single_n < st.ai_single_analyst_max_per_day:
+        return "single", (
+            f"graph candidates' panel slots used ({st.kg_max_panel_slots}); single analyst "
+            f"{single_n + 1}/{st.ai_single_analyst_max_per_day} today"
+        )
     if single_n < st.ai_single_analyst_max_per_day:
         why = (
             "panel cap reached"

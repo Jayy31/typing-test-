@@ -492,3 +492,18 @@ Added by the owner after Phase 3a. Values in config; nothing here is auto-applie
   so that small items create no candidates.
 - Counterparty (promoter, promoter group, director/KMP, FII, MF/DII, other) is part of the subtype
   in taxonomy tx2, so base rates are learned per counterparty.
+
+### Owner decisions for Phase 8 (knowledge graph)
+- Depth: max 2 hops live (x0.5 per extra hop); 3 hops only as a backtest comparison variant.
+- At most 10 new graph-propagated candidates per day; they may use at most `KG_MAX_PANEL_SLOTS`
+  (1) of the 4 daily panels, the rest go to the single analyst within its cap.
+- Sign by edge type x event type (default table in `config/kg.yaml`: same / opposite / unknown,
+  unknown = support only); the event study learns sign and strength per (edge type, event type)
+  from linked-stock reactions (vs the market, at the source's disclosure timing) and replaces
+  the default at `ANALOGUE_MIN_N` events. `/why` shows which was used.
+- Exposure (revenue share, % of input costs, stake %) stored on the edge scales its weight;
+  missing exposure -> low default weight (x0.3).
+- No double counting: a stock already covered by the same news event (directly or via a
+  sector-level tag) gets the graph path as supporting evidence, not a new graph candidate.
+- Regulator items: confidence-scored name match on the alias list; below 0.85 stored for review
+  (weekly digest), no candidates. AI-extracted company links use the same matcher.

@@ -42,6 +42,12 @@ def standard_variants(mode: str) -> list[Variant]:
             Variant("rules: legacy threshold (hit >= 50%, mean > 0)", mode, threshold="legacy")
         )
     if mode == "rules":
+        depth = int(load_yaml("kg.yaml")["propagation"]["max_depth"])
+        out += [  # Phase 8: knowledge-graph propagation (live default depth, and one hop more)
+            Variant(f"rules: + knowledge graph ({depth} hops)", mode, kg_depth=depth),
+            Variant(f"rules: + knowledge graph ({depth + 1} hops)", mode, kg_depth=depth + 1),
+        ]
+    if mode == "rules":
         out += [
             Variant("benchmark: random direction", mode, direction_mode="random"),
             Variant("benchmark: ATM, no gates", mode, selection="atm", direction_mode="signal"),

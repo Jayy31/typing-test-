@@ -30,6 +30,7 @@ roles:
   postmortem: mid     # AI post-mortems use AI_MODEL_ANALYST (mid)
   extractor: cheap    # Phase 7 results / auto-sales extraction (AI_MODEL_TAGGER)
   extractor_fallback: mid   # when the cheap extract fails validation (AI_MODEL_ANALYST)
+  kg_extractor: cheap # Phase 8 company links (AI_MODEL_TAGGER)
 # Tagger batching and limits
 tagger:
   max_items_per_run: 40

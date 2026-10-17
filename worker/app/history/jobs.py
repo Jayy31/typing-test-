@@ -55,9 +55,13 @@ def _deep_history(con: Any) -> int:
     """Phase 7: materiality stats, live structured events, next chunk of the 5-year backfill."""
     from app.deep import history as deep_history
     from app.deep import stats as deep_stats
+    from app.kg import graph as kg_graph
+    from app.kg import history as kg_history
 
     n = 0
     steps: list[Callable[[Any], int]] = [
+        lambda _con: kg_graph.build_static(),  # sub-sector competitors, seed, promoter groups
+        kg_history.sync_kg_edges,
         deep_stats.refresh,
         deep_history.sync_structured,
         deep_history.backfill_structured,

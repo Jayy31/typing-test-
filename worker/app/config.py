@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     # candidates, then the single analyst for overflow, then 'skipped for budget'
     ai_multi_agent_max_per_day: int = 4
     ai_single_analyst_max_per_day: int = 5
+    # Phase 8: graph-propagated (2nd/3rd-order) candidates may use at most this many panel slots
+    kg_max_panel_slots: int = 1
     # Kept back from the daily/monthly caps for the live tagger: panel, analyst and post-mortem
     # calls pause first when a cap is near
     ai_tagger_reserve_inr: float = 15

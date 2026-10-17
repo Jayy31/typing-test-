@@ -51,6 +51,13 @@ class Candidate:
         return any(i.kind == "official" or counts_as_official(i.source) for i in self.items)
 
     @property
+    def impact_order(self) -> int:
+        """1 if any direct evidence, else the fewest graph hops (2nd / 3rd order)."""
+        if any(not i.source.startswith("kg:") for i in self.items):
+            return 1
+        return 1 + min(int(i.source.split(":")[1]) for i in self.items)
+
+    @property
     def max_tag_id(self) -> int:
         return max(i.tag_id for i in self.items)
 
@@ -70,6 +77,8 @@ class Candidate:
 
 
 def source_kind(source: str) -> str:
+    if source.startswith("kg:"):  # kg:<hops>:<edge>:<default|base_rate>:<role> (Phase 8 graph)
+        return "kg_base_rate" if source.split(":")[3] == "base_rate" else "kg_rule"
     if source.startswith("deep:"):  # deep:<category>:<rule|base_rate> (Phase 7 structured events)
         return "structured_base_rate" if source.endswith(":base_rate") else "structured_rule"
     if source == "nse_announcements":

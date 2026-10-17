@@ -273,6 +273,7 @@ def compute_reactions(con: duckdb.DuckDBPyConnection) -> int:
             by_sym[e.symbol].append(e)
         elif e.sector:
             by_sector[e.sector].append(e)
+    events += linked_events(con, events, cal)  # Phase 8: how graph neighbours reacted
 
     con.execute("DELETE FROM event_reactions")
     rows: list[tuple[Any, ...]] = []
@@ -301,7 +302,8 @@ def compute_reactions(con: duckdb.DuckDBPyConnection) -> int:
         sec = indices.get(sec_name) if sec_name else None
         b_m = beta(st, market, st.dates[j0 - pre])
         b_s = beta(st, sec, st.dates[j0 - pre]) if sec else None
-        use_market = ev.event_type in market_types or sec is None
+        # linked (graph) reactions are measured vs the market: a sector index would absorb contagion
+        use_market = ev.event_type in market_types or sec is None or ev.event_id.startswith("kg|")
         base_w = tw.get(ev.timing, 1.0)
         later = {w: st.dates[j0 + w] for w in windows if j0 + w < len(st.dates)}
         clean = {w: dw for w, dw in later.items() if not _ca_near(ca_idx, j0 - 1, j0 + w, buf)}
@@ -375,6 +377,83 @@ def compute_reactions(con: duckdb.DuckDBPyConnection) -> int:
     if skipped:
         log.info("event study skipped: %s", dict(skipped))
     return len(rows)
+
+
+def linked_events(con: duckdb.DuckDBPyConnection, events: list[Ev], cal: list[date]) -> list[Ev]:
+    """One derived event per (direct stock event, graph edge valid on its date): the neighbour's
+    reaction on the SAME reaction day (disclosure timing of the source). event_id
+    'kg|<edge type>|<neighbour>|<source event id>'. Their reactions never enter analogue stats
+    through hist_events (no such event id there); kg_reaction_rows reads them instead."""
+    edges: dict[str, list[tuple[str, str, str | None, date | None, date | None]]] = defaultdict(
+        list
+    )
+    for src, dst, typ, sec, vf, vt in con.execute(
+        "SELECT src, dst, type, dst_sector, valid_from, valid_to FROM hist_kg_edges"
+    ).fetchall():
+        edges[src].append((dst, typ, sec, vf, vt))
+    out: list[Ev] = []
+    for e in events:
+        if not e.symbol or e.symbol not in edges:
+            continue
+        d = cal[e.day]
+        for dst, typ, sec, vf, vt in edges[e.symbol]:
+            if (vf and vf > d) or (vt and vt < d):
+                continue
+            out.append(Ev(f"kg|{typ}|{dst}|{e.event_id}", e.day, e.timing, dst, sec, f"kg:{typ}"))
+    return out
+
+
+def kg_reaction_rows(
+    con: duckdb.DuckDBPyConnection, before: date | None = None
+) -> list[tuple[Any, ...]]:
+    """Linked-stock reactions shaped like reaction_rows, keyed 'kg:<edge>:<source parent type>'.
+    Direction = source direction x the default sign ('same' when unknown), so the stats' mean is
+    positive when the default sign holds and negative when the market did the opposite."""
+    from app import taxonomy
+    from app.kg.signs import SIGN, default_sign
+
+    src = {
+        eid: (etype, direction)
+        for eid, etype, direction in con.execute(
+            "SELECT event_id, event_type, direction FROM hist_events WHERE direction IN ('bullish', 'bearish')"
+        ).fetchall()
+    }
+    sectors = dict(
+        con.execute("SELECT dst, any_value(dst_sector) FROM hist_kg_edges GROUP BY dst").fetchall()
+    )
+    best: dict[tuple[Any, ...], tuple[float, float]] = {}
+    for eid, w, day, wt, abn in con.execute(
+        """SELECT event_id, "window", reaction_day, weight, abnormal_ret FROM event_reactions
+           WHERE event_id LIKE 'kg|%' AND "window" >= 0 AND weight > 0"""
+    ).fetchall():
+        _, typ, dst, src_id = eid.split("|", 3)
+        if src_id not in src:
+            continue
+        etype, direction = src[src_id]
+        flip = SIGN.get(default_sign(typ, etype), 1) < 0
+        if flip:
+            direction = "bearish" if direction == "bullish" else "bullish"
+        key = (
+            f"kg:{typ}:{taxonomy.parent(etype) or 'other'}",
+            sectors.get(dst),
+            dst,
+            w,
+            direction,
+            day,
+        )
+        if key not in best or wt > best[key][0]:  # duplicate coverage of one event counts once
+            best[key] = (wt, abn)
+    rows = [(*k, wt, abn) for k, (wt, abn) in best.items()]
+    if before is None:
+        return rows
+    cal = [r[0] for r in con.execute("SELECT DISTINCT date FROM hist_prices ORDER BY 1").fetchall()]
+    horizon = max(int(x) for x in _cfg()["windows"])
+
+    def window_end(d: date) -> date:
+        i = bisect.bisect_left(cal, d) + horizon
+        return cal[i] if i < len(cal) else date.max
+
+    return [r for r in rows if window_end(r[5]) < before]
 
 
 def weighted_quantile(values: np.ndarray, weights: np.ndarray, q: float) -> float:
@@ -478,7 +557,7 @@ def vix_series(con: duckdb.DuckDBPyConnection) -> dict[date, float]:
 
 def compute_stats(con: duckdb.DuckDBPyConnection) -> int:
     """Direction-adjusted, weighted abnormal-return statistics for analogue lookup."""
-    stats = aggregate(reaction_rows(con), vix_series(con))
+    stats = aggregate(reaction_rows(con) + kg_reaction_rows(con), vix_series(con))
     con.execute("DELETE FROM analogue_stats")
     now = datetime.now().replace(microsecond=0)
     out = [(*key, *vals, now) for key, vals in stats.items()]

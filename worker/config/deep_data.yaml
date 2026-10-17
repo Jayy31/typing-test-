@@ -118,3 +118,8 @@ macro_releases:
     - {name: rbi_press, url: "https://www.rbi.org.in/pressreleases_rss.xml"}
   keywords: ["consumer price index", "cpi", "wholesale price", "wpi", "index of industrial production", "iip", "gross domestic product", "gdp", "gst collection", "purchasing managers"]
   names: [cpi, wpi, iip, gdp, gst, pmi_mfg, pmi_services, repo_rate]
+
+# Regulator items (SEBI, USFDA) -> stock: confidence-scored name match (app/deep/matching.py).
+# Below the threshold the item is stored for review (weekly digest), with no evidence.
+regulators:
+  min_match_confidence: 0.85
