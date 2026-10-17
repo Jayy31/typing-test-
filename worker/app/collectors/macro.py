@@ -1,4 +1,5 @@
-"""Macro collector: crude, USD/INR, DXY, US 10Y, India VIX and Indian ADRs (Yahoo Finance)."""
+"""Macro collector (Yahoo Finance): crude, USD/INR, DXY, US 10Y, India VIX, Indian ADRs and
+commodities."""
 
 import logging
 from datetime import datetime
@@ -10,6 +11,7 @@ from app.collectors.base import Collector
 from app.config import IST
 from app.db.models import MacroSnapshot
 from app.db.session import session_scope
+from app.yaml_config import load_yaml
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +24,11 @@ TICKERS = {
 }
 # GIFT Nifty has no reliable free Yahoo ticker; it stays null until a source is added.
 ADRS = {"INFY": "INFY", "WIT": "WIPRO", "HDB": "HDFCBANK", "IBN": "ICICIBANK", "RDY": "DRREDDY"}
+
+
+def commodity_tickers() -> dict[str, str]:
+    """Phase 7: name -> Yahoo ticker (deep_data.yaml commodities)."""
+    return dict(load_yaml("deep_data.yaml").get("commodities") or {})
 
 
 def fetch_last_prices(tickers: list[str]) -> dict[str, tuple[float, float] | None]:
@@ -54,8 +61,14 @@ def build_snapshot(prices: dict[str, tuple[float, float] | None], ts: datetime) 
                 "last": p[0],
                 "change_pct": round((p[0] / p[1] - 1) * 100, 2),
             }
+    commodities = {
+        name: prices[tk][0]  # type: ignore[index]
+        for name, tk in commodity_tickers().items()
+        if prices.get(tk)
+    }
     return MacroSnapshot(
         ts=ts,
+        commodities_json=commodities or None,
         brent=last("brent"),
         usdinr=last("usdinr"),
         dxy=last("dxy"),
@@ -69,7 +82,7 @@ class MacroCollector(Collector[MacroSnapshot]):
     name = "macro_yahoo"
 
     def fetch(self) -> Any:
-        return fetch_last_prices([*TICKERS.values(), *ADRS])
+        return fetch_last_prices([*TICKERS.values(), *ADRS, *commodity_tickers().values()])
 
     def parse(self, raw: Any) -> list[MacroSnapshot]:
         if all(v is None for v in raw.values()):

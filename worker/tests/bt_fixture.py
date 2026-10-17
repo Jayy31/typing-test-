@@ -108,7 +108,7 @@ def add_event(
     from datetime import time
 
     con.execute(
-        "INSERT INTO hist_events VALUES (?, ?, ?, ?, 'IT', NULL, ?, ?, 's', 0.6, 0.6, 'title', 'u', 'tx1', 'p')",
+        "INSERT INTO hist_events (event_id, date, time, symbol, sector, theme, event_type, direction, source, sentiment, surprise, title, url, taxonomy_ver, prompt_ver) VALUES (?, ?, ?, ?, 'IT', NULL, ?, ?, 's', 0.6, 0.6, 'title', 'u', 'tx1', 'p')",
         [eid, d, time(hour, 0), sym, etype, direction],
     )
 

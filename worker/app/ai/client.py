@@ -22,8 +22,21 @@ from app.yaml_config import load_yaml
 
 log = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
-ROLES = ("tagger", "researcher", "novelty", "analyst", "bull", "bear", "judge", "postmortem")
-MODEL_ROLE = {"postmortem": "analyst"}  # roles that reuse another role's model id
+ROLES = (
+    "tagger",
+    "researcher",
+    "novelty",
+    "analyst",
+    "bull",
+    "bear",
+    "judge",
+    "postmortem",
+    "extractor",
+    "extractor_fallback",
+)
+# roles that reuse another role's model id. Phase 7 extraction (results, auto sales): the cheap
+# model first, the mid model as the fallback.
+MODEL_ROLE = {"postmortem": "analyst", "extractor": "tagger", "extractor_fallback": "analyst"}
 RESERVED_ROLES = ("tagger",)  # may spend the AI_TAGGER_RESERVE_INR kept back from other roles
 PAUSED_FIRST = "multi-agent panel, single analyst and post-mortems"
 

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.client import AiClient, AiOutputError, CallUsage
 from app.ai.schemas import AnalystOutput
-from app.db.models import EventCalendar, Instrument, MacroSnapshot
+from app.db.models import EventCalendar, Instrument, MacroRelease, MacroSnapshot
 from app.rules.engine import RuleHit
 from app.signals.candidates import Candidate, evidence_for, weighted_sentiment
 from app.yaml_config import load_yaml
@@ -68,9 +68,23 @@ def macro_text(s: Session, changes: dict[str, float]) -> str:
     }
     line = ", ".join(f"{k}={v}" for k, v in vals.items() if v is not None)
     chg = ", ".join(f"{k} {v:+.2f}" for k, v in changes.items()) or "n/a"
+    comm = ", ".join(f"{k}={v:g}" for k, v in (snap.commodities_json or {}).items()) or "n/a"
+    since = snap.ts - timedelta(days=45)
+    rel = s.scalars(
+        select(MacroRelease)
+        .where(MacroRelease.released_at >= since)
+        .order_by(MacroRelease.released_at.desc())
+        .limit(8)
+    ).all()
+    releases = "; ".join(
+        f"{r.name} {r.period:%b-%Y} {r.value:g} (prior {r.prior if r.prior is not None else 'n/a'})"
+        for r in rel
+        if r.value is not None
+    )
     return (
         f"- as of {snap.ts:%Y-%m-%d %H:%M}: {line}\n"
-        f"- 24h changes: {chg}\n- ADRs: {snap.adr_json or 'n/a'}"
+        f"- 24h changes: {chg}\n- ADRs: {snap.adr_json or 'n/a'}\n- commodities: {comm}\n"
+        f"- recent releases: {releases or 'none recorded'}"
     )
 
 

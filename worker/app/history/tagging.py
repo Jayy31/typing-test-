@@ -24,7 +24,7 @@ from app.db.models import Instrument
 from app.db.session import session_scope
 from app.history import universe
 from app.history.integrity import LABELS_ONLY
-from app.history.store import connect
+from app.history.store import HIST_EVENTS_INSERT, connect
 
 log = logging.getLogger(__name__)
 BATCH_SIZE = 10_000
@@ -115,7 +115,7 @@ def write_events(
     n = 0
     for k, imp in enumerate(out.impacts):
         con.execute(
-            "INSERT OR REPLACE INTO hist_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            HIST_EVENTS_INSERT,
             [
                 f"{nid}:{k}",
                 ts.date(),

@@ -247,12 +247,17 @@ def test_compare_end_to_end(engine, tmp_path, monkeypatch) -> None:
 def test_overlap_skip_is_tracked_as_counterfactual() -> None:
     con, cal = setup()
     F.add_event(con, "e1", cal[300])
-    F.add_event(con, "e2", cal[300], direction="bearish")  # same day, other side: e1's trade is open
+    F.add_event(
+        con, "e2", cal[300], direction="bearish"
+    )  # same day, other side: e1's trade is open
     data = HistoryData(con)
     res = run(con, Variant("v21"), WF_START, cal[-1], data=data)
     assert len(res.trades) == 1
     assert any(s.stage == "overlap" and s.reason == "open trade on same stock" for s in res.skips)
-    assert len(res.counterfactuals) == 1 and res.counterfactuals[0].option_type != res.trades[0].option_type
+    assert (
+        len(res.counterfactuals) == 1
+        and res.counterfactuals[0].option_type != res.trades[0].option_type
+    )
     m = metrics.compute(res, data)
     assert m["counterfactual_open_trade_on_same_stock"]["n"] == 1 and m["all"]["n"] == 1
 

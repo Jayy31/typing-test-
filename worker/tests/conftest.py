@@ -33,3 +33,12 @@ def no_selection_gates(monkeypatch):
     from app.signals import options_stage
 
     monkeypatch.setattr(options_stage, "selection_rejection", lambda r: None)
+
+
+@pytest.fixture(autouse=True)
+def _market_hours(monkeypatch):
+    """Signal cycles run on the wall clock: treat tests as within market hours unless a test
+    opts into after-hours behaviour (tests/test_deep_data.py)."""
+    from app.signals import deferred
+
+    monkeypatch.setattr(deferred, "off_hours", lambda now, holidays: False)

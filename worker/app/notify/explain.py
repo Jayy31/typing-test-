@@ -16,6 +16,7 @@ from app.db.models import (
     SignalVersion,
 )
 from app.db.models import Scenario as ScenarioRow
+from app.deep.evidence import source_label
 from app.notify.templates import sid, v2_lines
 from app.timeutil import as_ist
 from app.yaml_config import load_yaml
@@ -133,6 +134,10 @@ def build_why(s: Session, signal_id: int) -> str | None:
         out.append(
             f"  - [{item.source}, {when:%d-%b %H:%M}] {item.title} (sentiment {tag.sentiment:+.2f})\n    {item.url}"
         )
+        label = source_label(item.source)
+        if label:  # structured event: which source set its direction and strength
+            basis = (item.body or "").rsplit("Evidence: ", 1)[-1]
+            out.append(f"    Direction from: {label} - {basis}")
     if not rows:
         out.append("  - none recorded")
 
