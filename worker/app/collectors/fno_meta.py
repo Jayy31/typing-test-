@@ -11,10 +11,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import httpx
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine, select
 
+from app.collectors import nse_http
 from app.collectors.base import Collector
 from app.config import IST
 from app.db.models import Instrument
@@ -75,7 +75,7 @@ def parse_lot_sizes(text: str) -> dict[str, int]:
 
 
 def fetch_lot_sizes(timeout: float = 20.0) -> dict[str, int]:
-    resp = httpx.get(NSE_LOT_SIZE_URL, headers=NSE_HEADERS, timeout=timeout, follow_redirects=True)
+    resp = nse_http.get(NSE_LOT_SIZE_URL, headers=NSE_HEADERS, timeout=timeout)
     resp.raise_for_status()
     return parse_lot_sizes(resp.text)
 

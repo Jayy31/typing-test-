@@ -71,7 +71,9 @@ class Settings(BaseSettings):
     github_token_config_pr: str = ""
     github_config_repo: str = ""  # owner/repo
     # Phase 10 hardening: external heartbeat (healthchecks.io); empty = off
-    healthcheck_ping_url: str = ""  # Phase 9: the one email that may open the dashboard
+    healthcheck_ping_url: str = ""
+    # Phase 11: optional HTTP proxy used ONLY for NSE hosts (data-centre IPs are often blocked)
+    nse_http_proxy: str = ""  # Phase 9: the one email that may open the dashboard
     # Phase 9 Telegram briefs (owner switches; the config table keys brief.* override these)
     morning_brief_enabled: bool = True
     evening_summary_enabled: bool = True

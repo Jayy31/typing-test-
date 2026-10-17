@@ -1013,3 +1013,16 @@ class AiVsRules(Base):
     analogue_mean: Mapped[float | None] = mapped_column(Float)
     realised_move_pct: Mapped[float | None] = mapped_column(Float)  # signed stock move (+ up)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class GoliveCheck(Base):
+    """Phase 11: 2-hour quick check and 24-hour first-run report results."""
+
+    __tablename__ = "golive_checks"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(8))  # quick / full / manual
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+    status: Mapped[str] = mapped_column(String(8))  # ok / warn / fail (worst check)
+    results_json: Mapped[dict[str, Any]] = mapped_column(Json)
+    text: Mapped[str] = mapped_column(Text)

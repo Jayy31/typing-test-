@@ -17,11 +17,11 @@ from datetime import date, datetime, time, timedelta
 from typing import Any, Literal
 
 import defusedxml.ElementTree as ET  # type: ignore[import-untyped]
-import httpx
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine, select
 
 from app.ai.client import AiClient, AiOutputError, BudgetExceededError
+from app.collectors import nse_http
 from app.collectors.base import record_source
 from app.collectors.nse import HEADERS, nse_get
 from app.config import IST
@@ -294,7 +294,7 @@ def parse_results_feed(payload: Any) -> list[Filing]:
 
 
 def _download(url: str) -> bytes:
-    resp = httpx.get(url, headers=HEADERS, timeout=20.0, follow_redirects=True)
+    resp = nse_http.get(url, headers=HEADERS, timeout=20.0)  # proxy only if url is an NSE host
     resp.raise_for_status()
     return resp.content
 

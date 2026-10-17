@@ -9,9 +9,9 @@ import logging
 from datetime import date, datetime
 from typing import Any
 
-import httpx
 from sqlalchemy import Engine, select
 
+from app.collectors import nse_http
 from app.collectors.base import Collector
 from app.collectors.news_rss import RawNews, store_items
 from app.config import IST
@@ -33,7 +33,7 @@ HEADERS = {
 
 
 def nse_get(path: str, timeout: float = 20.0) -> Any:
-    with httpx.Client(headers=HEADERS, timeout=timeout, follow_redirects=True) as c:
+    with nse_http.client(headers=HEADERS, timeout=timeout, follow_redirects=True) as c:
         c.get(BASE)  # cookie warm-up
         resp = c.get(f"{BASE}{path}")
         resp.raise_for_status()
@@ -212,7 +212,7 @@ class FnoBanCollector(Collector[str]):
     name = "nse_fno_ban"
 
     def fetch(self) -> Any:
-        resp = httpx.get(BAN_URL, headers=HEADERS, timeout=self.timeout_s, follow_redirects=True)
+        resp = nse_http.get(BAN_URL, headers=HEADERS, timeout=self.timeout_s)
         resp.raise_for_status()
         return resp.text
 
