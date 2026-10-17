@@ -53,7 +53,7 @@ CREATE OR REPLACE FUNCTION public.is_dashboard_owner() RETURNS boolean
 
 CREATE OR REPLACE FUNCTION public.is_owner_switch(k text) RETURNS boolean
   LANGUAGE sql IMMUTABLE AS
-  $f$ SELECT k LIKE 'feat.%' OR k IN ({", ".join(f"'{k}'" for k in SWITCH_KEYS)}) $f$;
+  $f$ SELECT left(k, 5) = 'feat.' OR k IN ({", ".join(f"'{k}'" for k in SWITCH_KEYS)}) $f$;
 
 CREATE OR REPLACE FUNCTION public.log_owner_switch() RETURNS trigger
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $f$
@@ -90,6 +90,25 @@ def upgrade() -> None:
         sa.Column("new_value", JSON, nullable=True),
         sa.Column("changed_by", sa.String(256), nullable=True),
     )
+    op.create_table(
+        "event_library",
+        sa.Column("id", BIGID, primary_key=True, autoincrement=True),
+        sa.Column("event_type", sa.String(64), nullable=False, index=True),
+        sa.Column("level_key", sa.String(96), nullable=False),
+        sa.Column("regime", sa.String(16), nullable=False),
+        sa.Column("window", sa.Integer(), nullable=False),
+        sa.Column("n", sa.Integer(), nullable=False),
+        sa.Column("n_eff", sa.Float(), nullable=False),
+        sa.Column("mean", sa.Float(), nullable=False),
+        sa.Column("median", sa.Float(), nullable=False),
+        sa.Column("hit_rate", sa.Float(), nullable=False),
+        sa.Column("p25", sa.Float(), nullable=False),
+        sa.Column("p75", sa.Float(), nullable=False),
+        sa.Column("examples_json", JSON, nullable=True),
+        sa.Column("computed_at", sa.DateTime(timezone=True), nullable=False),
+        sa.UniqueConstraint("event_type", "level_key", "regime", "window", name="uq_event_library"),
+    )
+    op.execute("ALTER TABLE event_library ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE dashboard_owner ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE config_audit ENABLE ROW LEVEL SECURITY")
     if op.get_bind().dialect.name != "postgresql":
@@ -101,11 +120,11 @@ def upgrade() -> None:
 DO $$ DECLARE t text; BEGIN
   FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public'
            AND tablename <> 'alembic_version' LOOP
-    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
-    EXECUTE format('DROP POLICY IF EXISTS owner_read ON public.%I', t);
-    EXECUTE format('CREATE POLICY owner_read ON public.%I FOR SELECT TO authenticated
-                    USING (public.is_dashboard_owner())', t);
-    EXECUTE format('GRANT SELECT ON public.%I TO authenticated', t);
+    EXECUTE 'ALTER TABLE public.' || quote_ident(t) || ' ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'DROP POLICY IF EXISTS owner_read ON public.' || quote_ident(t);
+    EXECUTE 'CREATE POLICY owner_read ON public.' || quote_ident(t)
+         || ' FOR SELECT TO authenticated USING (public.is_dashboard_owner())';
+    EXECUTE 'GRANT SELECT ON public.' || quote_ident(t) || ' TO authenticated';
   END LOOP;
 END $$;
 """
@@ -136,8 +155,8 @@ DROP POLICY IF EXISTS owner_switch_update ON public.config;
 REVOKE INSERT, UPDATE ON public.config FROM authenticated;
 DO $$ DECLARE t text; BEGIN
   FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
-    EXECUTE format('DROP POLICY IF EXISTS owner_read ON public.%I', t);
-    EXECUTE format('REVOKE SELECT ON public.%I FROM authenticated', t);
+    EXECUTE 'DROP POLICY IF EXISTS owner_read ON public.' || quote_ident(t);
+    EXECUTE 'REVOKE SELECT ON public.' || quote_ident(t) || ' FROM authenticated';
   END LOOP;
 END $$;
 DROP FUNCTION IF EXISTS public.log_owner_switch();
@@ -146,5 +165,6 @@ DROP FUNCTION IF EXISTS public.is_dashboard_owner();
 DROP FUNCTION IF EXISTS public.dashboard_email();
 """
         )
+    op.drop_table("event_library")
     op.drop_table("config_audit")
     op.drop_table("dashboard_owner")

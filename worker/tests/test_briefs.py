@@ -20,6 +20,7 @@ from app.db.session import session_scope
 from app.notify import briefs
 from app.notify.outbox import deep_link, enqueue_alert
 from tests.helpers import seed_instruments
+from tests.test_history_integrity import hist  # noqa: F401 - fixture
 
 THU = datetime(2026, 10, 15, 8, 45, tzinfo=IST)  # Thursday
 SAT = datetime(2026, 10, 17, 8, 45, tzinfo=IST)
@@ -176,3 +177,17 @@ def test_deep_links(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
         assert texts == ["NEW SIGNAL", "PAPER ENTRY\nOpen: https://dash.example.com/trades/3"]
     finally:
         get_settings.cache_clear()
+
+
+def test_event_library_sync(engine: Engine, hist) -> None:  # type: ignore[no-untyped-def]  # noqa: F811
+    from app.db.models import EventLibrary
+    from app.history import event_study
+    from app.history.library import sync_library
+
+    con, _ = hist
+    event_study.run(con)
+    assert sync_library(con, engine) > 0
+    with session_scope(engine) as s:
+        rows = s.scalars(select(EventLibrary).where(EventLibrary.event_type == "results")).all()
+        assert any(r.level_key == "all" and r.examples_json for r in rows)
+        assert any(r.level_key.startswith("sector:") for r in rows)
