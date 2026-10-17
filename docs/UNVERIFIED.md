@@ -27,3 +27,8 @@ phase checks them all in one pass (the first-run report flags mismatches).
 | 19 | 7 | SEBI, USFDA, PIB, RBI feed URLs | `config/deep_data.yaml` | `source_health` |
 | 20 | 7 | Yahoo commodity tickers (GC=F, SI=F, HG=F, ALI=F, NG=F, HRC=F) | `config/deep_data.yaml` | `macro_snapshots.commodities_json` keys |
 | 21 | 7 | Counterparty name patterns (FII / MF-DII) classify real client names well | `config/deep_data.yaml` | share of deals classed "other" |
+| 22 | 8 | Sub-sector membership is static (competitor edges have no start date: mild survivorship in backtests) | `app/kg/graph.py` | review sub-sectors yearly |
+| 23 | 8 | Promoter-group links from shared promoter names in insider filings (name spelling must match across stocks) | `app/kg/graph.py` | count of same_group edges |
+| 24 | 8 | Cheap model extracts stated company links reliably from news text (prompt kg_links_v1) | `app/kg/extract.py` | sample 20 AI edges after a week |
+| 25 | 8 | Name matcher scores on real SEBI / USFDA / news company names (threshold 0.85) | `app/deep/matching.py` | weekly digest review section |
+| 26 | 8 | Seed edges in `data/kg_seed.yaml` are correct and current | `data/kg_seed.yaml` | owner review |
