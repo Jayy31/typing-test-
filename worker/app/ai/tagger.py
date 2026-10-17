@@ -8,6 +8,7 @@ One shared core (prompt, message, cleaning, schema) used by two modes with ident
 
 import logging
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -143,8 +144,14 @@ def tag_items(engine: Engine | None = None, ai: AiClient | None = None) -> int:
     for inp in pending:
         try:
             out = tag_one(ai, inp, ctx)
-        except BudgetExceededError:
-            log.warning("AI budget reached; tagging paused")
+        except BudgetExceededError as exc:
+            log.warning("AI budget reached; tagging paused (%s)", exc)
+            from app.notify.outbox import enqueue_alert
+
+            with session_scope(engine) as s:
+                enqueue_alert(
+                    s, "health", exc.alert_text(), f"budget:{exc.scope}:tagger:{date.today()}"
+                )
             break
         except AiOutputError as exc:
             log.warning("tagger output rejected for item %s: %s", inp.key, exc)

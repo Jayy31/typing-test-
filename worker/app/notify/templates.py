@@ -60,7 +60,11 @@ def v2_lines(sig: Signal, analogues_line: str | None = None) -> list[str]:
             f"Implied move: {pct(sig.implied_move_pct, False)}   "
             f"Edge ratio: {'n/a' if sig.edge_ratio is None else f'{sig.edge_ratio:.2f}'}"
         )
-    calib = "" if sig.calibrator_id else " (not yet calibrated)"
+    calib = (
+        f" (calibrated: {sig.calibration_method})"
+        if sig.calibrator_id and sig.calibration_method not in (None, "shrink")
+        else " (not yet calibrated)"
+    )
     probs = []
     if sig.p_t1_before_sl is not None:
         probs.append(f"P(T1 before SL): {sig.p_t1_before_sl * 100:.0f}%")

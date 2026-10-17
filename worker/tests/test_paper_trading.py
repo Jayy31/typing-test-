@@ -11,6 +11,7 @@ from app.ai.client import AiClient
 from app.config import IST, Settings, get_settings
 from app.db.models import (
     Alert,
+    CalibrationRecord,
     OptionQuote,
     PaperTrade,
     PortfolioSnapshot,
@@ -253,6 +254,21 @@ def test_scorecard_scores_after_the_window(engine: Engine) -> None:
             3.0 - 1.425
         )
         assert ps.days_to_half_move is not None
+        # the direction outcome resolves the p_move calibration record of the same analysis
+        rec = s.scalars(select(CalibrationRecord).where(CalibrationRecord.target == "p_move")).one()
+        assert (
+            rec.outcome is True
+            and rec.resolved_at is not None
+            and rec.analysis_id == ps.analysis_id
+        )
+        t1 = s.scalars(
+            select(CalibrationRecord).where(CalibrationRecord.target == "p_t1_before_sl")
+        ).one()
+        assert (
+            t1.signal_id is not None
+            and t1.predicted_used is not None
+            and t1.predicted > t1.predicted_used
+        )
 
 
 def test_quote_archive_and_protected_thinning(engine: Engine, tmp_path: Path) -> None:
@@ -383,3 +399,8 @@ def test_depth_fallback_fills_missing_quantities() -> None:
     assert (out.bid_qty, out.ask_qty) == (350, 1050)
     with_qty = OptionQuoteRow(**{**row.__dict__, "bid_qty": 5, "ask_qty": 6})
     assert src.with_depth(with_qty) is with_qty  # no extra call when the chain had quantities
+
+
+@pytest.fixture(autouse=True)
+def _pricing_mechanics(no_selection_gates):
+    """These tests cover pricing/trading mechanics; selection gates are tested in test_phase5."""

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.client import AiClient, AiOutputError
+from app.ai.client import AiClient, AiOutputError, CallUsage
 from app.ai.schemas import AnalystOutput
 from app.db.models import EventCalendar, Instrument, MacroSnapshot
 from app.rules.engine import RuleHit
@@ -140,12 +140,23 @@ def validate_output(out: AnalystOutput, provided_ids: set[int]) -> None:
 
 def analyse(ai: AiClient, message: str, provided_ids: set[int], retries: int = 1) -> AnalystOutput:
     """One deep analysis; retries once when the output fails validation."""
+    return analyse_with_usage(ai, message, provided_ids, retries)[0]
+
+
+def analyse_with_usage(
+    ai: AiClient, message: str, provided_ids: set[int], retries: int = 1
+) -> tuple[AnalystOutput, CallUsage]:
     last: AiOutputError | None = None
+    max_tokens = int(
+        (load_yaml("ai.yaml").get("agents") or {}).get("analyst", {}).get("max_tokens", 8000)
+    )
     for _ in range(retries + 1):
         try:
-            out = ai.parse("analyst", SYSTEM_PROMPT, message, AnalystOutput, max_tokens=8000)
+            out, usage = ai.parse_with_usage(
+                "analyst", SYSTEM_PROMPT, message, AnalystOutput, max_tokens
+            )
             validate_output(out, provided_ids)
-            return out
+            return out, usage
         except AiOutputError as exc:
             last = exc
             log.warning("analyst output rejected: %s", exc)

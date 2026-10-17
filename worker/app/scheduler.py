@@ -10,6 +10,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import Engine
 
 from app.ai.tagger import tag_items
+from app.calibration import service as calibration
 from app.collectors.calendar import sync_manual_calendar
 from app.collectors.fno_meta import refresh_fno_universe
 from app.collectors.macro import collect_macro
@@ -33,11 +34,13 @@ from app.market.live import (
     sync_instruments_job,
 )
 from app.notify import templates
+from app.notify.digest import weekly_digest
 from app.notify.outbox import enqueue_alert
 from app.notify.telegram import poll_telegram_job, send_alerts_job
 from app.processing.pipeline import gate_news
 from app.signals.service import run_signal_cycle
 from app.tracking.counterfactual import track_rejections
+from app.tracking.postmortem import run_post_mortems
 from app.tracking.scorecard import update_scores
 from app.trading.paper_engine import trading_cycle
 from app.trading.portfolio import eod_snapshot_job, snapshot_job
@@ -188,7 +191,35 @@ def build_scheduler() -> BlockingScheduler:
         history_jobs.weekly,
         CronTrigger(day_of_week="sun", hour=6, minute=30, timezone=IST),
     )
+    # Phase 5: calibration, post-mortems, weekly digest
+    _job(
+        sched,
+        "calibration_resolve",
+        resolve_calibration,
+        CronTrigger(day_of_week="mon-fri", hour=16, minute=10, timezone=IST),
+    )
+    _job(
+        sched,
+        "calibration_fit",
+        fit_calibrators,
+        CronTrigger(day_of_week="mon-fri", hour=20, minute=10, timezone=IST),
+    )
+    _job(sched, "post_mortems", run_post_mortems, IntervalTrigger(minutes=30))
+    _job(
+        sched,
+        "weekly_digest",
+        weekly_digest,
+        CronTrigger(day_of_week="sun", hour=8, minute=50, timezone=IST),
+    )
     return sched
+
+
+def resolve_calibration() -> int:
+    return calibration.resolve()
+
+
+def fit_calibrators() -> int:
+    return len(calibration.fit_all())
 
 
 def main() -> None:

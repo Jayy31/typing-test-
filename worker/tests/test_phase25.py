@@ -225,10 +225,11 @@ def test_history_store_schema_and_single_writer(tmp_path: Path) -> None:
 def test_flags_default_on_but_inactive_until_built(engine: Engine) -> None:
     with session_scope(engine) as s:
         snap = flags.snapshot(s)
-        assert snap["feat.multi_agent"] == {"enabled": True, "built": False, "active": False}
+        assert snap["feat.knowledge_graph"] == {"enabled": True, "built": False, "active": False}
         assert snap["feat.simulator"] == {"enabled": True, "built": True, "active": True}
         set_config(s, "feat.multi_agent", False)
         assert flags.enabled(s, "feat.multi_agent") is False
+        assert flags.active(s, "feat.multi_agent") is False
 
 
 def test_scenarios_must_sum_to_one() -> None:

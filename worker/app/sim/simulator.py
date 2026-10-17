@@ -224,3 +224,29 @@ def _breakeven(
 def seed_for(key: str) -> int:
     """Deterministic per-signal seed so results are reproducible."""
     return int(load_yaml("options.yaml")["simulator"]["seed"]) + zlib.crc32(key.encode())
+
+
+def blend_results(ai: SimResult, market: SimResult, w: float) -> SimResult:
+    """Result for a path mix with share `w` of AI-scenario paths (the rest market paths).
+    Averages over paths are linear in the mix, so blending the two pure results is the same as
+    simulating the mix (without extra sampling noise). Max loss is the worse of the two."""
+    w = min(max(w, 0.0), 1.0)
+
+    def lin(a: float, b: float) -> float:
+        return w * a + (1 - w) * b
+
+    keys = set(ai.exit_mix) | set(market.exit_mix)
+    return SimResult(
+        ev_pct=lin(ai.ev_pct, market.ev_pct),
+        ev_inr=lin(ai.ev_inr, market.ev_inr),
+        p_t1_before_sl=lin(ai.p_t1_before_sl, market.p_t1_before_sl),
+        p_t2=lin(ai.p_t2, market.p_t2),
+        p_t3=lin(ai.p_t3, market.p_t3),
+        max_loss_inr=min(ai.max_loss_inr, market.max_loss_inr),
+        exp_hold_days=lin(ai.exp_hold_days, market.exp_hold_days),
+        theta_per_day_inr=lin(ai.theta_per_day_inr, market.theta_per_day_inr),
+        breakeven_move_pct=ai.breakeven_move_pct,
+        iv_sensitivity_pct=lin(ai.iv_sensitivity_pct, market.iv_sensitivity_pct),
+        targets=ai.targets,
+        exit_mix={k: lin(ai.exit_mix.get(k, 0.0), market.exit_mix.get(k, 0.0)) for k in keys},
+    )

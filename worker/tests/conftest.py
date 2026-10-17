@@ -25,3 +25,11 @@ def engine() -> Engine:
     )
     Base.metadata.create_all(eng)
     return eng
+
+
+@pytest.fixture
+def no_selection_gates(monkeypatch):
+    """For tests about pricing/trading mechanics, not the owner's selection gates."""
+    from app.signals import options_stage
+
+    monkeypatch.setattr(options_stage, "selection_rejection", lambda r: None)

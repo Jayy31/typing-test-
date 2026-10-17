@@ -190,3 +190,8 @@ def test_weak_candidates_are_recorded_once(engine: Engine) -> None:
             select(RejectedCandidate).where(RejectedCandidate.stage == "candidate")
         ).all()
         assert len(rows) == 1 and rows[0].symbol == "TCS"
+
+
+@pytest.fixture(autouse=True)
+def _pricing_mechanics(no_selection_gates):
+    """These tests cover pricing/trading mechanics; selection gates are tested in test_phase5."""
