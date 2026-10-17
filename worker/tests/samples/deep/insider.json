@@ -1,0 +1,6 @@
+{"data": [
+ {"symbol": "BHARTIARTL", "company": "Bharti Airtel Limited", "acqName": "Bharti Telecom Limited", "personCategory": "Promoter Group", "secType": "Equity Shares", "secAcq": "1500000", "secVal": "2400000000", "tdpTransactionType": "Buy", "acqfromDt": "10-Oct-2026", "acqtoDt": "10-Oct-2026", "intimDt": "13-Oct-2026", "acqMode": "Market Purchase", "date": "14-Oct-2026 19:02"},
+ {"symbol": "TCS", "acqName": "A Director", "personCategory": "Director", "secType": "Equity Shares", "secAcq": "100", "secVal": "400000", "tdpTransactionType": "Sell", "acqfromDt": "11-Oct-2026", "date": "14-Oct-2026 20:10"},
+ {"symbol": "SBIN", "acqName": "Pledgee Bank", "personCategory": "Promoter", "secType": "Equity Shares", "secAcq": "100", "secVal": "1000", "tdpTransactionType": "Pledge Creation", "date": "14-Oct-2026 20:10"},
+ {"symbol": "TCS", "acqName": "X", "personCategory": "Promoter", "secType": "Warrants", "secAcq": "100", "secVal": "1000", "tdpTransactionType": "Buy", "date": "14-Oct-2026 20:10"}
+]}
