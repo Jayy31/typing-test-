@@ -16,6 +16,7 @@ from app.config import IST
 from app.db.models import Instrument, NewsItem, NewsTag
 from app.db.session import session_scope
 from app.history.integrity import LABELS_ONLY
+from app.history.store import HIST_EVENTS_INSERT
 from app.timeutil import as_ist
 
 CURATED = Path(__file__).resolve().parents[3] / "data" / "historical_events.yaml"
@@ -32,8 +33,8 @@ def sync_live_events(
             select(NewsTag, NewsItem).join(NewsItem, NewsItem.id == NewsTag.news_id)
         ).all():
             when = as_ist(item.published_at or item.fetched_at)
-            if when < since:
-                continue
+            if when < since or item.source.startswith("deep:"):
+                continue  # structured events are synced by app.deep.history (with event_date)
             rows.append(
                 (
                     f"live:{tag.id}",
@@ -54,7 +55,7 @@ def sync_live_events(
                 )
             )
     con.executemany(
-        "INSERT OR REPLACE INTO hist_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        HIST_EVENTS_INSERT,
         rows,
     )
     return len(rows)
@@ -87,7 +88,7 @@ def load_curated(con: duckdb.DuckDBPyConnection, path: Path = CURATED) -> int:
             )
         )
     con.executemany(
-        "INSERT OR REPLACE INTO hist_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        HIST_EVENTS_INSERT,
         rows,
     )
     return len(rows)

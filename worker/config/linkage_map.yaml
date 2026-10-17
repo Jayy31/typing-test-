@@ -59,3 +59,83 @@ macro_moves:
     effects:
       - {sectors: [Realty], direction: bullish, weight: 4}
       - {sectors: [NBFC], direction: bullish, weight: 3}
+  # Phase 7: commodities (metric = deep_data.yaml commodities name, % over ~24h). STARTING DEFAULTS.
+  - name: steel_up
+    metric: steel_hrc
+    mode: pct
+    move: up
+    threshold: 3.0
+    effects:
+      - {sub_sectors: [Steel], direction: bullish, weight: 6}
+  - name: steel_down
+    metric: steel_hrc
+    mode: pct
+    move: down
+    threshold: 3.0
+    effects:
+      - {sub_sectors: [Steel], direction: bearish, weight: 6}
+  - name: aluminium_up
+    metric: aluminium
+    mode: pct
+    move: up
+    threshold: 3.0
+    effects:
+      - {sub_sectors: [Aluminium], direction: bullish, weight: 6}
+  - name: aluminium_down
+    metric: aluminium
+    mode: pct
+    move: down
+    threshold: 3.0
+    effects:
+      - {sub_sectors: [Aluminium], direction: bearish, weight: 6}
+  - name: copper_up
+    metric: copper
+    mode: pct
+    move: up
+    threshold: 3.0
+    effects:
+      - {sub_sectors: [Diversified Metals, Cables], direction: bullish, weight: 4}
+  - name: copper_down
+    metric: copper
+    mode: pct
+    move: down
+    threshold: 3.0
+    effects:
+      - {sub_sectors: [Diversified Metals], direction: bearish, weight: 4}
+      - {sub_sectors: [Cables], direction: bullish, weight: 3}
+  - name: silver_up
+    metric: silver
+    mode: pct
+    move: up
+    threshold: 3.0
+    effects:
+      - {sub_sectors: [Zinc], direction: bullish, weight: 5}
+  - name: gold_up
+    metric: gold
+    mode: pct
+    move: up
+    threshold: 2.0
+    effects:
+      - {sub_sectors: [Gold Loans], direction: bullish, weight: 4}
+      - {sub_sectors: [Jewellery], direction: bearish, weight: 3}
+  - name: gold_down
+    metric: gold
+    mode: pct
+    move: down
+    threshold: 2.0
+    effects:
+      - {sub_sectors: [Gold Loans], direction: bearish, weight: 4}
+  - name: natgas_up
+    metric: natgas
+    mode: pct
+    move: up
+    threshold: 5.0
+    effects:
+      - {sub_sectors: [Gas Distribution], direction: bearish, weight: 5}
+  - name: natgas_down
+    metric: natgas
+    mode: pct
+    move: down
+    threshold: 5.0
+    effects:
+      - {sub_sectors: [Gas Distribution], direction: bullish, weight: 5}

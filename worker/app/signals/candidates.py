@@ -6,7 +6,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import flags, taxonomy
 from app.db.models import NewsItem, NewsTag
+from app.deep.evidence import counts_as_official
 from app.timeutil import as_ist
 from app.yaml_config import load_yaml
 
@@ -45,7 +47,8 @@ class Candidate:
 
     @property
     def has_official(self) -> bool:
-        return any(i.kind == "official" for i in self.items)
+        # structured evidence counts when backed by the event study or measured from the filing
+        return any(i.kind == "official" or counts_as_official(i.source) for i in self.items)
 
     @property
     def max_tag_id(self) -> int:
@@ -57,10 +60,18 @@ class Candidate:
 
     @property
     def event_types(self) -> frozenset[str]:
-        return frozenset(i.event_type for i in self.items if i.event_type)
+        """Event types incl. the parent of each structured subtype (playbooks key on parents)."""
+        out: set[str] = set()
+        for i in self.items:
+            if i.event_type:
+                out.add(i.event_type)
+                out.add(taxonomy.parent(i.event_type) or i.event_type)
+        return frozenset(out)
 
 
 def source_kind(source: str) -> str:
+    if source.startswith("deep:"):  # deep:<category>:<rule|base_rate> (Phase 7 structured events)
+        return "structured_base_rate" if source.endswith(":base_rate") else "structured_rule"
     if source == "nse_announcements":
         return "official"
     for feed in load_yaml("news_sources.yaml")["feeds"]:
@@ -90,7 +101,10 @@ def evidence_for(
     if symbol:
         q = q.where(NewsTag.symbol == symbol)
     out: list[tuple[str | None, str | None, EvidenceItem]] = []
+    deep_on = flags.active(s, "feat.deep_data")  # owner switch for Phase 7 structured evidence
     for tag, item in s.execute(q).all():
+        if not deep_on and item.source.startswith("deep:"):
+            continue
         when = as_ist(item.published_at or item.fetched_at)
         age_h = (now - when).total_seconds() / 3600
         if age_h > window.total_seconds() / 3600 or tag.sentiment is None:

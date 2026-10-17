@@ -31,6 +31,7 @@ from app.market.live import UpstoxOptionData, market_open, store_chain
 from app.market.options import OptionChain, OptionQuoteRow
 from app.notify import templates
 from app.notify.outbox import enqueue_alert
+from app.signals.deferred import entry_start, reprice_due
 from app.signals.expiry import trading_days_between
 from app.signals.filters import load_holidays
 from app.signals.lifecycle import LIVE
@@ -118,7 +119,9 @@ def enter_signals(
     ).all()
     for sig in sigs:
         assert sig.option_type and sig.strike and sig.expiry
-        if now - as_ist(sig.created_at) > ttl:
+        if sig.enter_after is not None and now < as_ist(sig.enter_after):
+            continue  # after-hours signal: enters from the next open
+        if now - entry_start(sig) > ttl:
             _cancel(s, sig, now, "entry_ttl", f"not entered within {ttl.seconds // 60} minutes")
             continue
         if not _entry_window_open(now):
@@ -525,6 +528,7 @@ def trading_cycle(
     source = source or UpstoxOptionData(engine)
     if not source.available or not market_open(now):
         return 0
+    reprice_due(engine, source, now)  # after-hours signals get live prices at the open
     with session_scope(engine) as s:
         wanted = {
             (g.symbol, g.expiry)

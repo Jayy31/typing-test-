@@ -13,7 +13,8 @@ def _pct(new: float | None, old: float | None) -> float | None:
 
 
 def compute_changes(s: Session, now: datetime) -> dict[str, float]:
-    """metric -> change. brent/usdinr/dxy in %, us10y as absolute % points. Missing -> omitted."""
+    """metric -> change. brent/usdinr/dxy and commodities in %, us10y as absolute % points.
+    Missing -> omitted."""
     latest = s.scalars(select(MacroSnapshot).order_by(MacroSnapshot.ts.desc()).limit(1)).first()
     if latest is None:
         return {}
@@ -31,6 +32,11 @@ def compute_changes(s: Session, now: datetime) -> dict[str, float]:
         v = _pct(getattr(latest, metric), getattr(older, metric))
         if v is not None:
             out[metric] = v
+    old_c = older.commodities_json or {}
+    for name, last in (latest.commodities_json or {}).items():  # Phase 7 commodities, in %
+        v = _pct(last, old_c.get(name))
+        if v is not None:
+            out[name] = v
     if latest.us10y is not None and older.us10y is not None:
         out["us10y"] = latest.us10y - older.us10y
     return out

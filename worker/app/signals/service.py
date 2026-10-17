@@ -25,6 +25,7 @@ from app.notify import templates
 from app.notify.outbox import enqueue_alert
 from app.rules.engine import RuleContext, RuleHit, evaluate, fired_macro_rules
 from app.rules.macro_changes import compute_changes
+from app.signals import deferred
 from app.signals.candidates import Candidate, build_candidates, evidence_for, weighted_sentiment
 from app.signals.expiry import choose_expiry
 from app.signals.filters import Check, check_eligibility, load_holidays
@@ -55,6 +56,7 @@ class WorkItem:
     source: str = "single"  # panel / single
     steps: list[AgentStep] | None = None  # agent outputs, stored in agent_runs
     policy: calibration.Policy | None = None  # how the prediction is tempered (shrink/calibrated)
+    deferred: dict[str, Any] | None = None  # off-hours: priced at the next open (Phase 7)
 
 
 def predict(item: WorkItem, out: AnalystOutput) -> tuple[Prediction | None, list[Scenario]]:
@@ -70,8 +72,11 @@ def _last_analysis(s: Session, symbol: str) -> Analysis | None:
     ).first()
 
 
-def plan_work(s: Session, now: datetime) -> tuple[list[WorkItem], dict[str, float]]:
-    """Pick candidates that are new/changed since their last analysis and past the cooldown."""
+def plan_work(
+    s: Session, now: datetime, only: set[str] | None = None
+) -> tuple[list[WorkItem], dict[str, float]]:
+    """Pick candidates that are new/changed since their last analysis and past the cooldown.
+    `only`: restrict to these stocks (results fast-path: an immediate cycle for one stock)."""
     cfg = load_yaml("signals.yaml")["candidates"]
     changes = compute_changes(s, now)
     macro = fired_macro_rules(changes)
@@ -79,6 +84,9 @@ def plan_work(s: Session, now: datetime) -> tuple[list[WorkItem], dict[str, floa
     work: list[WorkItem] = []
     weak: list[tuple[Candidate, str]] = []
     accepted = build_candidates(s, now, weak)
+    if only is not None:
+        accepted = [c for c in accepted if c.symbol in only]
+        weak = [(c, r) for c, r in weak if c.symbol in only]
     for cand, reason in weak:
         if cand.symbol in insts and insts[cand.symbol].is_fno:
             record_rejection(
@@ -153,6 +161,9 @@ def price_analysis(
             return None
         if not flags.active(s, "feat.simulator"):
             return None
+        if deferred.off_hours(now, load_holidays(s)):  # stale quotes: price at the next open
+            item.deferred = deferred.deferred_json(item, out, dist, pred.move_pct, pred.p_move)
+            return OptionPlan(status="pending", notes=["after hours: priced at the next open"])
         inst = s.get(Instrument, item.cand.symbol)
         lot = int(inst.lot_size or 0) if inst else 0
     news_time = min(i.published_at for i in item.cand.items)
@@ -197,6 +208,8 @@ def store_result(
         "macro_changes": changes,
         "rule_hits": [h.__dict__ for h in item.hits],
     }
+    if item.deferred is not None:
+        base["deferred_pricing"] = item.deferred
     if out is None:
         failed = Analysis(
             symbol=cand.symbol,
@@ -568,9 +581,16 @@ def stamp_signal(
         if macro_ts:
             ages["macro_s"] = round((now - as_ist(macro_ts)).total_seconds(), 1)
         sig.data_age_json = ages
+    if item is not None and item.deferred is not None:
+        sig.enter_after = deferred.next_open(now or datetime.now(IST), load_holidays(s))
     if plan is None:
         sig.pricing_status = "pending"
         return
+    apply_plan(s, sig, plan, now or datetime.now(IST))
+
+
+def apply_plan(s: Session, sig: Signal, plan: OptionPlan, now: datetime) -> None:
+    """Option choice, probabilities and EV from the options stage (at creation or re-priced)."""
     sig.pricing_status = "priced" if plan.chosen else plan.status
     sig.calibrator_id = plan.calibrator_id
     sig.calibration_method = plan.calibration_method
@@ -591,7 +611,7 @@ def stamp_signal(
         sig.expiry = plan.chosen.row.expiry
         sig.expected_value, sig.expected_value_inr = r.ev_pct, r.ev_inr
         sig.p_t1_before_sl, sig.p_t2, sig.p_t3 = r.p_t1_before_sl, r.p_t2, r.p_t3
-    _store_candidates(s, sig, plan, now or datetime.now(IST))
+    _store_candidates(s, sig, plan, now)
 
 
 def analogue_json(a: AnalogueResult) -> dict[str, Any]:
@@ -739,12 +759,15 @@ def _threads_ok(engine: Engine | None) -> bool:
 
 
 def run_signal_cycle(
-    engine: Engine | None = None, ai: AiClient | None = None, source: UpstoxOptionData | None = None
+    engine: Engine | None = None,
+    ai: AiClient | None = None,
+    source: UpstoxOptionData | None = None,
+    only: set[str] | None = None,
 ) -> int:
-    """Job entrypoint. Returns the number of analyses run."""
+    """Job entrypoint. Returns the number of analyses run. `only` limits it to some stocks."""
     now = datetime.now(IST)
     with session_scope(engine) as s:
-        work, changes = plan_work(s, now)
+        work, changes = plan_work(s, now, only)
         sector_watch(s, now)
         expire_stale(s, now)
     if not work:

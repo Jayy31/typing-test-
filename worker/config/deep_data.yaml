@@ -1,0 +1,120 @@
+# Deeper data sources (Phase 7). NSE paths and field names are from public endpoint conventions
+# and could NOT be checked from the build sandbox; raw responses are saved for checking.
+
+sources:
+  insider:          {enabled: true, path: "/api/corporates-pit?index=equities&from_date={from}&to_date={to}", poll_minutes: 30}
+  bulk_deals:       {enabled: true, path: "/api/historical/bulk-deals?from={from}&to={to}", poll_minutes: 60}
+  block_deals:      {enabled: true, path: "/api/historical/block-deals?from={from}&to={to}", poll_minutes: 60}
+  shareholding:     {enabled: true, path: "/api/corporate-share-holdings-master?index=equities", poll_minutes: 360}
+  financial_results: {enabled: true, path: "/api/corporates-financial-results?index=equities&period=Quarterly"}
+  sebi_orders:      {enabled: true, url: "https://www.sebi.gov.in/sebirss.xml", poll_minutes: 60}
+  usfda:            {enabled: true, url: "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/warning-letters/rss.xml", poll_minutes: 180}
+  quote_equity:     {path: "/api/quote-equity?symbol={symbol}"}   # issued size -> market cap (nightly)
+
+# Counterparty classes from the disclosure's category / client name (first match wins).
+counterparty:
+  insider_category:       # NSE PIT "personCategory"
+    promoter: ["promoter"]
+    promoter_group: ["promoter group"]
+    director_kmp: ["director", "key managerial", "kmp", "designated person", "immediate relative"]
+  deal_client:            # bulk/block deal client name patterns (case-insensitive substrings)
+    fii: ["fpi", "foreign portfolio", " llc", " ltd.", "fund pcc", "société", "gmbh", "capital management", "goldman", "morgan stanley", "societe generale", "nomura", "citigroup", "bnp paribas", "vanguard", "blackrock", "government of singapore", "abu dhabi"]
+    mf_dii: ["mutual fund", " mf", "life insurance", "insurance company", "sbi ", "hdfc ", "icici prudential", "nippon india", "kotak mahindra", "axis ", "uti ", "dsp ", "mirae"]
+
+# Materiality: items below these create no evidence (stored, but no candidate).
+# value: Rs of the transaction; adv: % of the stock's 20-day average traded value; mcap: % of market cap.
+materiality:
+  insider: {min_value_inr: 10000000, min_pct_adv: 10, min_pct_mcap: 0.05}     # Rs 1 cr AND (adv OR mcap)
+  deals:   {min_value_inr: 50000000, min_pct_adv: 25, min_pct_mcap: 0.10}     # Rs 5 cr AND (adv OR mcap)
+  shareholding: {min_change_pp: 0.5, pledge_min_change_pp: 1.0}             # percentage points vs last quarter
+  results: {min_abs_surprise: 0.25}                                         # |score| below -> results_inline (no evidence)
+  auto_sales: {min_abs_yoy_pct: 10}
+
+# Evidence. Hand-set rules start at LOW weight (kind structured_rule). Once the event study has at
+# least ANALOGUE_MIN_N independent events for a subtype, its base rate replaces the hand-set
+# direction and strength (kind structured_base_rate, normal weight). /why shows which one was used.
+evidence:
+  base_rate_window: 3
+  rule_novelty: 0.6                # strength factor of a hand-set rule (base rates use 1.0)
+  # Categories whose evidence IS the exchange filing measured in numbers (not a counterparty
+  # heuristic): they count as an official source for the candidate gate even on the hand-set rule.
+  official_categories: [results]
+  base_rate_scale_pct: 3.0         # |mean abnormal move| of this size -> sentiment 1.0
+  rules:                           # subtype: sentiment (-1..1; sign = direction)
+    insider_buy_promoter: 0.6
+    insider_buy_promoter_group: 0.5
+    insider_buy_director_kmp: 0.4
+    insider_buy_other: 0.2
+    insider_sell_promoter: -0.5
+    insider_sell_promoter_group: -0.4
+    insider_sell_director_kmp: -0.3
+    insider_sell_other: -0.1
+    deal_buy_promoter: 0.6
+    deal_buy_promoter_group: 0.5
+    deal_buy_fii: 0.4
+    deal_buy_mf_dii: 0.4
+    deal_buy_other: 0.2
+    deal_sell_promoter: -0.6
+    deal_sell_promoter_group: -0.5
+    deal_sell_fii: -0.4
+    deal_sell_mf_dii: -0.3
+    deal_sell_other: -0.2
+    pledge_increase: -0.6
+    pledge_decrease: 0.4
+    holding_up_promoter: 0.4
+    holding_down_promoter: -0.4
+    holding_up_fii: 0.3
+    holding_down_fii: -0.3
+    holding_up_mf_dii: 0.3
+    holding_down_mf_dii: -0.3
+    rating_upgrade: 0.4
+    rating_downgrade: -0.6
+    sebi_order: -0.6
+    usfda_adverse: -0.7
+    results_beat: 0.7
+    results_miss: -0.7
+    auto_sales_strong: 0.5
+    auto_sales_weak: -0.5
+
+# Results fast-path (owner rule): on results days poll 09:00-23:30 IST; a result after the close or
+# on a holiday still runs the signal cycle at once, and the signal enters at the next open (after
+# the usual first-15-minutes rule).
+fast_path:
+  poll_seconds: 45
+  start: "09:00"
+  end: "23:30"
+  max_backoff_seconds: 600
+results:                           # surprise vs the company's own trend (no consensus data)
+  weights: {revenue: 0.35, pat: 0.40, margin: 0.25}
+  scale: {revenue_pct: 10, pat_pct: 20, margin_pp: 2}   # tanh scale of each component
+  default_trend_yoy_pct: 10        # used when fewer than 4 earlier quarters are known
+  guidance_adjust: 0.15            # raised / cut guidance shifts the score
+
+# Commodities added to the macro snapshot (Yahoo tickers); moves feed linkage_map.yaml rules.
+commodities:
+  gold: "GC=F"
+  silver: "SI=F"
+  copper: "HG=F"
+  aluminium: "ALI=F"
+  natgas: "NG=F"
+  steel_hrc: "HRC=F"
+
+# Disclosure timestamps when the source gives only a date (conservative: after publication).
+disclosure:
+  deals_published_time: "18:00"      # NSE publishes bulk/block deal reports after the close
+  shareholding_default_time: "20:00" # used when the filing has no broadcast time
+
+# Monthly auto sales: exchange announcements from Auto-sector F&O stocks whose title matches.
+auto_sales:
+  sector: Auto
+  title_keywords: ["sales", "dispatch", "volumes"]
+  scan_days: 4
+
+# Macro releases (CPI, WPI, IIP, GDP, GST, PMI): official press-release feeds, cheap AI extract.
+# Feed URLs could not be checked from the build sandbox.
+macro_releases:
+  feeds:
+    - {name: pib_finance, url: "https://www.pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=3"}
+    - {name: rbi_press, url: "https://www.rbi.org.in/pressreleases_rss.xml"}
+  keywords: ["consumer price index", "cpi", "wholesale price", "wpi", "index of industrial production", "iip", "gross domestic product", "gdp", "gst collection", "purchasing managers"]
+  names: [cpi, wpi, iip, gdp, gst, pmi_mfg, pmi_services, repo_rate]

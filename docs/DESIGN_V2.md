@@ -469,3 +469,26 @@ Added by the owner after Phase 3a. Values in config; nothing here is auto-applie
   change suggested only if it also wins at 2x spread.
 - One trade per stock, live and in backtests: a skipped signal is recorded as rejected ("open
   trade on same stock") so the counterfactual tracker follows it.
+
+### Owner decisions for Phase 7 (deeper data sources)
+- Results extraction: XBRL first, then the cheap model with the mid model as fallback (strict
+  `ResultsExtract` schema). Surprise without consensus: revenue and profit growth vs the
+  company's own trend (median of its last four YoY growths, else 10%), margin change, stated
+  guidance.
+- Fast-path polling on results days 09:00-23:30 IST. Results after the close or on holidays run the
+  signal cycle at once; the signal enters at the next open (`enter_after`), re-priced with live
+  quotes, after the first-15-minutes rule; entry TTL counts from then.
+- Concall transcripts deferred; mutual-fund portfolios deferred to Phase 10.
+- Disclosure dates: insider trades, bulk/block deals, shareholding, ratings and regulatory actions
+  store the event date AND the public disclosure timestamp; the event study, rules mode and the
+  backtester use only the disclosure timestamp (`hist_events.date/time`; `event_date` is
+  reference only, enforced by tests/test_deep_disclosure.py). Deal reports count as public at
+  18:00 on the deal date.
+- Evidence: hand-set rules in `deep_data.yaml` start at low weight (strength x0.6, kind weight 0.3,
+  not an official source); once the event study has `ANALOGUE_MIN_N` events for a subtype its
+  base rate replaces the rule's direction and strength (kind weight 1.0, counts as official).
+  `/why` shows which one was used.
+- Materiality thresholds in config (Rs minimum, % of 20-day average traded value, % of market cap)
+  so that small items create no candidates.
+- Counterparty (promoter, promoter group, director/KMP, FII, MF/DII, other) is part of the subtype
+  in taxonomy tx2, so base rates are learned per counterparty.

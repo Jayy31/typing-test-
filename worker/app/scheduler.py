@@ -99,6 +99,63 @@ def _job(sched: BlockingScheduler, name: str, fn: JobFn, trigger: BaseTrigger) -
     )
 
 
+def _deep_jobs(sched: BlockingScheduler) -> None:
+    from app.deep import collectors as deep
+    from app.deep import extracts, results
+
+    src = load_yaml("deep_data.yaml")["sources"]
+    day = {"hour": "7-23", "timezone": IST}
+    if src["insider"]["enabled"]:
+        _job(sched, "deep_insider", deep.collect_insider, CronTrigger(minute="*/30", **day))
+    if src["bulk_deals"]["enabled"]:
+        _job(
+            sched,
+            "deep_bulk_deals",
+            deep.collect_bulk_deals,
+            CronTrigger(day_of_week="mon-fri", hour="18,20", minute=5, timezone=IST),
+        )
+    if src["block_deals"]["enabled"]:
+        _job(
+            sched,
+            "deep_block_deals",
+            deep.collect_block_deals,
+            CronTrigger(day_of_week="mon-fri", hour="18,20", minute=10, timezone=IST),
+        )
+    if src["shareholding"]["enabled"]:
+        _job(
+            sched,
+            "deep_shareholding",
+            deep.collect_shareholding,
+            CronTrigger(hour="8,14,20", minute=20, timezone=IST),
+        )
+    _job(sched, "deep_ratings", deep.scan_ratings, CronTrigger(minute="3-59/10", **day))
+    if src["sebi_orders"]["enabled"]:
+        _job(sched, "deep_sebi", deep.collect_sebi, CronTrigger(minute=25, **day))
+    if src["usfda"]["enabled"]:
+        _job(
+            sched,
+            "deep_usfda",
+            deep.collect_usfda,
+            CronTrigger(hour="8,11,14,17,20,23", minute=35, timezone=IST),
+        )
+    if src["financial_results"]["enabled"]:
+        fast = int(load_yaml("deep_data.yaml")["fast_path"]["poll_seconds"])
+        _job(sched, "results_fast_path", results.fast_path_job, IntervalTrigger(seconds=fast))
+        _job(sched, "results_slow_path", results.slow_path_job, CronTrigger(minute="*/15", **day))
+    _job(
+        sched,
+        "deep_auto_sales",
+        extracts.scan_auto_sales,
+        CronTrigger(day="1-4", hour="8-22", minute="*/30", timezone=IST),
+    )
+    _job(
+        sched,
+        "deep_macro_releases",
+        extracts.collect_macro_releases,
+        CronTrigger(minute=40, hour="8-22", timezone=IST),
+    )
+
+
 def build_scheduler() -> BlockingScheduler:
     s = get_settings()
     sched = BlockingScheduler(timezone=IST)
@@ -179,6 +236,8 @@ def build_scheduler() -> BlockingScheduler:
             poll_universe_options,
             CronTrigger(day_of_week="mon-fri", hour=h, minute=m, timezone=IST),
         )
+    # Phase 7: deeper data sources (deep_data.yaml)
+    _deep_jobs(sched)
     # History (Phase 4): one job at a time holds the DuckDB writer lock
     _job(
         sched,

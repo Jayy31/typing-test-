@@ -28,3 +28,15 @@ def prompt_block() -> str:
     cfg = load_yaml("taxonomy.yaml")
     ev = "\n".join(f"- {k}: {v}" for k, v in cfg["event_types"].items())
     return f"Event types (taxonomy {cfg['version']}):\n{ev}\nThemes: {', '.join(cfg['themes'])}"
+
+
+def structured_types() -> dict[str, dict[str, str]]:
+    """Structured event subtypes (tx2) -> {parent, description}."""
+    return dict(load_yaml("taxonomy.yaml").get("structured_event_types") or {})
+
+
+def parent(event_type: str | None) -> str | None:
+    """News event type a structured subtype belongs to (the type itself if not structured)."""
+    if event_type is None:
+        return None
+    return structured_types().get(event_type, {}).get("parent", event_type)

@@ -128,7 +128,7 @@ def hist() -> tuple[duckdb.DuckDBPyConnection, list[date]]:
         eid: str, i: int, t: time | None, sym: str | None, etype: str, d: date | None = None
     ) -> None:
         con.execute(
-            "INSERT INTO hist_events VALUES (?, ?, ?, ?, 'IT', NULL, ?, 'bullish', 's', 0.5, 0.5, 't', 'u', 'tx1', 'p')",
+            "INSERT INTO hist_events (event_id, date, time, symbol, sector, theme, event_type, direction, source, sentiment, surprise, title, url, taxonomy_ver, prompt_ver) VALUES (?, ?, ?, ?, 'IT', NULL, ?, 'bullish', 's', 0.5, 0.5, 't', 'u', 'tx1', 'p')",
             [eid, d or cal[i], t, sym, etype],
         )
 

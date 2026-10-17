@@ -1,7 +1,9 @@
 """Scheduled history jobs. One job holds the DuckDB writer lock at a time (run sequentially)."""
 
 import logging
+from collections.abc import Callable
 from datetime import datetime, timedelta
+from typing import Any
 
 from app.config import IST, get_settings
 from app.history import (
@@ -26,6 +28,7 @@ def nightly() -> int:
         today = datetime.now(IST).date()
         n += corp_actions.fetch(today - timedelta(days=30), today + timedelta(days=30), con)
         n += live_sync.sync_live_events(con)
+        n += _deep_history(con)
         if get_settings().gdelt_enabled:
             try:
                 n += news_history.gdelt(2, con)
@@ -45,6 +48,25 @@ def nightly() -> int:
             )
             week = datetime.now(IST).strftime("%G-W%V")
             enqueue_alert(s, "health", text, f"units:{week}")
+    return n
+
+
+def _deep_history(con: Any) -> int:
+    """Phase 7: materiality stats, live structured events, next chunk of the 5-year backfill."""
+    from app.deep import history as deep_history
+    from app.deep import stats as deep_stats
+
+    n = 0
+    steps: list[Callable[[Any], int]] = [
+        deep_stats.refresh,
+        deep_history.sync_structured,
+        deep_history.backfill_structured,
+    ]
+    for step in steps:
+        try:
+            n += step(con)
+        except Exception as exc:  # noqa: BLE001 - one step must not stop the nightly job
+            log.warning("deep history step failed: %s", exc)
     return n
 
 

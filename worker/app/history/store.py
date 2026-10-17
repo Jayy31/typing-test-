@@ -14,7 +14,7 @@ import duckdb
 
 from app.config import get_settings
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 DDL = [
     """CREATE TABLE IF NOT EXISTS hist_prices (
@@ -63,7 +63,16 @@ DDL = [
         symbol VARCHAR, ex_date DATE, kind VARCHAR, subject VARCHAR, factor DOUBLE, amount DOUBLE,
         source VARCHAR, PRIMARY KEY (symbol, ex_date, kind))""",
     "ALTER TABLE hist_fno_universe ADD COLUMN IF NOT EXISTS lot_source VARCHAR",
+    # v4 (Phase 7): structured events keep the date the thing HAPPENED in event_date; `date`/`time`
+    # are always the public disclosure time, which is all the event study and backtests may use.
+    "ALTER TABLE hist_events ADD COLUMN IF NOT EXISTS event_date DATE",
 ]
+# Positional inserts into hist_events (the v4 event_date column is filled only for structured events)
+HIST_EVENTS_INSERT = (
+    "INSERT OR REPLACE INTO hist_events (event_id, date, time, symbol, sector, theme, event_type, "
+    "direction, source, sentiment, surprise, title, url, taxonomy_ver, prompt_ver) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
 # Derived tables rebuilt by the event study; dropped when their columns change.
 _REBUILD = {3: ["event_reactions", "analogue_stats"]}
 
