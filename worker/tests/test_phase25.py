@@ -222,7 +222,9 @@ def test_history_store_schema_and_single_writer(tmp_path: Path) -> None:
 
 
 # ---- flags + V2 signal fields --------------------------------------------------------
-def test_flags_default_on_but_inactive_until_built(engine: Engine) -> None:
+def test_flags_default_on_but_inactive_until_built(engine: Engine, monkeypatch) -> None:
+    # every stage is built by Phase 8: simulate one that is not
+    monkeypatch.setitem(flags.BUILT, "feat.knowledge_graph", False)
     with session_scope(engine) as s:
         snap = flags.snapshot(s)
         assert snap["feat.knowledge_graph"] == {"enabled": True, "built": False, "active": False}
