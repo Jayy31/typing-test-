@@ -127,6 +127,23 @@ def enter_signals(
         row = chain.get(sig.strike, sig.option_type) if chain else None
         if chain is None or row is None or not row.ask or not row.bid:
             continue
+        if entry_cfg.get("one_trade_per_stock", True) and s.scalar(
+            select(PaperTrade.id).where(
+                PaperTrade.symbol == sig.symbol,
+                PaperTrade.status == OPEN,
+                PaperTrade.signal_id != sig.id,
+            )
+        ):
+            _cancel(
+                s,
+                sig,
+                now,
+                "overlap",
+                "open trade on same stock",
+                ref_premium=row.ask,
+                spot=chain.spot,
+            )
+            continue
         opt = _options_json(s, sig)
         pre_news = opt.get("pre_news_spot")
         sign = _side(sig.option_type)
@@ -148,7 +165,15 @@ def enter_signals(
     return opened
 
 
-def _cancel(s: Session, sig: Signal, now: datetime, stage: str, reason: str) -> None:
+def _cancel(
+    s: Session,
+    sig: Signal,
+    now: datetime,
+    stage: str,
+    reason: str,
+    ref_premium: float | None = None,
+    spot: float | None = None,
+) -> None:
     sig.status, sig.updated_at = "CANCELLED", now
     s.add(
         SignalVersion(
@@ -175,6 +200,8 @@ def _cancel(s: Session, sig: Signal, now: datetime, stage: str, reason: str) -> 
         ref_expiry=sig.expiry,
         ref_strike=sig.strike,
         ref_option_type=sig.option_type,
+        ref_premium=ref_premium,
+        spot_at_reject=spot,
     )
 
 

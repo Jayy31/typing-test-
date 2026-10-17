@@ -12,6 +12,7 @@ a markdown report there, and a short summary on Telegram.
 import argparse
 import logging
 import sys
+from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 
@@ -37,6 +38,10 @@ def standard_variants(mode: str) -> list[Variant]:
         *[Variant(f"{mode}: v2.1 rules, spread x{m:g}", mode, spread_mult=m) for m in sens],
     ]
     if mode == "rules":
+        out.append(
+            Variant("rules: legacy threshold (hit >= 50%, mean > 0)", mode, threshold="legacy")
+        )
+    if mode == "rules":
         out += [
             Variant("benchmark: random direction", mode, direction_mode="random"),
             Variant("benchmark: ATM, no gates", mode, selection="atm", direction_mode="signal"),
@@ -55,7 +60,31 @@ def execute(variants: list[Variant], start: date, end: date) -> str:
             store.save_equity(run_id, metrics.equity_points(res, data))
             rows.append((run_id, m))
             logging.info("%s: %d trades", v.name, len(res.trades))
-    text = store.render(rows)
+        verdict = store.best_vs_default(rows)
+        best_x2 = default_x2 = None
+        if verdict.get("significant"):  # only then: does the advantage survive 2x spread?
+            by_name = {v.name: v for v in variants}
+            bv = by_name[verdict["best"]]
+            res2 = run(
+                con,
+                replace(bv, name=f"{bv.name}, spread x2", spread_mult=2.0),
+                start,
+                end,
+                data=data,
+            )
+            m2 = metrics.compute(res2, data)
+            rows.append((store.save(res2, m2), m2))
+            best_x2 = m2["all"].get("expectancy_pct")
+            d2 = next(
+                (
+                    m
+                    for _, m in rows
+                    if m["variant"]["name"] == f"{variants[0].mode}: v2.1 rules, spread x2"
+                ),
+                None,
+            )
+            default_x2 = d2["all"].get("expectancy_pct") if d2 else None
+    text = store.render(rows) + "\n\n" + store.verdict_text(verdict, best_x2, default_x2)
     out = (
         Path(get_settings().history_data_dir)
         / "backtests"

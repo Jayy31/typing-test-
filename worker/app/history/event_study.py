@@ -408,11 +408,10 @@ def reaction_rows(
     return [r for r in rows if window_end(r[5]) < before]
 
 
-def aggregate(
+def grouped_values(
     rows: list[tuple[Any, ...]], vix: dict[date, float]
-) -> dict[tuple[Any, ...], tuple[Any, ...]]:
-    """Weighted, direction-adjusted stats per (event_type, sector, symbol, regime, window):
-    (n, n_eff, mean, median, hit_rate, std, p25, p75)."""
+) -> dict[tuple[Any, ...], list[tuple[float, float]]]:
+    """(direction-adjusted abnormal %, weight) per (event_type, sector, symbol, regime, window)."""
     groups: dict[tuple[Any, ...], list[tuple[float, float]]] = defaultdict(list)
     for etype, sector, sym, w, direction, d, wt, abn in rows:
         signed = abn if direction == "bullish" else -abn
@@ -423,6 +422,13 @@ def aggregate(
                 (etype, None, None, reg, w),
             ):
                 groups[key].append((signed, wt))
+    return groups
+
+
+def summarize(
+    groups: dict[tuple[Any, ...], list[tuple[float, float]]],
+) -> dict[tuple[Any, ...], tuple[Any, ...]]:
+    """(n, n_eff, mean, median, hit_rate, std, p25, p75) per group."""
     out: dict[tuple[Any, ...], tuple[Any, ...]] = {}
     for key, vals in groups.items():
         a = np.array([v for v, _ in vals])
@@ -439,6 +445,27 @@ def aggregate(
             weighted_quantile(a, wt, 0.75),
         )
     return out
+
+
+def aggregate(
+    rows: list[tuple[Any, ...]], vix: dict[date, float]
+) -> dict[tuple[Any, ...], tuple[Any, ...]]:
+    """Weighted, direction-adjusted stats per (event_type, sector, symbol, regime, window)."""
+    return summarize(grouped_values(rows, vix))
+
+
+def bootstrap_mean_ci(
+    vals: list[tuple[float, float]], level: float = 0.9, samples: int = 1000, seed: int = 11
+) -> tuple[float, float]:
+    """Bootstrap confidence interval of the weighted mean (resampling events with replacement)."""
+    a = np.array([v for v, _ in vals])
+    w = np.array([x for _, x in vals])
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, len(a), (samples, len(a)))
+    means = (a[idx] * w[idx]).sum(axis=1) / w[idx].sum(axis=1)
+    tail = (1 - level) / 2 * 100
+    lo, hi = np.percentile(means, [tail, 100 - tail])
+    return float(lo), float(hi)
 
 
 def vix_series(con: duckdb.DuckDBPyConnection) -> dict[date, float]:

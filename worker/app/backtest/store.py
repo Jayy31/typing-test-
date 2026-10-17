@@ -182,3 +182,69 @@ def render(rows: list[tuple[int, dict[str, Any]]]) -> str:
             f"Nifty buy & hold {_f(bm.get('nifty_buy_hold_pct'), '+.1f')}%; skipped signals {m['signals_skipped']}"
         )
     return "\n".join(lines)
+
+
+def is_candidate(v: dict[str, Any]) -> bool:
+    """Variants that could replace the default: not a benchmark, normal spread."""
+    return (
+        v.get("direction_mode", "signal") == "signal"
+        and v.get("selection", "ev") == "ev"
+        and float(v.get("spread_mult", 1.0)) == 1.0
+    )
+
+
+def best_vs_default(rows: list[tuple[int, dict[str, Any]]]) -> dict[str, Any]:
+    """Owner rule (multiple comparisons): the best candidate's advantage over the default (first
+    row) counts only if its 90% bootstrap interval lies entirely above the default's."""
+    default_id, default = rows[0]
+    cands = [(i, m) for i, m in rows if is_candidate(m["variant"]) and m["all"].get("n")]
+    if not cands or not default["all"].get("n"):
+        return {"best": None, "significant": False, "reason": "not enough trades"}
+    best_id, best = max(cands, key=lambda r: r[1]["all"]["expectancy_pct"])
+    out: dict[str, Any] = {
+        "best": best["variant"]["name"],
+        "best_run": best_id,
+        "default": default["variant"]["name"],
+        "best_expectancy": best["all"]["expectancy_pct"],
+        "default_expectancy": default["all"]["expectancy_pct"],
+    }
+    if best_id == default_id:
+        return {**out, "significant": False, "reason": "the current default is the best variant"}
+    b, d = best.get("bootstrap") or {}, default.get("bootstrap") or {}
+    if not b or not d:
+        return {**out, "significant": False, "reason": "too few trades for a confidence interval"}
+    sig = b["expectancy_p5"] > d["expectancy_p95"]
+    reason = (
+        f"interval {b['expectancy_p5']:+.1f}..{b['expectancy_p95']:+.1f}% vs default "
+        f"{d['expectancy_p5']:+.1f}..{d['expectancy_p95']:+.1f}%"
+    )
+    return {**out, "significant": sig, "reason": reason}
+
+
+def verdict_text(
+    v: dict[str, Any], best_x2: float | None = None, default_x2: float | None = None
+) -> str:
+    if not v.get("best"):
+        return f"VERDICT: no conclusion ({v['reason']})."
+    if v["best"] == v["default"]:
+        return f"VERDICT: the current default ({v['default']}) is the best variant; no change suggested."
+    head = (
+        f"VERDICT: best variant '{v['best']}' {v['best_expectancy']:+.1f}% vs default {v['default_expectancy']:+.1f}% "
+        f"per trade ({v['reason']})"
+    )
+    if not v["significant"]:
+        return head + ": NOT SIGNIFICANT. No config change suggested."
+    if best_x2 is None or default_x2 is None:
+        return (
+            head
+            + ": significant, but the 2x spread check could not run. No config change suggested."
+        )
+    if best_x2 > default_x2:
+        return (
+            head
+            + f": significant and still better at 2x spread ({best_x2:+.1f}% vs {default_x2:+.1f}%). Suggestion: consider switching to it."
+        )
+    return (
+        head
+        + f": significant, but not better at 2x spread ({best_x2:+.1f}% vs {default_x2:+.1f}%). No config change suggested."
+    )

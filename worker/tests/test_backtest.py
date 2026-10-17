@@ -237,7 +237,117 @@ def test_compare_end_to_end(engine, tmp_path, monkeypatch) -> None:
     text = cli.execute(cli.standard_variants("rules"), WF_START, cal[-1])
     assert "rules: v2.1 rules, per_lot" in text and "spread x1.5" in text and "spread x2" in text
     assert "benchmark: random direction" in text and "benchmark: ATM, no gates" in text
+    assert "legacy threshold" in text and "VERDICT:" in text
     with session_scope(engine) as s:
-        assert len(s.scalars(select(BacktestRun)).all()) == 7
+        assert len(s.scalars(select(BacktestRun)).all()) >= 8
         assert s.scalars(select(BacktestTrade)).first() is not None
         assert s.scalars(select(Alert)).one().text.startswith("BACKTEST DONE")
+
+
+def test_overlap_skip_is_tracked_as_counterfactual() -> None:
+    con, cal = setup()
+    F.add_event(con, "e1", cal[300])
+    F.add_event(con, "e2", cal[300], direction="bearish")  # same day, other side: e1's trade is open
+    data = HistoryData(con)
+    res = run(con, Variant("v21"), WF_START, cal[-1], data=data)
+    assert len(res.trades) == 1
+    assert any(s.stage == "overlap" and s.reason == "open trade on same stock" for s in res.skips)
+    assert len(res.counterfactuals) == 1 and res.counterfactuals[0].option_type != res.trades[0].option_type
+    m = metrics.compute(res, data)
+    assert m["counterfactual_open_trade_on_same_stock"]["n"] == 1 and m["all"]["n"] == 1
+
+
+def test_strict_threshold_needs_hit_rate_and_ci_above_zero() -> None:
+    from app.backtest.engine import direction_supported
+    from app.history.analogues import AnalogueResult
+
+    noisy = [
+        (v, 1.0) for v in [6, -5, 7, -6, 5, -4, 8, -7, 6, -5, 4, 3]
+    ]  # hit 58%, mean small, CI spans 0
+    an = AnalogueResult("stock", "all", 3, 12, 12.0, 0.17, 3.5, 0.58, 5.5, -5, 6)
+    ok, why = direction_supported(an, noisy, "strict")
+    assert not ok and "does not exclude" in why
+    assert direction_supported(an, noisy, "legacy")[0]
+    low_hit = AnalogueResult("stock", "all", 3, 12, 12.0, 2.0, 1.0, 0.52, 2.0, 0, 4)
+    assert "hit rate 52% below 55%" in direction_supported(low_hit, [(2.0, 1.0)] * 12, "strict")[1]
+    clean = [(v, 1.0) for v in [4, 5, 6, 3, 5, 4, 6, -1, 5, 4]]
+    assert direction_supported(
+        AnalogueResult("stock", "all", 3, 10, 10.0, 4.1, 4.5, 0.9, 2, 4, 5), clean, "strict"
+    )[0]
+
+
+def test_verdict_requires_significance_and_2x_spread() -> None:
+    def m(name: str, exp: float, p5: float, p95: float, **v: object) -> dict:
+        return {
+            "variant": {
+                "name": name,
+                "direction_mode": "signal",
+                "selection": "ev",
+                "spread_mult": 1.0,
+                **v,
+            },
+            "all": {"n": 40, "expectancy_pct": exp},
+            "bootstrap": {"expectancy_p5": p5, "expectancy_p95": p95},
+        }
+
+    rows = [
+        (1, m("default", 5, 1, 9)),
+        (2, m("fixed", 8, 4, 12)),
+        (3, m("random", 20, 15, 25, direction_mode="random")),
+    ]
+    v = store.best_vs_default(rows)
+    assert v["best"] == "fixed" and not v["significant"]  # overlapping intervals; benchmark ignored
+    assert "NOT SIGNIFICANT" in store.verdict_text(v)
+    rows[1] = (2, m("fixed", 15, 10, 20))
+    v = store.best_vs_default(rows)
+    assert v["significant"]
+    assert "Suggestion: consider switching" in store.verdict_text(v, best_x2=6.0, default_x2=2.0)
+    assert "not better at 2x spread" in store.verdict_text(v, best_x2=1.0, default_x2=2.0)
+    assert "current default" in store.verdict_text(
+        store.best_vs_default([(1, m("default", 9, 5, 12)), (2, m("fixed", 3, 1, 5))])
+    )
+
+
+def test_units_detected_from_lot_multiples() -> None:
+    from app.history import units
+
+    con, cal = F.build()
+    # synthetic volumes are 5000 = 50 x lot 100 (shares-like); OI 2,000,000 too
+    res = units.detect(con)
+    assert res["fo_old"]["volume"]["unit"] == "shares" and res["fo_old"]["oi"]["unit"] == "shares"
+    assert units.store(con, res) == []
+    assert HistoryData(con).units[("fo_old", "volume")] == "shares"
+    con.execute(
+        "UPDATE hist_options SET volume = volume + 37"
+    )  # contract counts: not multiples of 100
+    assert units.detect(con)["fo_old"]["volume"]["unit"] == "contracts"
+    con.execute(
+        "UPDATE hist_options SET volume = CASE WHEN strike % 40 = 0 THEN 5000 ELSE 5037 END"
+    )  # mixed
+    res = units.detect(con)
+    assert res["fo_old"]["volume"]["unit"] is None and units.store(
+        con, res
+    )  # inconclusive -> alert text
+
+
+def test_auto_backtests_wait_for_history_then_run_once(engine, monkeypatch) -> None:
+    from contextlib import contextmanager
+
+    import app.backtest.__main__ as cli
+    from app.backtest import auto
+
+    con, cal = setup()
+    ready, why = auto.history_ready(con)
+    assert not ready and "prices" in why
+
+    @contextmanager
+    def fake_connect(*a, **k):
+        yield con
+
+    monkeypatch.setattr(auto, "connect", fake_connect)
+    calls: list[str] = []
+    monkeypatch.setattr(cli, "execute", lambda variants, s, e: calls.append(variants[0].mode) or "")
+    monkeypatch.setattr(auto, "history_ready", lambda c: (True, "ready"))
+    assert auto.auto_backtests(engine).startswith("rules compare")
+    assert auto.auto_backtests(engine).startswith("nothing due")  # once only
+    assert calls == ["rules"]

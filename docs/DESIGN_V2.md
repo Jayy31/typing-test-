@@ -459,3 +459,13 @@ Added by the owner after Phase 3a. Values in config; nothing here is auto-applie
   live gates (pre-move, edge ratio, EV / probability) apply.
 - Compared side by side: v2.1 vs fixed rules, per_lot vs single_exit, spread x1.5 / x2, random
   direction and ATM-without-gates benchmarks, stock with the same capital, Nifty buy and hold.
+
+- (after Phase 6) No manual VM steps: bhavcopy volume/OI units detected nightly (alert only if
+  inconclusive); rules `compare` runs automatically once the history is complete, replay
+  `compare` once >= 30 post-cutoff live predictions exist, then monthly.
+- Rules-mode direction rule: hit rate >= 55% AND the lower bound of the 90% bootstrap interval of
+  the mean abnormal move > 0 (ANALOGUE_MIN_N applies); the old rule (>= 50%, positive mean) is a
+  comparison variant. Verdict: advantage over the default only if outside the bootstrap intervals,
+  change suggested only if it also wins at 2x spread.
+- One trade per stock, live and in backtests: a skipped signal is recorded as rejected ("open
+  trade on same stock") so the counterfactual tracker follows it.

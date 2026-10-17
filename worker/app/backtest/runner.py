@@ -18,12 +18,21 @@ from app.backtest.engine import Signal, Skip, Trade, Variant, plan_entry, rules_
 from app.db.models import Analysis
 from app.db.models import Signal as LiveSignal
 from app.db.session import session_scope
-from app.history.event_study import aggregate, reaction_day, reaction_rows, vix_series
+from app.history.event_study import (
+    grouped_values,
+    reaction_day,
+    reaction_rows,
+    summarize,
+    vix_series,
+)
 from app.history.integrity import ai_predictions_allowed, knowledge_cutoff
 from app.timeutil import as_ist
 from app.yaml_config import load_yaml
 
 log = logging.getLogger(__name__)
+
+
+OVERLAP_REASON = "open trade on same stock"
 
 
 def add_months(d: date, n: int) -> date:
@@ -58,6 +67,7 @@ class RunResult:
     skips: list[Skip] = field(default_factory=list)
     folds: list[Fold] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    counterfactuals: list[Trade] = field(default_factory=list)  # skipped: open trade on same stock
 
 
 def _execute(sigs: list[Signal], data: HistoryData, variant: Variant, res: RunResult) -> None:
@@ -65,16 +75,18 @@ def _execute(sigs: list[Signal], data: HistoryData, variant: Variant, res: RunRe
     one = bool(load_yaml("backtest.yaml")["entry"]["one_trade_per_symbol"])
     busy: dict[str, date] = {t.signal.symbol: t.exit_day or date.max for t in res.trades}
     for sig in sorted(sigs, key=lambda s: (s.day, s.key)):
-        if one and sig.symbol in busy and sig.day <= busy[sig.symbol]:
-            res.skips.append(
-                Skip(sig.key, sig.symbol, sig.day, "overlap", "a trade on this stock is still open")
-            )
-            continue
+        overlap = one and sig.symbol in busy and sig.day <= busy[sig.symbol]
+        if overlap:
+            res.skips.append(Skip(sig.key, sig.symbol, sig.day, "overlap", OVERLAP_REASON))
         plan = plan_entry(sig, data, variant, rules)
         if isinstance(plan, Skip):
-            res.skips.append(plan)
+            if not overlap:
+                res.skips.append(plan)
             continue
         trade = simulate(plan, data, variant, rules)
+        if overlap:  # counterfactual: what the skipped signal would have done (not in P&L)
+            res.counterfactuals.append(trade)
+            continue
         res.trades.append(trade)
         busy[sig.symbol] = trade.exit_day or date.max
 
@@ -90,12 +102,13 @@ def run_rules(
     res = RunResult(variant, start, end, folds=folds(start, end))
     vix = vix_series(con)
     for f in res.folds:
-        stats = aggregate(
+        groups = grouped_values(
             reaction_rows(con, before=f.test_start), vix
-        )  # nothing from the test fold or later
+        )  # nothing from the fold on
+        stats = summarize(groups)
         sigs: list[Signal] = []
         for ev in data.events(f.test_start, f.test_end):
-            out = rules_signal(ev, stats, data, variant)
+            out = rules_signal(ev, stats, data, variant, groups)
             (res.skips.append(out) if isinstance(out, Skip) else sigs.append(out))
         _execute(sigs, data, variant, res)
     if not res.folds:

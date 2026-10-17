@@ -182,6 +182,7 @@ def compute(res: RunResult, data: HistoryData) -> dict[str, Any]:
             if len(nifty) > 1
             else None,
         },
+        "counterfactual_open_trade_on_same_stock": _perf(res.counterfactuals),
         "notes": res.notes,
     }
     return m
