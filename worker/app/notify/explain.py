@@ -26,6 +26,10 @@ from app.yaml_config import load_yaml
 ORDER_NAMES = {1: "direct", 2: "via graph, 1 hop", 3: "via graph, 2 hops"}
 
 
+def _px(x: float | None) -> str:
+    return "n/a" if x is None else f"{x:.2f}"
+
+
 def _bullets(items: list[str] | None, empty: str = "none recorded") -> str:
     return "\n".join(f"  - {x}" for x in items) if items else f"  - {empty}"
 
@@ -203,7 +207,7 @@ def build_why(s: Session, signal_id: int) -> str | None:
     if chosen is not None:
         out += [
             f"  Chosen: {sig.symbol} {chosen.strike:g} {chosen.option_type} {chosen.expiry}  "
-            f"bid {chosen.bid} / ask {chosen.ask} (spread {chosen.spread_pct or 0:.1f}%)",
+            f"bid {_px(chosen.bid)} / ask {_px(chosen.ask)} (spread {chosen.spread_pct or 0:.1f}%)",
             f"  IV {chosen.iv or 0:.1f}% (percentile {sig.iv_percentile if sig.iv_percentile is not None else 'n/a, building history'}), "
             f"OI {chosen.oi}, volume {chosen.volume}",
             f"  EV {chosen.ev_pct:+.1f}% (Rs {chosen.ev_inr:,.0f}/lot), P(T1 before SL) {(chosen.p_t1_before_sl or 0) * 100:.0f}%, "

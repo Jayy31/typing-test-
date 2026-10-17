@@ -276,3 +276,9 @@ def test_parse_ban_list_and_corporate_actions() -> None:
         ("INFY", "bonus"),
         ("ITC", "dividend"),
     ]
+
+
+def test_why_prices_have_two_decimals() -> None:
+    from app.notify.explain import _px
+
+    assert _px(23.16078799670254) == "23.16" and _px(None) == "n/a"

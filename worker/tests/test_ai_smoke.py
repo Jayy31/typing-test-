@@ -3,14 +3,14 @@
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, create_engine, select
 
 from app.ai import smoke
 from app.ai.client import AiClient
 from app.ai.schemas import AnalystOutput, CaseOutput, PostMortemOutput
 from app.config import Settings, get_settings
 from app.db.config_store import get_config, set_config
-from app.db.models import AiSmokeRun, Alert
+from app.db.models import AiSmokeRun, Alert, Base
 from app.db.session import session_scope
 from tests.helpers import FakeByType, analyst_output, panel_outputs
 
@@ -23,6 +23,17 @@ PANEL = dict(
     ai_model_judge="strong-m",
     ai_daily_budget_inr=1000,
 )
+
+
+@pytest.fixture
+def engine(tmp_path) -> Engine:
+    """The smoke test runs bull and bear in parallel threads: give each thread its own SQLite
+    connection (a file database) instead of the shared in-memory one, which races."""
+    eng = create_engine(f"sqlite:///{tmp_path / 'smoke.db'}")
+    Base.metadata.create_all(eng)
+    return eng
+
+
 PM = PostMortemOutput(
     primary_cause="slippage_gap",
     secondary_causes=[],
