@@ -51,6 +51,12 @@ export class SupabaseDb implements Db {
     if (error) throw new Error(`could not change ${key}: ${error.message}`);
   }
 
+  async decideSuggestion(id: number, status: "accepted" | "rejected"): Promise<void> {
+    const sb = await supabaseServer();
+    const { error } = await sb.from("suggestions").update({ status }).eq("id", id).eq("status", "pending");
+    if (error) throw new Error(`could not record the decision: ${error.message}`);
+  }
+
   async userEmail(): Promise<string | null> {
     const sb = await supabaseServer();
     const { data } = await sb.auth.getUser();

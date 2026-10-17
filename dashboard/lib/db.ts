@@ -21,6 +21,8 @@ export interface Db {
   rows<T = Row>(table: string, q?: Query): Promise<T[]>;
   /** Owner switch write (RLS allows only feat.*, brief.*, alerts_muted with a boolean value). */
   setSwitch(key: string, value: boolean): Promise<void>;
+  /** Learning-loop decision (RLS: owner only, pending -> accepted / rejected, status only). */
+  decideSuggestion(id: number, status: "accepted" | "rejected"): Promise<void>;
   userEmail(): Promise<string | null>;
 }
 

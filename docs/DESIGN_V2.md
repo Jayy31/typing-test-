@@ -515,3 +515,14 @@ Added by the owner after Phase 3a. Values in config; nothing here is auto-applie
 - Morning brief 08:45 (previous session's final FII/DII), evening summary 16:00 (FII/DII
   provisional or pending). Mobile-first; "Today" landing page; deep links from every alert;
   "data as of" on every page with amber/red staleness.
+
+### Owner decisions for Phase 10 (analytics, monthly report, learning loop, hardening)
+- Suggestions: Accept on the dashboard opens a GitHub PR editing the YAML (fine-grained token
+  limited to this repo, contents + pull requests write, `GITHUB_TOKEN_CONFIG_PR`); accepted PRs merge
+  at the start of the next month; Reject only records; without the token record-only.
+- Guardrails: 97.5% interval (config), at most 2 suggestions per month ranked by expected effect,
+  one accepted change applied per month at month start, review after 2 months with an automatic
+  revert suggestion if the change did not help.
+- Monthly report: PDF on Telegram + dashboard page; cheap-model summary paragraph ON, kept only if
+  every figure it mentions exists in the report data.
+- healthchecks.io external heartbeat as a Go-live step.

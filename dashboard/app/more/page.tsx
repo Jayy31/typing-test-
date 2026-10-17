@@ -14,6 +14,10 @@ const PAGES: [string, string, string][] = [
   ["/backtests", "Backtests", "Variants, verdict, equity"],
   ["/events", "Event library", "Historical reactions and analogues"],
   ["/digest", "Weekly digest", "Sunday review and suggestions"],
+  ["/reports", "Monthly reports", "What worked, what didn't, PDF on Telegram"],
+  ["/suggestions", "Suggestions", "Learning-loop changes to accept or reject"],
+  ["/ai-vs-rules", "AI vs rules", "AI decisions vs the rules-only path"],
+  ["/quality", "Data quality", "Checks, database size, AI cost"],
   ["/health", "System health", "Jobs, sources, AI spend"],
   ["/settings", "Settings", "Owner switches, config, change log"],
 ];
