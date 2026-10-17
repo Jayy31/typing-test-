@@ -507,3 +507,11 @@ Added by the owner after Phase 3a. Values in config; nothing here is auto-applie
   sector-level tag) gets the graph path as supporting evidence, not a new graph candidate.
 - Regulator items: confidence-scored name match on the alias list; below 0.85 stored for review
   (weekly digest), no candidates. AI-extracted company links use the same matcher.
+
+### Owner decisions for Phase 9 (dashboard)
+- Read-only dashboard except owner switches: `feat.*`, `brief.morning_enabled`,
+  `brief.evening_enabled`, `alerts_muted`; write policy only for the owner email, every change
+  logged (who, when, old -> new) and shown on Settings. Thresholds, weights, rules stay in YAML.
+- Morning brief 08:45 (previous session's final FII/DII), evening summary 16:00 (FII/DII
+  provisional or pending). Mobile-first; "Today" landing page; deep links from every alert;
+  "data as of" on every page with amber/red staleness.
