@@ -31,6 +31,7 @@ roles:
   extractor: cheap    # Phase 7 results / auto-sales extraction (AI_MODEL_TAGGER)
   extractor_fallback: mid   # when the cheap extract fails validation (AI_MODEL_ANALYST)
   kg_extractor: cheap # Phase 8 company links (AI_MODEL_TAGGER)
+  report_writer: cheap  # Phase 10 monthly summary paragraph (AI_MODEL_TAGGER)
 # Tagger batching and limits
 tagger:
   max_items_per_run: 40
@@ -54,6 +55,7 @@ agents:
   analyst: {max_tokens: 8000}
   postmortem: {max_tokens: 3000}
   extractor: {max_tokens: 1500, doc_chars: 24000}
+  report_writer: {max_tokens: 600, enabled: true, max_words: 140}
   parallel_bull_bear: true
   # Effort per role (low/medium/high/xhigh/max); omitted = the model's default. Thinking cannot be
   # turned off on Opus 5.5 / Sonnet 5.5, so effort is the speed/cost lever. The smoke test may

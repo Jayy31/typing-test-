@@ -292,6 +292,7 @@ const JOBS: [string, number, string, string | null][] = [
   ["kg_build", 260, "ok", null], ["calibration_resolve", 1170, "ok", null], ["backtest_auto", 780, "ok", null],
   ["history_weekly", 5900, "ok", null], ["weekly_digest", 5900, "ok", null],
   ["deep_insider", 9, "error", "HTTPStatusError: 403 Forbidden"], ["results_slow_path", 10, "ok", null],
+  ["monthly_report", 20000, "ok", null], ["learning_suggest", 20030, "ok", null], ["ai_vs_rules", 1140, "ok", null], ["data_quality", 970, "ok", null],
 ];
 const job_runs: Row[] = JOBS.map(([job, ago, status, error], i) => ({
   id: i + 1, job, started_at: T(ago + 0.5), finished_at: T(ago), status, error, items_processed: status === "ok" ? 3 : null,
@@ -305,6 +306,12 @@ const config: Row[] = [
   { key: "source_health", value_json: {
     nse_announcements: { last_ok: T(8), consecutive_failures: 0 }, nse_insider: { last_ok: T(130), last_error: "HTTPStatusError: 403 Forbidden", last_error_at: T(9), consecutive_failures: 4 },
     macro_yahoo: { last_ok: T(52), consecutive_failures: 0 }, upstox: { last_ok: T(4), consecutive_failures: 0 }, sebi_rss: { last_ok: T(25), consecutive_failures: 0 } } },
+  { key: "data_quality", value_json: { checked_at: T(970), counts: { bid_above_ask: 3, stale_chain: 1, spot_jump: 1 },
+    issues: { bid_above_ask: ["TCS 4150CE 14-Oct 14:05: bid 31.2 > ask 30.9", "TCS 4150CE 14-Oct 14:07: bid 31.4 > ask 31.0", "INFY 1500PE 14-Oct 11:20: bid 8.1 > ask 8.0"],
+      stale_chain: ["MARUTI: last quote 11:05"], spot_jump: ["HDFCBANK: 1650 -> 1990 at 14-Oct 10:15 without a corporate action"] } } },
+  { key: "ai_cost_report", value_json: { month: "2026-10-01", models: { "tagger-model": { cost_inr: 96.2, calls: 1840, cache_hit_rate: 0.62 },
+    "judge-model": { cost_inr: 512.4, calls: 41, cache_hit_rate: 0.18 }, "analyst-model": { cost_inr: 188, calls: 52, cache_hit_rate: 0.21 } } } },
+  { key: "db_size", value_json: { total_mb: 212.4, limit_mb: 500, largest: { option_quotes: 118.2, news_items: 31.5, job_runs: 12.1 } } },
   { key: "unverified_alerts", value_json: [{ item: "Upstox depth quantity field missing: using chain quantities", since: D(1) }] },
 ];
 
@@ -331,11 +338,49 @@ const regulatory_actions: Row[] = [
 
 const calibrators: Row[] = [];
 
+const monthly_reports: Row[] = [
+  {
+    id: 1, month: "2026-09-01", created_at: D(14), ai_summary_status: "ok",
+    ai_summary: "September closed 18 paper trades with a 56% win rate and an expectancy of +6.4% of premium; excluding unfillable trades it was +8.1%. Results beats were the best trigger type (+21.3%, n=5); bulk deals by MF/DII were the weakest (-14.2%, n=3). AI spend was Rs 1,240 of the Rs 2,000 budget.",
+    text: "MONTHLY REPORT 2026-09 (paper trading)\n\nP&L\n  All: 18 trades, win rate 56%, expectancy +6.4% of premium (90% interval -2.1..+14.8%), P&L Rs +41,200\n  Excluding unfillable: 16 trades, win rate 62%, expectancy +8.1% of premium, P&L Rs +47,900\n\nWHAT WORKED\n  Trigger types: results_beat +21.3% (n=5), order_win +9.8% (n=4)\n  Sectors: IT +12.0% (n=6)\nWHAT DID NOT\n  Trigger types: deal_buy_mf_dii -14.2% (n=3)\n  Sectors: Banks -6.5% (n=4)\n\nAI VS RULES\n  ai: 22 calls, hit 59%, avg move +0.8%\n  rules: 15 calls, hit 53%, avg move +0.4%\n\nPOST-MORTEM CAUSES\n  priced_in: 3\n  thesis_wrong: 2\n\nAI spend Rs 1,240 of Rs 2,000 budget\nJobs below 95% success: deep_insider 81%",
+    data_json: {
+      month: "2026-09",
+      trades: { all: { n: 18, win_rate: 0.556, expectancy_pct: 6.4, ci: [-2.1, 14.8], pnl_inr: 41200 }, excluding_unfillable: { n: 16, win_rate: 0.625, expectancy_pct: 8.1, pnl_inr: 47900 } },
+      worked: { trigger_types: [{ name: "results_beat", n: 5, expectancy_pct: 21.3 }, { name: "order_win", n: 4, expectancy_pct: 9.8 }], sectors: [{ name: "IT", n: 6, expectancy_pct: 12 }] },
+      did_not_work: { trigger_types: [{ name: "deal_buy_mf_dii", n: 3, expectancy_pct: -14.2 }], sectors: [{ name: "Banks", n: 4, expectancy_pct: -6.5 }] },
+      ai_vs_rules: { resolved: 37, ai: { n: 22, hit_rate: 0.59, avg_move_pct: 0.8 }, rules: { n: 15, hit_rate: 0.53, avg_move_pct: 0.4 } },
+      ai_spend_inr: 1240, ai_budget_inr: 2000, risk: { max_drawdown_pct: 3.2, sharpe: 1.4 },
+    },
+  },
+];
+
+const suggestions: Row[] = [
+  { id: 11, month: "2026-10-01", kind: "change", param: "edge_ratio_min", file: "worker/config/options.yaml", yaml_path: "edge_ratio_min",
+    current_value: 1.2, proposed_value: 1.3, expected_effect: 18.6, status: "pending", created_at: D(14), pr_url: null,
+    evidence_json: { n: 64, mean_diff_pct: 0.87, ci: [0.21, 1.62], ci_level: 0.975, halves: [0.71, 1.02], stress_mean_diff_pct: 0.44, months: 3 } },
+  { id: 9, month: "2026-09-01", kind: "change", param: "min_p_t1_before_sl", file: "worker/config/options.yaml", yaml_path: "selection.min_p_t1_before_sl",
+    current_value: 0.55, proposed_value: 0.6, expected_effect: 9.2, status: "applied", applied_at: D(14), decided_at: D(30), decided_by: "owner@example.com",
+    pr_url: "https://github.com/owner/repo/pull/21", pr_number: 21, created_at: D(44), review_json: null,
+    evidence_json: { n: 58, mean_diff_pct: 0.48, ci: [0.05, 0.94], ci_level: 0.975, halves: [0.4, 0.55], stress_mean_diff_pct: 0.2 } },
+  { id: 7, month: "2026-08-01", kind: "change", param: "signal_score_threshold", file: "worker/config/signals.yaml", yaml_path: "thresholds.signal_score",
+    current_value: 65, proposed_value: 70, expected_effect: 6.1, status: "rejected", decided_at: D(60), decided_by: "owner@example.com", created_at: D(75),
+    evidence_json: { n: 41, ci: [0.02, 0.6], ci_level: 0.975 } },
+];
+
+const ai_vs_rules: Row[] = Array.from({ length: 30 }, (_, i) => {
+  const move = +(Math.sin(i * 1.7) * 3).toFixed(2);
+  const ai = i % 5 !== 0;
+  const rules = i % 3 !== 0 ? "bullish" : null;
+  return { id: i + 1, analysis_id: 400 + i, symbol: ["TCS", "INFY", "SBIN", "MARUTI"][i % 4], created_at: D(30 - i), news_direction: "bullish",
+    ai_direction: i % 4 === 0 ? "bearish" : "bullish", ai_signal: ai, rules_direction: rules, rules_reason: rules ? "supported by analogues" : "no usable analogues",
+    analogue_n: rules ? 24 : 2, analogue_mean: rules ? 1.4 : null, realised_move_pct: i < 26 ? move : null, resolved_at: i < 26 ? D(28 - i) : null };
+});
+
 export const TABLES: Record<string, Row[]> = {
   instruments, signals, analyses, scenarios, agent_runs, signal_candidates, signal_versions, news_items, news_tags, kg_paths, kg_nodes, kg_edges,
   paper_trades, trade_events, portfolio_snapshots, rejected_candidates, events_calendar, macro_snapshots, macro_releases, prediction_scores,
   backtest_runs, event_library, digests, job_runs, config, config_audit, ai_usage, ai_smoke_runs, regulatory_actions, calibrators,
-  calibration_records: [], results_extracts: [], post_mortems: [],
+  calibration_records: [], results_extracts: [], post_mortems: [], monthly_reports, suggestions, ai_vs_rules,
 };
 
 export { premiumPath };
@@ -357,6 +402,11 @@ export class FixtureDb implements Db {
     if (row) row.value_json = value;
     else config.push({ key, value_json: value });
     config_audit.push({ id: config_audit.length + 1, ts: new Date().toISOString(), key, old_value: old, new_value: value, changed_by: "owner@example.com" });
+  }
+
+  async decideSuggestion(id: number, status: "accepted" | "rejected"): Promise<void> {
+    const row = suggestions.find((r) => r.id === id && r.status === "pending");
+    if (row) Object.assign(row, { status, decided_at: new Date().toISOString(), decided_by: "owner@example.com" });
   }
 
   async userEmail(): Promise<string | null> {

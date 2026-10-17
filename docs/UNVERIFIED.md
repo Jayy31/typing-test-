@@ -36,3 +36,8 @@ phase checks them all in one pass (the first-run report flags mismatches).
 | 28 | 9 | Supabase magic link + `@supabase/ssr` cookie session flow (proxy + /auth/callback) on Vercel | `dashboard/proxy.ts` | first sign-in |
 | 29 | 9 | Live Supabase queries in `dashboard/lib/supabase-db.ts` (pages tested only against fixtures) | dashboard | open every page once after deploy |
 | 30 | 9 | Dashboard "unverified alerts" read the config key `unverified_alerts` (filled by the Go-live checks) | `dashboard/lib/queries.ts` | Go-live phase |
+| 31 | 10 | GitHub REST flow for learning-loop PRs (branch, contents PUT, PR, squash merge) with a fine-grained token | `app/analytics/github.py` | first accepted suggestion |
+| 32 | 10 | Telegram `sendDocument` multipart upload of the monthly PDF | `app/notify/telegram.py` | first monthly report |
+| 33 | 10 | healthchecks.io ping URL behaviour (GET, 10 s timeout) | `app/health/watchdog.py` | stop the worker once, expect an alert |
+| 34 | 10 | `pg_database_size` / `pg_statio_user_tables` readable with the worker's Supabase role | `app/health/watchdog.py` | `db_size` config row |
+| 35 | 10 | Cheap model keeps the monthly summary within the figures (validator rejects otherwise) | `app/analytics/monthly.py` | `monthly_reports.ai_summary_status` |

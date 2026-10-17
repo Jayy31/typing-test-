@@ -91,6 +91,23 @@ class TelegramBot:
                 params["reply_markup"] = {"inline_keyboard": [buttons]}
             self.call("sendMessage", **params)
 
+    def send_document(self, path: str, caption: str = "") -> None:
+        url = f"{API}/bot{self.settings.telegram_bot_token}/sendDocument"
+        try:
+            with open(path, "rb") as fh:
+                resp = self._http.post(
+                    url,
+                    data={"chat_id": self.settings.telegram_chat_id, "caption": caption[:1000]},
+                    files={"document": (path.rsplit("/", 1)[-1], fh, "application/pdf")},
+                )
+            data = resp.json()
+        except (OSError, httpx.HTTPError, ValueError) as exc:
+            raise TelegramError(f"sendDocument failed: {type(exc).__name__}") from None
+        if not data.get("ok"):
+            raise TelegramError(
+                f"sendDocument failed: {data.get('error_code')} {data.get('description')}"
+            )
+
     def signal_buttons(self, signal_id: int) -> list[dict[str, str]]:
         buttons = []
         if self.settings.dashboard_base_url:
@@ -139,6 +156,8 @@ class TelegramBot:
                         else None
                     )
                     self.send(alert.text, buttons)
+                    if alert.file_path:  # Phase 10: e.g. the monthly report PDF
+                        self.send_document(alert.file_path, alert.text.split("\n", 1)[0])
                     alert.status, alert.sent_at = "sent", datetime.now(IST)
                     sent += 1
                 except TelegramError as exc:

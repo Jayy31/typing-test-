@@ -25,6 +25,11 @@ const PAGES: [string, string, string[]][] = [
   ["/health", "20-health", ["Sources", "nse_insider", "AI smoke test"]],
   ["/more", "21-more", ["Event library", "Settings"]],
   ["/settings", "22-settings", ["Owner switches", "Change log", "worker / Telegram"]],
+  ["/reports", "23-reports", ["September 2026"]],
+  ["/reports/2026-09", "24-report", ["every figure checked against the report", "What worked", "results_beat"]],
+  ["/suggestions", "25-suggestions", ["edge_ratio_min", "97.5% interval", "Accept (opens a PR)", "Pull request"]],
+  ["/ai-vs-rules", "26-ai-vs-rules", ["AI signals", "Rules (analogues only)"]],
+  ["/quality", "27-quality", ["bid above ask", "Database", "Cache hits"]],
 ];
 
 for (const [path, name, texts] of PAGES) {
@@ -32,7 +37,7 @@ for (const [path, name, texts] of PAGES) {
     const res = await page.goto(path);
     expect(res?.status()).toBe(200);
     for (const t of texts) await expect(page.getByText(t, { exact: false }).first()).toBeVisible();
-    if (!["/more", "/settings"].includes(path)) await expect(page.getByTestId("asof")).toContainText("Data as of");
+    if (!["/more", "/settings", "/reports/2026-09"].includes(path)) await expect(page.getByTestId("asof")).toContainText("Data as of");
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
     expect(overflow, "no horizontal page scroll on mobile").toBe(false);
     // full-page capture: show the fixed bottom nav once, at the end, instead of over the content
@@ -57,4 +62,11 @@ test("owner switch change is logged", async ({ page }) => {
   await expect(page.getByText("brief.evening_enabled").nth(1)).toBeVisible();
   await expect(page.getByText("true → false").first()).toBeVisible();
   await page.locator('button[data-key="brief.evening_enabled"]').click(); // restore for other runs
+});
+
+test("suggestion decision is recorded", async ({ page }) => {
+  await page.goto("/suggestions");
+  await page.locator('button[data-action="accepted"][data-id="11"]').click();
+  await expect(page.getByText("Nothing waiting for a decision.")).toBeVisible();
+  await expect(page.getByText("by owner@example.com").first()).toBeVisible();
 });

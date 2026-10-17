@@ -8,7 +8,12 @@ from app.db.models import Alert
 
 
 def enqueue_alert(
-    s: Session, kind: str, text: str, dedupe_key: str, signal_id: int | None = None
+    s: Session,
+    kind: str,
+    text: str,
+    dedupe_key: str,
+    signal_id: int | None = None,
+    file_path: str | None = None,
 ) -> bool:
     """Queue a Telegram message. Returns False if this dedupe_key was already queued."""
     if s.scalar(select(Alert.id).where(Alert.dedupe_key == dedupe_key)):
@@ -16,7 +21,9 @@ def enqueue_alert(
     link = deep_link(kind, dedupe_key, signal_id)
     if link:
         text = f"{text}\nOpen: {link}"
-    s.add(Alert(kind=kind, dedupe_key=dedupe_key, text=text, signal_id=signal_id))
+    s.add(
+        Alert(kind=kind, dedupe_key=dedupe_key, text=text, signal_id=signal_id, file_path=file_path)
+    )
     s.flush()
     return True
 
@@ -31,5 +38,13 @@ def deep_link(kind: str, dedupe_key: str, signal_id: int | None) -> str | None:
         return f"{base}/trades/{dedupe_key.split(':')[1]}"
     if signal_id is not None:
         return f"{base}/signals/{signal_id}"
-    page = {"health": "health", "digest": "digest", "sector": "sectors", "brief": ""}.get(kind)
+    if kind == "report":
+        return f"{base}/reports/{dedupe_key.split(':')[1]}"
+    page = {
+        "health": "health",
+        "digest": "digest",
+        "sector": "sectors",
+        "brief": "",
+        "suggestion": "suggestions",
+    }.get(kind)
     return None if page is None else f"{base}/{page}".rstrip("/")

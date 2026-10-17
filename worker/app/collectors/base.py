@@ -7,7 +7,7 @@ regulators, peers, trends) subclass `Collector` and get scheduling/health for fr
 
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, ClassVar
 
 from sqlalchemy import Engine
@@ -43,6 +43,23 @@ def source_health(engine: Engine | None = None) -> dict[str, Any]:
         return dict(get_config(s, HEALTH_KEY, {}) or {})
 
 
+def circuit_open(engine: Engine | None, name: str, now: datetime | None = None) -> bool:
+    """After N failures in a row, skip the source for base x 2^(failures - N) minutes (capped)."""
+    from app.yaml_config import load_yaml
+
+    c = load_yaml("hardening.yaml")["circuit"]
+    h = source_health(engine).get(name) or {}
+    fails = int(h.get("consecutive_failures", 0))
+    if fails < int(c["open_after_failures"]) or not h.get("last_error_at"):
+        return False
+    pause = min(
+        float(c["base_backoff_minutes"]) * 2 ** (fails - int(c["open_after_failures"])),
+        float(c["max_backoff_minutes"]),
+    )
+    last = datetime.fromisoformat(h["last_error_at"])
+    return (now or datetime.now(IST)) - last < timedelta(minutes=pause)
+
+
 class Collector[T](ABC):
     name: ClassVar[str]
     timeout_s: ClassVar[float] = 20.0
@@ -60,7 +77,10 @@ class Collector[T](ABC):
         """Idempotent write. Returns rows added/updated."""
 
     def run(self, engine: Engine | None = None) -> int:
-        """Job entrypoint: records source health, re-raises so run_job logs the failure."""
+        """Job entrypoint: records source health, re-raises so run_job logs the failure. A source
+        that keeps failing is skipped for a growing pause (circuit breaker, Phase 10)."""
+        if circuit_open(engine, self.name):
+            return 0
         try:
             n = self.store(self.parse(self.fetch()), engine)
         except Exception as exc:

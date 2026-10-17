@@ -1,0 +1,20 @@
+# Phase 10 hardening: data-quality thresholds, watchdog, database and cost monitors.
+quality:
+  iv_min: 1
+  iv_max: 300
+  spot_jump_pct: 20               # per symbol between consecutive polls, without a corporate action
+  stale_chain_minutes: 15         # live signal / open trade without a fresh quote during market hours
+  max_signal_quote_age_s: 300     # signal priced from a quote older than this
+  duplicate_title_hours: 24
+watchdog:
+  stuck_factor: 3                 # a run still "running" after 3x its interval (or 60 min) is stuck
+  stuck_floor_minutes: 60
+db:
+  limit_mb: 500                   # Supabase free tier
+  warn_share: 0.7
+cost:
+  role_overrun_share: 0.30        # flag a model whose month spend exceeds its estimate by 30%
+circuit:
+  open_after_failures: 5          # skip a source after this many failures in a row ...
+  base_backoff_minutes: 5         # ... for 5, 10, 20 ... minutes (capped)
+  max_backoff_minutes: 60

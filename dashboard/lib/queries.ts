@@ -77,6 +77,8 @@ export async function reviewItems(db: Db): Promise<ReviewItem[]> {
   const items: ReviewItem[] = regs
     .filter((r) => !r.symbol && (r.match_confidence ?? 0) > 0)
     .map((r) => ({ kind: "Regulator match", text: `${r.regulator.toUpperCase()}: ${r.title} (match ${(r.match_confidence ?? 0).toFixed(2)})`, href: "/digest" }));
+  const pending = await db.rows<{ id: number; param: string; kind: string }>("suggestions", { eq: { status: "pending" } });
+  for (const g of pending) items.push({ kind: "Suggestion", text: `${g.kind} ${g.param}: accept or reject`, href: "/suggestions" });
   const cfg = await config(db);
   for (const u of (cfg.unverified_alerts ?? []) as { item: string }[]) items.push({ kind: "Unverified", text: u.item, href: "/health" });
   return items;
