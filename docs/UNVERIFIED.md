@@ -32,3 +32,7 @@ phase checks them all in one pass (the first-run report flags mismatches).
 | 24 | 8 | Cheap model extracts stated company links reliably from news text (prompt kg_links_v1) | `app/kg/extract.py` | sample 20 AI edges after a week |
 | 25 | 8 | Name matcher scores on real SEBI / USFDA / news company names (threshold 0.85) | `app/deep/matching.py` | weekly digest review section |
 | 26 | 8 | Seed edges in `data/kg_seed.yaml` are correct and current | `data/kg_seed.yaml` | owner review |
+| 27 | 9 | Supabase `auth.jwt() ->> 'email'` carries the signed-in email; RLS policies tested only on Postgres with a stub `auth.jwt()` | `0012_phase_9_dashboard_access.py` | sign in on the real dashboard; another email sees nothing |
+| 28 | 9 | Supabase magic link + `@supabase/ssr` cookie session flow (proxy + /auth/callback) on Vercel | `dashboard/proxy.ts` | first sign-in |
+| 29 | 9 | Live Supabase queries in `dashboard/lib/supabase-db.ts` (pages tested only against fixtures) | dashboard | open every page once after deploy |
+| 30 | 9 | Dashboard "unverified alerts" read the config key `unverified_alerts` (filled by the Go-live checks) | `dashboard/lib/queries.ts` | Go-live phase |

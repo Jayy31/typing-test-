@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     dashboard_base_url: str = ""
+    dashboard_allowed_email: str = ""  # Phase 9: the one email that may open the dashboard
+    # Phase 9 Telegram briefs (owner switches; the config table keys brief.* override these)
+    morning_brief_enabled: bool = True
+    evening_summary_enabled: bool = True
 
     # Schedules and thresholds
     news_poll_min: int = 5

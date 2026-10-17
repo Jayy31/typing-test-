@@ -236,6 +236,16 @@ def build_scheduler() -> BlockingScheduler:
             poll_universe_options,
             CronTrigger(day_of_week="mon-fri", hour=h, minute=m, timezone=IST),
         )
+    # Phase 9: Telegram morning brief / evening summary (owner switches brief.*)
+    from app.notify.briefs import evening_summary_job, morning_brief_job
+
+    _job(sched, "morning_brief", morning_brief_job, CronTrigger(hour=8, minute=45, timezone=IST))
+    _job(
+        sched, "evening_summary", evening_summary_job, CronTrigger(hour=16, minute=0, timezone=IST)
+    )
+    from app.db.owner import sync_owner
+
+    _job(sched, "dashboard_owner", sync_owner, CronTrigger(hour=7, minute=10, timezone=IST))
     # Phase 7: deeper data sources (deep_data.yaml)
     _deep_jobs(sched)
     # History (Phase 4): one job at a time holds the DuckDB writer lock
@@ -296,6 +306,9 @@ def main() -> None:
     for noisy in ("httpx", "httpcore"):  # their INFO logs print full URLs (bot token!)
         logging.getLogger(noisy).setLevel(logging.WARNING)
     log.info("worker starting")
+    from app.db.owner import sync_owner
+
+    run_job("dashboard_owner", sync_owner)  # who may open the dashboard (DASHBOARD_ALLOWED_EMAIL)
     sched = build_scheduler()
     # Live AI smoke test once, shortly after startup, until it has passed (results to Telegram)
     sched.add_job(

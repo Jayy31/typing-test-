@@ -890,3 +890,53 @@ class StockStats(Base):
     close: Mapped[float | None] = mapped_column(Float)
     mcap_inr: Mapped[float | None] = mapped_column(Float)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+# --- Phase 9: dashboard access ----------------------------------------------------------------
+
+
+class DashboardOwner(Base):
+    """The one email allowed to read the dashboard (synced from DASHBOARD_ALLOWED_EMAIL)."""
+
+    __tablename__ = "dashboard_owner"
+
+    email: Mapped[str] = mapped_column(String(256), primary_key=True)
+
+
+class ConfigAudit(Base):
+    """Every change to an owner switch (feature flags, briefs, mute): who, when, old -> new.
+    Written by a database trigger (Postgres) and by the worker for Telegram /mute."""
+
+    __tablename__ = "config_audit"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+    key: Mapped[str] = mapped_column(String(128), index=True)
+    old_value: Mapped[Any | None] = mapped_column(Json)
+    new_value: Mapped[Any | None] = mapped_column(Json)
+    changed_by: Mapped[str | None] = mapped_column(String(256))
+
+
+class EventLibrary(Base):
+    """Event-study statistics copied from the history store weekly, for the dashboard's Event
+    Library (the store itself is DuckDB on the VM). Direct events and graph keys (kg:...)."""
+
+    __tablename__ = "event_library"
+    __table_args__ = (
+        UniqueConstraint("event_type", "level_key", "regime", "window", name="uq_event_library"),
+    )
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    level_key: Mapped[str] = mapped_column(String(96))  # 'all' / 'sector:<name>' / 'stock:<symbol>'
+    regime: Mapped[str] = mapped_column(String(16))
+    window: Mapped[int] = mapped_column(Integer)
+    n: Mapped[int] = mapped_column(Integer)
+    n_eff: Mapped[float] = mapped_column(Float)
+    mean: Mapped[float] = mapped_column(Float)
+    median: Mapped[float] = mapped_column(Float)
+    hit_rate: Mapped[float] = mapped_column(Float)
+    p25: Mapped[float] = mapped_column(Float)
+    p75: Mapped[float] = mapped_column(Float)
+    examples_json: Mapped[list[dict[str, Any]] | None] = mapped_column(Json)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

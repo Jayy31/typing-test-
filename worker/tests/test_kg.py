@@ -509,12 +509,23 @@ def test_why_lists_graph_path_hops_and_sign_basis(engine: Engine) -> None:
         propagate.propagate(s, datetime.now(IST))
     with session_scope(engine) as s:
         kg_id = s.scalars(select(KgPath)).one().news_id
-        an = Analysis(symbol="TCS", thesis="Rival plant fire", direction="bullish",
-                      scores_json={"cited_news_ids": [kg_id]}, created_at=datetime.now(IST))
+        an = Analysis(
+            symbol="TCS",
+            thesis="Rival plant fire",
+            direction="bullish",
+            scores_json={"cited_news_ids": [kg_id]},
+            created_at=datetime.now(IST),
+        )
         s.add(an)
         s.flush()
-        sig = Signal(symbol="TCS", direction="bullish", score=70, status="NEW", analysis_id=an.id,
-                     impact_order=2)
+        sig = Signal(
+            symbol="TCS",
+            direction="bullish",
+            score=70,
+            status="NEW",
+            analysis_id=an.id,
+            impact_order=2,
+        )
         s.add(sig)
         s.flush()
         text = build_why(s, sig.id) or ""
