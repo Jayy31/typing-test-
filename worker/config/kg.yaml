@@ -1,0 +1,68 @@
+# Knowledge graph (Phase 8). Edges are directed from the stock WITH the event (source) to the
+# stock that may react (target). Only company -> company edges propagate.
+
+# Edge types: base weight before exposure scaling.
+edge_types:
+  competitor_of: {base_weight: 0.6}
+  supplier_of: {base_weight: 0.7}     # source supplies target (target is the customer)
+  customer_of: {base_weight: 0.7}     # source buys from target (target is the supplier)
+  same_group: {base_weight: 0.6}      # same promoter group
+
+# Exposure scaling: weight = base x min(1, exposure / ref). Exposure = revenue share, % of input
+# costs or stake %, stored on the edge when known. Missing exposure -> base x missing_factor.
+exposure:
+  ref_pct: {revenue_share: 20, input_cost_share: 20, stake: 25}
+  missing_factor: 0.3
+
+# Default SIGN by (edge type x source event type), relative to the source event's direction:
+#   same      target moves the same way as the source (e.g. contagion)
+#   opposite  target moves the other way (e.g. competitor gains when a rival's plant shuts)
+#   unknown   unclear: support-only (shown in /why, never moves sentiment)
+# Examples: competitor + plant outage (disaster) -> opposite (competitor benefits);
+# competitor + regulatory action -> same (contagion); supplier + disruption -> same for the customer.
+# The event study learns sign and strength per (edge type, event type) and replaces these once
+# it has ANALOGUE_MIN_N events.
+default_sign: unknown
+signs:
+  competitor_of:
+    disaster: opposite
+    regulatory: same
+    legal_fraud: same
+    policy: same
+    commodity: same
+  supplier_of:
+    disaster: same
+    legal_fraud: same
+    regulatory: same
+  customer_of:
+    order_win: same
+    results: same
+    business_update: same
+    disaster: same
+  same_group:
+    legal_fraud: same
+    regulatory: same
+    rating: same
+    mna: same
+
+propagation:
+  max_depth: 2                 # backtests also compare depth 3 (variant only)
+  hop_decay: 0.5               # x0.5 per hop
+  max_propagated_per_day: 10   # new graph-only candidates per day (support rows not counted)
+  min_abs_sentiment: 0.15      # propagated items below this are dropped
+  source_window_hours: 24      # direct evidence this recent is propagated
+
+evidence:
+  rule_novelty: 0.6            # default-table sign: low weight, support only (like Phase 7 rules)
+  base_rate_window: 3
+  base_rate_scale_pct: 3.0
+
+# AI link extraction (cheap model). Live: from tagged announcements/news naming companies.
+extract:
+  max_items_per_run: 20
+  max_items_per_day: 80
+  max_tokens: 800
+  body_chars: 1500
+  min_confidence: 0.7
+  est_input_tokens: 900        # per item, for cost ESTIMATES only
+  est_output_tokens: 150

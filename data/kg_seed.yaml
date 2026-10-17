@@ -1,0 +1,9 @@
+# Knowledge-graph seed edges (owner-editable). Competitors within each sub-sector and promoter
+# groups from insider filings are added automatically; list only links that need a human here.
+# exposure: {kind: revenue_share | input_cost_share | stake, pct: <number>} (optional)
+edges:
+  - {src: MARUTI, dst: MOTHERSON, type: customer_of, note: "Maruti is a major customer of Motherson"}
+  - {src: MOTHERSON, dst: MARUTI, type: supplier_of}
+  - {src: TATAMOTORS, dst: TATASTEEL, type: same_group}
+  - {src: TATASTEEL, dst: TATAMOTORS, type: same_group}
+  - {src: TCS, dst: TATAMOTORS, type: same_group}
