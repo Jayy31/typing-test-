@@ -14,7 +14,7 @@ from typing import Any
 
 import duckdb
 
-from app.history import universe
+from app.history import units, universe
 from app.history.corp_actions import Action, load_actions
 from app.history.event_study import reaction_day
 from app.history.nse_files import fo_kind
@@ -81,6 +81,7 @@ class HistoryData:
         self.actions: dict[str, list[Action]] = load_actions(con)
         self.members = universe.members(con)
         self._opt_cache: dict[str, dict[date, list[OptRow]]] = {}
+        self.units = units.stored(con)  # detected on the worker; config is the fallback
 
     # ---- calendar ------------------------------------------------------------------------
     def idx(self, d: date) -> int:
@@ -148,7 +149,8 @@ class HistoryData:
     def to_lots(self, qty: int | None, d: date, lot: int | None, field: str) -> float | None:
         if qty is None or not lot:
             return None
-        unit = load_yaml("backtest.yaml")["units"][fo_kind(d)][field]
+        fmt = fo_kind(d)
+        unit = self.units.get((fmt, field)) or load_yaml("backtest.yaml")["units"][fmt][field]
         return float(qty) if unit == "contracts" else float(qty) / lot
 
     @lru_cache(maxsize=4096)  # noqa: B019

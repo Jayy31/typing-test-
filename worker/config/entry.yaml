@@ -7,3 +7,8 @@ signal_entry_ttl_minutes: 120      # a signal not entered within this time expir
 priced_in:
   enabled: true
   max_penalty: 30                  # score points, scaled by premove fraction (DESIGN.md section 8)
+
+# One paper trade per stock at a time (same rule as the backtester). A signal on a stock with an
+# open trade is cancelled and recorded as rejected ("open trade on same stock"), so the
+# counterfactual tracker follows what it would have done.
+one_trade_per_stock: true

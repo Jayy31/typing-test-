@@ -34,8 +34,15 @@ same_bar: stop_first              # stop and target touched the same day: stop a
 
 rules_mode:                       # signals without AI (labels + analogue base rates), all 5 years
   analogue_window: 3
-  min_hit_rate: 0.5               # trade the event direction only if analogues moved our way this often
-  min_mean_pct: 0.0               # ... and the mean abnormal move our way is above this
+  # Trade the event direction only when its analogues (at least ANALOGUE_MIN_N events) support it.
+  thresholds:
+    strict:                       # default
+      min_hit_rate: 0.55
+      ci_level: 0.90              # bootstrap CI of the mean abnormal move our way ...
+      require_ci_lower_above: 0.0 # ... whose lower bound must be above this
+    legacy:                       # comparison variant: the earlier rule
+      min_hit_rate: 0.50
+      min_mean_pct: 0.0
   paths: 2000                     # Monte Carlo paths per candidate (live uses MC_PATHS)
 
 walk_forward:
@@ -43,3 +50,8 @@ walk_forward:
   test_months: 3
 
 bootstrap: {samples: 1000, seed: 11}
+
+auto:                             # automatic runs on the worker (daily check at 22:40 IST)
+  min_history_share: 0.9          # rules compare once >= 90% of the configured years of files are loaded
+  replay_min_signals: 30          # replay compare once this many post-cutoff live predictions exist ...
+  replay_every_days: 30           # ... then monthly

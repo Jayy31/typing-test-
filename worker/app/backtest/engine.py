@@ -19,7 +19,7 @@ from app.backtest.data import HistoryData, OptRow
 from app.config import get_settings
 from app.history.analogues import AnalogueResult
 from app.history.corp_actions import contract_factor
-from app.history.event_study import regime
+from app.history.event_study import bootstrap_mean_ci, regime
 from app.history.universe import value_report
 from app.market.implied import n_day_move_pct
 from app.pricing.bs import implied_vol
@@ -48,6 +48,7 @@ class Variant:
     booking: str = "per_lot"  # per_lot | single_exit
     spread_mult: float = 1.0
     direction_mode: str = "signal"  # signal | random (benchmark B6)
+    threshold: str = "strict"  # rules mode direction rule (config rules_mode.thresholds)
     selection: str = "ev"  # ev (live gates) | atm (benchmark: ATM, nearest expiry, no gates)
 
     def rules(self) -> ExitRules:
@@ -149,7 +150,8 @@ def lookup_analogue(
     symbol: str,
     day: date,
     window: int,
-) -> AnalogueResult | None:
+) -> tuple[AnalogueResult, tuple[Any, ...]] | None:
+    """Most specific usable analogue group (stock -> sector -> event type; regime -> all) and its key."""
     reg = regime(data.vix, data.calendar[data.idx(day) - 1]) if data.idx(day) > 0 else "unknown"
     best = None
     for level, sec, sym in (
@@ -174,20 +176,46 @@ def lookup_analogue(
                 float(v[6]),
                 float(v[7]),
             )
+            key = (etype, sec, sym, r, window)
             if res.usable:
-                return res
-            best = best or res
+                return res, key
+            best = best or (res, key)
     return best
 
 
+def direction_supported(
+    an: AnalogueResult, values: list[tuple[float, float]], threshold: str
+) -> tuple[bool, str]:
+    """Owner rule: strict = hit rate >= 55% AND the lower bound of the 90% bootstrap CI of the mean
+    abnormal move our way > 0; legacy = hit rate >= 50% and positive mean (comparison variant)."""
+    t = _cfg()["rules_mode"]["thresholds"][threshold]
+    if an.hit_rate < float(t["min_hit_rate"]):
+        return False, f"analogue hit rate {an.hit_rate:.0%} below {float(t['min_hit_rate']):.0%}"
+    if "min_mean_pct" in t and an.mean <= float(t["min_mean_pct"]):
+        return False, f"analogue mean {an.mean:+.2f}% not above {t['min_mean_pct']}%"
+    if "ci_level" in t:
+        lo, hi = bootstrap_mean_ci(values, float(t["ci_level"]))
+        if lo <= float(t["require_ci_lower_above"]):
+            return (
+                False,
+                f"{float(t['ci_level']):.0%} CI of the analogue mean {lo:+.2f}..{hi:+.2f}% does not exclude {t['require_ci_lower_above']}",
+            )
+    return True, "supported"
+
+
 def rules_signal(
-    ev: Any, stats: dict[tuple[Any, ...], tuple[Any, ...]], data: HistoryData, variant: Variant
+    ev: Any,
+    stats: dict[tuple[Any, ...], tuple[Any, ...]],
+    data: HistoryData,
+    variant: Variant,
+    groups: dict[tuple[Any, ...], list[tuple[float, float]]] | None = None,
 ) -> Signal | Skip:
     cfg = _cfg()["rules_mode"]
     w = int(cfg["analogue_window"])
     if not data.in_fno(ev.symbol, ev.day):
         return Skip(ev.key, ev.symbol, ev.day, "universe", "not in F&O on the reaction day")
-    an = lookup_analogue(stats, data, ev.event_type, ev.sector, ev.symbol, ev.day, w)
+    found = lookup_analogue(stats, data, ev.event_type, ev.sector, ev.symbol, ev.day, w)
+    an, key = found if found else (None, None)
     if an is None or not an.usable:
         return Skip(
             ev.key,
@@ -196,16 +224,10 @@ def rules_signal(
             "analogue",
             f"too few earlier analogues (n={an.n if an else 0})",
         )
-    if variant.direction_mode == "signal" and (
-        an.hit_rate < float(cfg["min_hit_rate"]) or an.mean <= float(cfg["min_mean_pct"])
-    ):
-        return Skip(
-            ev.key,
-            ev.symbol,
-            ev.day,
-            "direction",
-            f"analogues do not support the event direction (hit {an.hit_rate:.0%}, mean {an.mean:+.2f}%)",
-        )
+    if variant.direction_mode == "signal" and key is not None:
+        ok, why = direction_supported(an, (groups or {}).get(key, []), variant.threshold)
+        if not ok:
+            return Skip(ev.key, ev.symbol, ev.day, "direction", why)
     direction = ev.direction
     if variant.direction_mode == "random":
         direction = random.Random(f"{ev.key}:dir").choice(("bullish", "bearish"))

@@ -4,7 +4,15 @@ import logging
 from datetime import datetime, timedelta
 
 from app.config import IST, get_settings
-from app.history import backfill, corp_actions, event_study, iv_backfill, live_sync, news_history
+from app.history import (
+    backfill,
+    corp_actions,
+    event_study,
+    iv_backfill,
+    live_sync,
+    news_history,
+    units,
+)
 from app.history.backup import backup
 from app.history.store import connect
 
@@ -24,6 +32,19 @@ def nightly() -> int:
             except Exception as exc:  # noqa: BLE001 - optional source
                 log.warning("gdelt failed: %s", exc)
         n += iv_backfill.run(con)
+        problems = units.run_detection(con)
+    if problems:  # inconclusive unit detection: tell the owner once a week, keep the config default
+        from app.db.session import session_scope
+        from app.notify.outbox import enqueue_alert
+
+        with session_scope() as s:
+            text = (
+                "HISTORY CHECK\nCould not tell whether bhavcopy volume/OI are in contracts or shares:\n"
+                + "\n".join(f"- {p}" for p in problems)
+                + "\nCheck worker/config/backtest.yaml `units`."
+            )
+            week = datetime.now(IST).strftime("%G-W%V")
+            enqueue_alert(s, "health", text, f"units:{week}")
     return n
 
 

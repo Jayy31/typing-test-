@@ -206,6 +206,8 @@ def build_scheduler() -> BlockingScheduler:
         CronTrigger(day_of_week="mon-fri", hour=20, minute=10, timezone=IST),
     )
     _job(sched, "post_mortems", run_post_mortems, IntervalTrigger(minutes=30))
+    # Phase 6: automatic backtests (after the history is complete; replay once enough live signals)
+    _job(sched, "backtest_auto", backtest_auto, CronTrigger(hour=22, minute=40, timezone=IST))
     _job(
         sched,
         "weekly_digest",
@@ -213,6 +215,13 @@ def build_scheduler() -> BlockingScheduler:
         CronTrigger(day_of_week="sun", hour=8, minute=50, timezone=IST),
     )
     return sched
+
+
+def backtest_auto() -> int:
+    from app.backtest.auto import auto_backtests
+
+    log.info("auto backtests: %s", auto_backtests())
+    return 1
 
 
 def resolve_calibration() -> int:

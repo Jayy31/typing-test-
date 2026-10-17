@@ -404,3 +404,36 @@ def test_depth_fallback_fills_missing_quantities() -> None:
 @pytest.fixture(autouse=True)
 def _pricing_mechanics(no_selection_gates):
     """These tests cover pricing/trading mechanics; selection gates are tested in test_phase5."""
+
+
+def test_second_signal_on_a_stock_with_an_open_trade_is_rejected(engine: Engine) -> None:
+    from app.db.models import RejectedCandidate
+
+    src = FakeSource()
+    now = weekday_at(11, 0)
+    sig = make_signal(engine, src, now)
+    assert trading_cycle(engine, src, now) == 1
+    with session_scope(engine) as s:  # a second live signal on the same stock arrives
+        s2 = Signal(
+            symbol=sig.symbol,
+            direction="bullish",
+            score=80,
+            status="NEW",
+            strike=sig.strike,
+            option_type=sig.option_type,
+            expiry=sig.expiry,
+            pricing_status="priced",
+            analysis_id=sig.analysis_id,
+            created_at=now,
+        )
+        s.add(s2)
+        s.flush()
+        sid = s2.id
+    assert trading_cycle(engine, src, now + timedelta(minutes=10)) == 0
+    with session_scope(engine) as s:
+        assert s.get(Signal, sid).status == "CANCELLED"  # type: ignore[union-attr]
+        rej = s.scalars(select(RejectedCandidate).where(RejectedCandidate.signal_id == sid)).one()
+        assert rej.reason == "open trade on same stock" and rej.stage == "overlap"
+        assert (
+            rej.ref_strike == sig.strike and rej.ref_premium and rej.outcome_status == "open"
+        )  # counterfactual tracks it
