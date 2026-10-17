@@ -43,6 +43,9 @@ class AgentStep:
     output: dict[str, Any] | None
     usage: CallUsage | None
     error: str | None = None
+    attempts: int = 1  # 1 = valid on the first try
+    duration_s: float = 0.0  # all attempts
+    cost_inr: float = 0.0  # all attempts
 
 
 @dataclass
@@ -50,10 +53,21 @@ class PanelResult:
     out: JudgeOutput | None
     steps: list[AgentStep] = field(default_factory=list)
     error: str | None = None
+    failed_agent: str | None = None
+    failed_attempts: int = 0
 
     @property
     def cost_inr(self) -> float:
         return round(sum(s.usage.cost_inr for s in self.steps if s.usage), 4)
+
+
+class AgentFailed(AiOutputError):
+    def __init__(
+        self, agent: str, error: str, attempts: int, cost_inr: float, duration_s: float
+    ) -> None:
+        self.agent, self.error, self.attempts = agent, error, attempts
+        self.cost_inr, self.duration_s = cost_inr, duration_s
+        super().__init__(error)
 
 
 def _check_ids(ids: list[int], provided: set[int], agent: str) -> None:
@@ -80,28 +94,53 @@ def check_case(out: CaseOutput, provided: set[int], side: str) -> None:
         raise AiOutputError(f"{side} case has no arguments")
 
 
-def _run[T: BaseModel](
+def run_validated[T: BaseModel](
     ai: AiClient,
-    agent: str,
+    role: str,
+    prompt: str,
+    prompt_ver: str,
     message: str,
     schema: type[T],
     check: Callable[[T], None],
-    retries: int = 1,
+    retries: int | None = None,
 ) -> tuple[T, AgentStep]:
+    """One structured call with schema + content checks and up to `retries` re-asks."""
     cfg = load_yaml("ai.yaml")["agents"]
+    retries = int(cfg.get("max_retries", 1)) if retries is None else retries
     last: AiOutputError | None = None
-    for _ in range(retries + 1):
+    spent, took = 0.0, 0.0
+    for attempt in range(1, retries + 2):
         try:
             out, usage = ai.parse_with_usage(
-                agent, _prompt(agent), message, schema, int(cfg[agent]["max_tokens"])
+                role, prompt, message, schema, int(cfg[role]["max_tokens"])
             )
+            spent, took = spent + usage.cost_inr, took + usage.duration_s
             check(out)
-            return out, AgentStep(agent, PROMPT_VERSIONS[agent], out.model_dump(mode="json"), usage)
+            step = AgentStep(
+                role,
+                prompt_ver,
+                out.model_dump(mode="json"),
+                usage,
+                attempts=attempt,
+                duration_s=round(took, 2),
+                cost_inr=round(spent, 4),
+            )
+            return out, step
+        except AgentFailed:
+            raise
         except AiOutputError as exc:
             last = exc
-            log.warning("%s output rejected: %s", agent, exc)
+            log.warning("%s output rejected (attempt %d): %s", role, attempt, exc)
+            if getattr(exc, "final", False):
+                break
     assert last is not None
-    raise last
+    raise AgentFailed(role, str(last), attempt, spent, took)
+
+
+def _run[T: BaseModel](
+    ai: AiClient, agent: str, message: str, schema: type[T], check: Callable[[T], None]
+) -> tuple[T, AgentStep]:
+    return run_validated(ai, agent, _prompt(agent), PROMPT_VERSIONS[agent], message, schema, check)
 
 
 def _section(title: str, out: BaseModel) -> str:
@@ -141,6 +180,12 @@ def run_panel(
         judge, step = _run(ai, "judge", ctx, JudgeOutput, lambda o: validate_output(o, provided))
         res.steps.append(step)
         res.out = judge
+    except AgentFailed as exc:
+        res.error, res.failed_agent, res.failed_attempts = (
+            f"panel failed: {exc}",
+            exc.agent,
+            exc.attempts,
+        )
     except AiOutputError as exc:
         res.error = f"panel failed: {exc}"
     return res

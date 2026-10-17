@@ -1,4 +1,4 @@
-.PHONY: setup migrate test run lint
+.PHONY: setup migrate test run lint smoke-ai
 
 WORKER = cd worker &&
 
@@ -16,3 +16,6 @@ run:
 
 lint:
 	$(WORKER) uv run ruff check . && uv run mypy app
+
+smoke-ai:  # live AI smoke test (real models, hard limit Rs 50)
+	$(WORKER) uv run python -m app.ai.smoke
