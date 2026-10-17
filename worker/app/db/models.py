@@ -890,3 +890,28 @@ class StockStats(Base):
     close: Mapped[float | None] = mapped_column(Float)
     mcap_inr: Mapped[float | None] = mapped_column(Float)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+# --- Phase 9: dashboard access ----------------------------------------------------------------
+
+
+class DashboardOwner(Base):
+    """The one email allowed to read the dashboard (synced from DASHBOARD_ALLOWED_EMAIL)."""
+
+    __tablename__ = "dashboard_owner"
+
+    email: Mapped[str] = mapped_column(String(256), primary_key=True)
+
+
+class ConfigAudit(Base):
+    """Every change to an owner switch (feature flags, briefs, mute): who, when, old -> new.
+    Written by a database trigger (Postgres) and by the worker for Telegram /mute."""
+
+    __tablename__ = "config_audit"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+    key: Mapped[str] = mapped_column(String(128), index=True)
+    old_value: Mapped[Any | None] = mapped_column(Json)
+    new_value: Mapped[Any | None] = mapped_column(Json)
+    changed_by: Mapped[str | None] = mapped_column(String(256))
