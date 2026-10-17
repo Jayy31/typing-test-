@@ -3,6 +3,7 @@
 from functools import lru_cache
 from zoneinfo import ZoneInfo
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -64,7 +65,13 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     dashboard_base_url: str = ""
-    dashboard_allowed_email: str = ""  # Phase 9: the one email that may open the dashboard
+    dashboard_allowed_email: str = ""
+    # Phase 10 learning loop: accepted suggestions become PRs (fine-grained token: this repo,
+    # contents + pull requests write). Empty = record-only.
+    github_token_config_pr: str = ""
+    github_config_repo: str = ""  # owner/repo
+    # Phase 10 hardening: external heartbeat (healthchecks.io); empty = off
+    healthcheck_ping_url: str = ""  # Phase 9: the one email that may open the dashboard
     # Phase 9 Telegram briefs (owner switches; the config table keys brief.* override these)
     morning_brief_enabled: bool = True
     evening_summary_enabled: bool = True
@@ -72,11 +79,13 @@ class Settings(BaseSettings):
     # Schedules and thresholds
     news_poll_min: int = 5
     option_poll_active_min: int = 2
-    signal_score_threshold: int = 65
+    # Phase 10: defaults live in YAML (signals.yaml thresholds.signal_score, options.yaml
+    # edge_ratio_min) so the learning loop can propose changes; an env value still overrides.
+    signal_score_threshold: int = 0
 
     # Engine (DESIGN_V2)
     risk_free_rate: float = 0.065
-    edge_ratio_min: float = 1.2
+    edge_ratio_min: float = 0.0
     mc_paths: int = 10000
     # Until calibration (Phase 5): share of simulated paths from the AI scenario tree; the rest
     # follow the option-implied market distribution (no drift, ATM IV). 1.0 = AI only.
@@ -107,6 +116,19 @@ class Settings(BaseSettings):
 
     # Health
     job_failure_alert_threshold: int = 3
+
+    @model_validator(mode="after")
+    def _yaml_defaults(self) -> "Settings":
+        """Tunables whose default lives in YAML: unset (0) env values take the YAML value."""
+        from app.yaml_config import load_yaml
+
+        if not self.signal_score_threshold:
+            self.signal_score_threshold = int(
+                load_yaml("signals.yaml")["thresholds"]["signal_score"]
+            )
+        if not self.edge_ratio_min:
+            self.edge_ratio_min = float(load_yaml("options.yaml")["edge_ratio_min"])
+        return self
 
 
 @lru_cache

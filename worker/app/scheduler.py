@@ -25,6 +25,7 @@ from app.collectors.nse import (
 )
 from app.config import IST, get_settings
 from app.db.session import session_scope
+from app.health import watchdog
 from app.health.cleanup import cleanup
 from app.health.heartbeat import failing_jobs
 from app.history import jobs as history_jobs
@@ -65,9 +66,18 @@ def heartbeat(engine: Engine | None = None) -> int:
                 templates.health_problem(h.job, h.consecutive_failures, h.last_error),
                 f"health:{h.job}:{now.date()}:{now.hour // 6}",
             )
+        stuck = watchdog.stuck_runs(engine, {})
+        if stuck:
+            enqueue_alert(
+                s,
+                "health",
+                "STUCK JOBS\n" + "\n".join(f"- {x}" for x in stuck),
+                f"stuck:{now:%Y-%m-%d %H}",
+            )
         warning = token_expiry_warning(now)
         if warning:
             enqueue_alert(s, "health", warning, f"broker_token:{now.date()}")
+    watchdog.ping()  # external heartbeat (healthchecks.io): alerts if the VM itself stops
     return len(bad)
 
 
@@ -156,6 +166,52 @@ def _deep_jobs(sched: BlockingScheduler) -> None:
     )
 
 
+def _phase10_jobs(sched: BlockingScheduler) -> None:
+    from app.analytics import ai_vs_rules, learning, live, monthly
+    from app.health import quality
+
+    # month start, in order: merge last month's accepted change, review + new suggestions, report
+    _job(
+        sched,
+        "learning_merge",
+        learning.merge_monthly,
+        CronTrigger(day=1, hour=7, minute=50, timezone=IST),
+    )
+    _job(
+        sched,
+        "learning_suggest",
+        learning.run_monthly,
+        CronTrigger(day=1, hour=8, minute=0, timezone=IST),
+    )
+    _job(
+        sched,
+        "monthly_report",
+        monthly.monthly_report_job,
+        CronTrigger(day=1, hour=8, minute=30, timezone=IST),
+    )
+    _job(sched, "learning_prs", learning.open_prs, IntervalTrigger(minutes=30))
+    _job(
+        sched,
+        "ai_vs_rules",
+        ai_vs_rules.resolve,
+        CronTrigger(day_of_week="mon-fri", hour=16, minute=40, timezone=IST),
+    )
+    _job(sched, "drift_check", live.drift_check, CronTrigger(hour=22, minute=50, timezone=IST))
+    _job(sched, "data_quality", quality.quality_job, CronTrigger(hour=19, minute=30, timezone=IST))
+    _job(
+        sched,
+        "db_size",
+        lambda: len(watchdog.db_size()),
+        CronTrigger(hour=3, minute=45, timezone=IST),
+    )
+    _job(
+        sched,
+        "ai_cost_report",
+        lambda: len(watchdog.cost_report()),
+        CronTrigger(hour=3, minute=50, timezone=IST),
+    )
+
+
 def build_scheduler() -> BlockingScheduler:
     s = get_settings()
     sched = BlockingScheduler(timezone=IST)
@@ -236,6 +292,7 @@ def build_scheduler() -> BlockingScheduler:
             poll_universe_options,
             CronTrigger(day_of_week="mon-fri", hour=h, minute=m, timezone=IST),
         )
+    _phase10_jobs(sched)
     # Phase 9: Telegram morning brief / evening summary (owner switches brief.*)
     from app.notify.briefs import evening_summary_job, morning_brief_job
 

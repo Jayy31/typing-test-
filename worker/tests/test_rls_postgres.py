@@ -30,7 +30,7 @@ def db(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "app/db/migrations"))
     command.upgrade(cfg, "head")
-    command.downgrade(cfg, "0011")  # the migration also reverses cleanly
+    command.downgrade(cfg, "0011")  # the migrations also reverse cleanly
     command.upgrade(cfg, "head")
     eng = create_engine(url)
     yield eng
@@ -114,3 +114,29 @@ def test_owner_only_reads_and_switch_writes_with_audit(db, monkeypatch: pytest.M
         rows[0][0] == "alerts_muted" and rows[0][3] != "owner@example.com"
     )  # the worker's own write
     assert set(tables) == policies  # every table readable by the owner
+
+
+def test_owner_can_only_decide_pending_suggestions(db, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    from app.config import get_settings
+    from app.db.owner import sync_owner
+
+    monkeypatch.setenv("DASHBOARD_ALLOWED_EMAIL", "owner@example.com")
+    get_settings.cache_clear()
+    sync_owner(db)
+    with db.begin() as c:
+        for i, status in ((1, "pending"), (2, "applied")):
+            c.execute(text(
+                "INSERT INTO suggestions (id, month, kind, param, file, yaml_path, current_value, proposed_value, "
+                f"expected_effect, evidence_json, status) VALUES ({i}, '2026-10-01', 'change', 'p{i}', 'f', 'a.b', 1, 2, 3, '{{}}', '{status}')"
+            ))
+    with db.begin() as c:
+        _as(c, "owner@example.com")
+        assert _try(c, "UPDATE suggestions SET status = 'accepted' WHERE id = 1")
+        assert not _try(c, "UPDATE suggestions SET proposed_value = 99 WHERE id = 1")  # status only
+        c.execute(text("UPDATE suggestions SET status = 'rejected' WHERE id = 2"))  # not pending: no row matches
+        c.execute(text("UPDATE suggestions SET status = 'applied' WHERE id = 1"))  # no longer pending: no-op
+        c.execute(text("RESET ROLE"))
+    with db.connect() as c:
+        rows = dict(c.execute(text("SELECT id, status FROM suggestions")).all())
+        who = c.execute(text("SELECT decided_by FROM suggestions WHERE id = 1")).scalar()
+    assert rows == {1: "accepted", 2: "applied"} and who == "owner@example.com"

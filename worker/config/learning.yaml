@@ -1,0 +1,35 @@
+# Learning loop (Phase 10): monthly suggestions only, evidence from stored data (no new AI calls).
+# Owner guardrails: stricter interval because many tunables are tested each month, at most 2
+# suggestions per month, one accepted change merged per month (at month start) so its effect can be
+# isolated, and a review 2 months after each change (revert suggested if it did not help).
+ci_level: 0.975
+max_suggestions_per_month: 2
+lookback_months: 3
+min_opportunities: 30
+bootstrap_samples: 3000
+bootstrap_seed: 23
+stress_extra_cost_pct: 4.0      # 2x spread: extra round-trip cost per trade, % of premium
+review_after_months: 2
+
+# Each tunable is a minimum gate on a field stored with every signal and rejection.
+tunables:
+  - param: signal_score_threshold
+    file: worker/config/signals.yaml
+    path: thresholds.signal_score
+    field: score
+    candidates: [60, 65, 70, 75, 80]
+  - param: edge_ratio_min
+    file: worker/config/options.yaml
+    path: edge_ratio_min
+    field: edge_ratio
+    candidates: [1.0, 1.1, 1.2, 1.3, 1.5]
+  - param: min_p_t1_before_sl
+    file: worker/config/options.yaml
+    path: selection.min_p_t1_before_sl
+    field: p_t1_before_sl
+    candidates: [0.5, 0.55, 0.6, 0.65]
+  - param: min_ev_pct_of_premium
+    file: worker/config/options.yaml
+    path: selection.min_ev_pct_of_premium
+    field: ev_pct
+    candidates: [5, 10, 15, 20]

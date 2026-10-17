@@ -1,3 +1,7 @@
+# Signal thresholds (env SIGNAL_SCORE_THRESHOLD overrides; the learning loop may propose changes)
+thresholds:
+  signal_score: 65
+
 # Scoring and signal-lifecycle rules (defaults; the monthly learning loop in Phase 5 proposes changes).
 # The raise threshold itself comes from env SIGNAL_SCORE_THRESHOLD (default 65).
 weights:

@@ -378,6 +378,7 @@ class Alert(Base):
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    file_path: Mapped[str | None] = mapped_column(Text)  # Phase 10: sent as a document (PDF)
 
 
 # ---- DESIGN_V2 tables -------------------------------------------------------------------
@@ -940,3 +941,75 @@ class EventLibrary(Base):
     p75: Mapped[float] = mapped_column(Float)
     examples_json: Mapped[list[dict[str, Any]] | None] = mapped_column(Json)
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+# --- Phase 10: analytics, monthly report, learning loop ------------------------------------------
+
+
+class MonthlyReport(Base):
+    __tablename__ = "monthly_reports"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    month: Mapped[date] = mapped_column(Date, unique=True)  # first day of the reported month
+    data_json: Mapped[dict[str, Any]] = mapped_column(Json)
+    text: Mapped[str] = mapped_column(Text)
+    ai_summary: Mapped[str | None] = mapped_column(
+        Text
+    )  # only if every figure it cites is in data_json
+    ai_summary_status: Mapped[str | None] = mapped_column(
+        String(24)
+    )  # ok / rejected / off / failed
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class Suggestion(Base):
+    """Learning-loop proposal. The owner accepts/rejects on the dashboard (status only); the worker
+    opens a GitHub PR editing the YAML for accepted ones and merges one per month at month start."""
+
+    __tablename__ = "suggestions"
+    __table_args__ = (UniqueConstraint("month", "param", "kind", name="uq_suggestions"),)
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    month: Mapped[date] = mapped_column(Date, index=True)
+    kind: Mapped[str] = mapped_column(String(8))  # change / revert
+    param: Mapped[str] = mapped_column(String(64))
+    file: Mapped[str] = mapped_column(String(128))  # e.g. worker/config/options.yaml
+    yaml_path: Mapped[str] = mapped_column(String(128))  # e.g. selection.min_p_t1_before_sl
+    current_value: Mapped[float] = mapped_column(Float)
+    proposed_value: Mapped[float] = mapped_column(Float)
+    expected_effect: Mapped[float] = mapped_column(Float)  # % of premium per month (total)
+    evidence_json: Mapped[dict[str, Any]] = mapped_column(Json)
+    status: Mapped[str] = mapped_column(
+        String(12), index=True
+    )  # pending/accepted/rejected/applied/superseded
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_by: Mapped[str | None] = mapped_column(String(256))
+    pr_url: Mapped[str | None] = mapped_column(Text)
+    pr_number: Mapped[int | None] = mapped_column(Integer)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_json: Mapped[dict[str, Any] | None] = mapped_column(
+        Json
+    )  # actual vs predicted after 2 months
+    reverts_id: Mapped[int | None] = mapped_column(ForeignKey("suggestions.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class AiVsRules(Base):
+    """B3: for each analysis, what the rules-only path (labels + analogues, no AI) would have
+    done."""
+
+    __tablename__ = "ai_vs_rules"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    analysis_id: Mapped[int] = mapped_column(ForeignKey("analyses.id"), unique=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    news_direction: Mapped[str] = mapped_column(String(8))
+    ai_direction: Mapped[str | None] = mapped_column(String(8))
+    ai_signal: Mapped[bool] = mapped_column(Boolean, default=False)  # a live signal was made
+    rules_direction: Mapped[str | None] = mapped_column(String(8))  # None = rules would not trade
+    rules_reason: Mapped[str | None] = mapped_column(Text)
+    analogue_n: Mapped[int | None] = mapped_column(Integer)
+    analogue_mean: Mapped[float | None] = mapped_column(Float)
+    realised_move_pct: Mapped[float | None] = mapped_column(Float)  # signed stock move (+ up)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

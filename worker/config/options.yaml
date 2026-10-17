@@ -44,6 +44,9 @@ implied_move:
 # Selection gates (owner rules, Phase 5). Applied to the best candidate after the edge-ratio gate
 # (EDGE_RATIO_MIN). EV is % of the entry premium after costs. Probabilities and EV come from the
 # calibrated simulation once a calibrator exists, else from the shrunk one.
+# Implied-move gate: shrunk predicted move / implied move must be at least this (env EDGE_RATIO_MIN overrides)
+edge_ratio_min: 1.2
+
 selection:
   enabled: true
   min_ev_pct: 0                 # EV must be above this ...

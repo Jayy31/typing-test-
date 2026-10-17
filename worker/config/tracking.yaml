@@ -6,3 +6,12 @@ counterfactual:
 scorecard:
   buffer_days: 1                # score this many trading days after the predicted window ends
   time: "15:40"                 # daily close capture
+
+# Phase 10 analytics
+analytics:
+  bootstrap_samples: 2000
+  bootstrap_seed: 17
+  ci_level: 0.90
+  drift_min_trades: 30            # live vs backtest comparison starts at this many closed trades
+  drift_backtest_variant: "rules: v2.1 rules, per_lot"
+  ai_vs_rules_ci_z: 1.645         # live rules decision: mean - z * std / sqrt(n_eff) > 0 (one-sided 95%)

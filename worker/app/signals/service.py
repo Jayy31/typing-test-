@@ -13,6 +13,7 @@ from app.ai import analyst
 from app.ai.client import AiClient, AiOutputError, BudgetExceededError
 from app.ai.panel import PANEL_PROMPT_VERSION, AgentStep, run_panel
 from app.ai.schemas import AnalystOutput, JudgeOutput, Scenario
+from app.analytics import ai_vs_rules
 from app.calibration import service as calibration
 from app.config import IST, get_settings
 from app.db.models import AgentRun, Analysis, Instrument, MacroSnapshot, Signal, SignalCandidate
@@ -327,6 +328,8 @@ def store_result(
         if sig.status != "CANCELLED":
             stamp_signal(s, sig, out, item, plan, now)
     _score_prediction(s, analysis, out, plan, events, now, item)
+    made = any(ev.kind == "new" for ev in events) or live_signal(s, cand.symbol) is not None
+    ai_vs_rules.record(s, analysis, cand.direction, item.analogue, made)  # B3 (Phase 10)
     if not any(ev.kind == "new" for ev in events) and live_signal(s, cand.symbol) is None:
         _record_not_signalled(s, item, out, analysis, score, checks, plan, now)
     _enqueue_events(s, events, analysis, cand, out, item.analogue)
@@ -534,6 +537,7 @@ def _record_not_signalled(
             "predicted_move_raw_pct": pred.move_pct if pred else None,
             "edge_ratio": plan.edge_ratio if plan else None,
             "ev_pct": best.result.ev_pct if best and best.result else None,
+            "p_t1_before_sl": best.result.p_t1_before_sl if best and best.result else None,
         },
     )
 
