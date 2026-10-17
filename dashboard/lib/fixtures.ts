@@ -286,6 +286,23 @@ const digests: Row[] = [
   { id: 3, week_start: "2026-10-05", created_at: D(4), data_json: {}, text: "WEEKLY DIGEST 05-Oct to 11-Oct\n\nTRADES\n  All: 4 trades, win rate 50%, P&L Rs +8,120\n  Excluding unfillable: 3 trades, win rate 67%\n\nREGULATOR ITEMS TO REVIEW (name match below threshold: no evidence created)\n  USFDA: Sun Pharma Advanced Research - WL | best 0.80: SUNPHARMA 0.80\n\nSUGGESTIONS (not applied; change config yourself if you agree)\n  - edge-ratio rejections would have won 3 of 4: review EDGE_RATIO_MIN" },
 ];
 
+const golive_checks: Row[] = [
+  { id: 1, kind: "quick", created_at: D(1), status: "fail", text: "GO-LIVE QUICK CHECK (2 h)",
+    results_json: { checks: [
+      { name: "nse_probe", status: "fail", summary: "2 of 14 NSE endpoints BLOCKED/THROTTLED from this server (direct (no NSE_HTTP_PROXY)). Set NSE_HTTP_PROXY or use the listed alternatives.",
+        details: ["announcements: OK", "insider: BLOCKED (HTTP 403) -> alternative: BSE insider disclosures (bseindia.com)", "fo_bhavcopy: THROTTLED (slow (9100 ms)) -> alternative: Upstox option chain (live only)"] },
+      { name: "database", status: "ok", summary: "migration 0014 (head 0014)", details: [] },
+      { name: "upstox", status: "ok", summary: "token expires in 351 days", details: ["token expires in 351 days", "4120 option quotes stored since start"] },
+      { name: "ai_smoke", status: "ok", summary: "passed: Rs 31, panel 96s", details: [] },
+    ] } },
+  { id: 2, kind: "full", created_at: D(0), status: "warn", text: "FIRST-RUN REPORT (24 h)",
+    results_json: { checks: [
+      { name: "nse_probe", status: "ok", summary: "all 14 NSE endpoints reachable (via NSE_HTTP_PROXY)", details: [] },
+      { name: "unverified", status: "warn", summary: "docs/UNVERIFIED.md: 20 verified automatically, 16 need a manual step",
+        details: ["#1: verified (nse_probe)", "#21: needs you - After a week: share of bulk/block deals classed 'other'"] },
+    ] } },
+];
+
 const JOBS: [string, number, string, string | null][] = [
   ["signal_cycle", 3, "ok", null], ["trading_cycle", 4, "ok", null], ["portfolio_snapshot", 12, "ok", null], ["tag_news", 2, "ok", null],
   ["news_day", 6, "ok", null], ["macro", 52, "ok", null], ["heartbeat", 1, "ok", null], ["event_calendar", 236, "ok", null],
@@ -380,7 +397,7 @@ export const TABLES: Record<string, Row[]> = {
   instruments, signals, analyses, scenarios, agent_runs, signal_candidates, signal_versions, news_items, news_tags, kg_paths, kg_nodes, kg_edges,
   paper_trades, trade_events, portfolio_snapshots, rejected_candidates, events_calendar, macro_snapshots, macro_releases, prediction_scores,
   backtest_runs, event_library, digests, job_runs, config, config_audit, ai_usage, ai_smoke_runs, regulatory_actions, calibrators,
-  calibration_records: [], results_extracts: [], post_mortems: [], monthly_reports, suggestions, ai_vs_rules,
+  calibration_records: [], results_extracts: [], post_mortems: [], monthly_reports, suggestions, ai_vs_rules, golive_checks,
 };
 
 export { premiumPath };

@@ -30,6 +30,7 @@ const PAGES: [string, string, string[]][] = [
   ["/suggestions", "25-suggestions", ["edge_ratio_min", "97.5% interval", "Accept (opens a PR)", "Pull request"]],
   ["/ai-vs-rules", "26-ai-vs-rules", ["AI signals", "Rules (analogues only)"]],
   ["/quality", "27-quality", ["bid above ask", "Database", "Cache hits"]],
+  ["/golive", "28-golive", ["First-run report", "BLOCKED", "alternative: BSE insider", "needs you"]],
 ];
 
 for (const [path, name, texts] of PAGES) {

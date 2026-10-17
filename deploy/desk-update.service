@@ -1,0 +1,8 @@
+[Unit]
+Description=Pull and deploy the latest worker image (rollback on failed health)
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/desk/update.sh

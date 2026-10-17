@@ -1,0 +1,131 @@
+# Go-live checks (Phase 11). Quick check 2 h after the first start, full report at 24 h.
+# NSE probes run FIRST: data-centre IPs are often blocked (403 / HTML challenge) or throttled
+# (429 / timeouts). If blocked, set NSE_HTTP_PROXY (used for NSE hosts only) or use the listed
+# alternative for that data type.
+schedule:
+  quick_after_minutes: 120
+  full_after_minutes: 1440
+nse_probe:
+  timeout_s: 15
+  slow_ms: 8000                   # slower than this = throttled
+  # {date:...} placeholders use the last trading day (bhavcopy) / last 7 days (ranges)
+  endpoints:
+    - name: announcements
+      data: corporate announcements (news, ratings, auto sales, results trigger)
+      json_path: /api/corporate-announcements?index=equities
+      fields: [symbol, desc, an_dt, attchmntFile]
+      alternative: BSE corporate announcements API (api.bseindia.com) or exchange RSS
+    - name: fii_dii
+      data: FII/DII cash flows
+      json_path: /api/fiidiiTradeReact
+      fields: [category, netValue]
+      alternative: NSDL FPI daily reports (fpi.nsdl.co.in) or moneycontrol FII page via RSS
+    - name: event_calendar
+      data: results / board-meeting calendar
+      json_path: /api/event-calendar
+      fields: [symbol, purpose, date]
+      alternative: BSE corporate calendar; data/manual_calendar.yaml for key dates
+    - name: corporate_actions
+      data: splits / bonus / dividends
+      json_path: /api/corporates-corporateActions?index=equities
+      fields: [symbol, subject, exDate]
+      alternative: BSE corporate actions; Upstox instrument master (contract changes)
+    - name: insider
+      data: insider trades (PIT)
+      json_path: /api/corporates-pit?index=equities
+      fields: [symbol, acqName, personCategory, secAcq, secVal, tdpTransactionType, date]
+      alternative: BSE insider trading disclosures (SAST/PIT)
+    - name: bulk_deals
+      data: bulk deals
+      json_path: /api/historical/bulk-deals?from={from_dmy}&to={to_dmy}
+      fields: [BD_DT_DATE, BD_SYMBOL, BD_CLIENT_NAME, BD_BUY_SELL, BD_QTY_TRD, BD_TP_WATP]
+      alternative: BSE bulk/block deal reports
+    - name: shareholding
+      data: shareholding pattern
+      json_path: /api/corporate-share-holdings-master?index=equities
+      fields: [symbol, date, pr_and_prgrp]
+      alternative: BSE shareholding pattern pages
+    - name: financial_results
+      data: quarterly results feed (fast-path)
+      json_path: /api/corporates-financial-results?index=equities&period=Quarterly
+      fields: [symbol, toDate, broadCastDate, xbrl]
+      alternative: BSE results XBRL feed; NSE announcements (results PDFs, AI extract)
+    - name: quote_equity
+      data: issued shares (market cap for materiality)
+      json_path: /api/quote-equity?symbol=TCS
+      fields: [securityInfo.issuedSize]
+      alternative: Upstox market-quote (no issued size) + yearly manual market caps
+    - name: fno_ban
+      data: F&O ban list
+      url: https://nsearchives.nseindia.com/content/fo/fo_secban.csv
+      csv_contains: []
+      alternative: none free; ban stocks are also rejected by Upstox chain liquidity checks
+    - name: lot_sizes
+      data: F&O lot sizes
+      url: https://archives.nseindia.com/content/fo/fo_mktlots.csv
+      csv_contains: [SYMBOL]
+      alternative: Upstox instrument master (lot_size per contract) - already used daily
+    - name: equity_bhavcopy
+      data: daily equity prices (history)
+      url: https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{ddmmyyyy}.csv
+      csv_contains: [SYMBOL, CLOSE_PRICE, TTL_TRD_QNTY]
+      alternative: BSE equity bhavcopy; Upstox historical candles API
+    - name: fo_bhavcopy
+      data: daily F&O prices (history, IV backfill)
+      url: https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{yyyymmdd}_F_0000.csv.zip
+      zip: true
+      alternative: Upstox expired-instruments historical candles (paid plans) - otherwise none free
+    - name: index_close
+      data: index closes incl. Nifty 50 and India VIX (history)
+      url: https://archives.nseindia.com/content/indices/ind_close_all_{ddmmyyyy}.csv
+      csv_contains: [Index Name, Closing Index Value]
+      alternative: Upstox historical candles for index instrument keys; Yahoo ^NSEI / ^INDIAVIX
+upstox_fields:                    # saved raw samples (raw_samples/upstox) -> expected keys
+  v2_option_chain: [data]
+  v2_market-quote_quotes: [data]
+
+# docs/UNVERIFIED.md items -> the check that verifies them (or the manual step)
+unverified:
+  1: {check: nse_probe}
+  2: {check: sources}
+  3: {check: nse_probe}
+  4: {check: rows}
+  5: {check: nse_probe}
+  6: {check: telegram}
+  7: {check: upstox_fields}
+  8: {check: upstox_fields}
+  9: {check: history}
+  10: {check: history}
+  11: {check: ai_smoke}
+  12: {check: history}
+  13: {check: nse_probe}
+  14: {check: nse_probe}
+  15: {check: nse_probe}
+  16: {check: nse_probe}
+  17: {check: xbrl}
+  18: {check: nse_probe}
+  19: {check: sources}
+  20: {check: rows}
+  21: {manual: "After a week: share of bulk/block deals classed 'other' (SQL in docs/setup/phase-7.md)"}
+  22: {manual: "Review sub-sectors in data/symbol_master.csv once a year"}
+  23: {check: rows}
+  24: {manual: "After a week: open 20 AI-extracted graph edges on the Graph page and check them"}
+  25: {manual: "Weekly digest: regulator items to review"}
+  26: {manual: "Read data/kg_seed.yaml once"}
+  27: {manual: "Sign in to the dashboard; then sign in with another email and confirm you see nothing"}
+  28: {manual: "First dashboard sign-in by magic link"}
+  29: {manual: "Open every dashboard page once (More menu)"}
+  30: {check: golive_report}
+  31: {manual: "Accept the first learning-loop suggestion and check the PR"}
+  32: {manual: "First monthly report PDF on Telegram (1st of next month)"}
+  33: {manual: "Stop the worker for 20 minutes (docker stop desk-worker) and expect a healthchecks alert"}
+  34: {check: db_size}
+  35: {manual: "First monthly report: ai_summary_status = ok"}
+  36: {check: nse_probe}
+
+# make preflight: env keys that must have a value before the first start (others are optional)
+required_env: [DATABASE_URL, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY,
+               AI_MODEL_TAGGER, AI_MODEL_ANALYST, AI_MODEL_RESEARCHER, AI_MODEL_NOVELTY,
+               AI_MODEL_BULL, AI_MODEL_BEAR, AI_MODEL_JUDGE, AI_MODEL_KNOWLEDGE_CUTOFF,
+               BROKER_ACCESS_TOKEN, BROKER_TOKEN_ISSUED_ON, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+               DASHBOARD_ALLOWED_EMAIL, DASHBOARD_BASE_URL]

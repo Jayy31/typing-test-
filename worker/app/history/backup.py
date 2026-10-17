@@ -60,3 +60,29 @@ def backup(client: Any | None = None) -> int:
     client.upload_file(str(snap), s.r2_bucket, "history.duckdb")
     snap.unlink(missing_ok=True)
     return uploaded + 1
+
+
+def restore(client: Any | None = None) -> int:
+    """New VM / lost volume: download every backed-up file into HISTORY_DATA_DIR. Run with the
+    worker stopped (it overwrites history.duckdb)."""
+    s = get_settings()
+    client = client or r2_client()
+    root = Path(s.history_data_dir)
+    n = 0
+    for page in client.get_paginator("list_objects_v2").paginate(Bucket=s.r2_bucket):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            target = db_path() if key == "history.duckdb" else root / key
+            target.parent.mkdir(parents=True, exist_ok=True)
+            client.download_file(s.r2_bucket, key, str(target))
+            n += 1
+    return n
+
+
+if __name__ == "__main__":
+    import sys
+
+    if sys.argv[1:] == ["restore"]:
+        print(f"restored {restore()} files")
+    else:
+        print(f"uploaded {backup()} files")

@@ -16,6 +16,7 @@ from typing import Any
 
 import httpx
 
+from app.collectors import nse_http
 from app.config import get_settings
 from app.yaml_config import load_yaml
 
@@ -189,7 +190,7 @@ class Downloader:
 
     def __init__(self, http: httpx.Client | None = None, cache_dir: Path | None = None) -> None:
         cfg = load_yaml("history.yaml")["http"]
-        self.http = http or httpx.Client(
+        self.http = http or nse_http.client(
             headers=HEADERS, timeout=float(cfg["timeout_s"]), follow_redirects=True
         )
         self.min_interval = float(cfg["min_interval_s"])

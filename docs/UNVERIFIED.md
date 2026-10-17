@@ -41,3 +41,4 @@ phase checks them all in one pass (the first-run report flags mismatches).
 | 33 | 10 | healthchecks.io ping URL behaviour (GET, 10 s timeout) | `app/health/watchdog.py` | stop the worker once, expect an alert |
 | 34 | 10 | `pg_database_size` / `pg_statio_user_tables` readable with the worker's Supabase role | `app/health/watchdog.py` | `db_size` config row |
 | 35 | 10 | Cheap model keeps the monthly summary within the figures (validator rejects otherwise) | `app/analytics/monthly.py` | `monthly_reports.ai_summary_status` |
+| 36 | 11 | NSE serves data-centre IPs (Oracle Mumbai/Hyderabad) without blocking or throttling; if not, `NSE_HTTP_PROXY` (HTTP proxy used only for NSE hosts) works | `app/collectors/nse_http.py`, `config/golive.yaml` | 2-hour quick check (`nse_probe`, every endpoint, with the alternative per data type) |

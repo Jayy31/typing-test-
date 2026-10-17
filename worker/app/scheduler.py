@@ -293,6 +293,9 @@ def build_scheduler() -> BlockingScheduler:
             CronTrigger(day_of_week="mon-fri", hour=h, minute=m, timezone=IST),
         )
     _phase10_jobs(sched)
+    from app.golive.checks import due_job as golive_due
+
+    _job(sched, "golive_checks", golive_due, IntervalTrigger(minutes=10))
     # Phase 9: Telegram morning brief / evening summary (owner switches brief.*)
     from app.notify.briefs import evening_summary_job, morning_brief_job
 
@@ -369,6 +372,9 @@ def main() -> None:
     from app.db.owner import sync_owner
 
     run_job("dashboard_owner", sync_owner)  # who may open the dashboard (DASHBOARD_ALLOWED_EMAIL)
+    from app.golive.checks import mark_first_start
+
+    mark_first_start()  # go-live: quick check after 2 h, first-run report after 24 h (once)
     sched = build_scheduler()
     # Live AI smoke test once, shortly after startup, until it has passed (results to Telegram)
     sched.add_job(
