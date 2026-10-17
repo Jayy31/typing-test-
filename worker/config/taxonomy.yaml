@@ -1,7 +1,7 @@
 # ONE shared, versioned taxonomy for live tagging, historical (batch) tagging, rules and the event study.
 # Bump `version` whenever a label is added, renamed or removed; every tag row stores the version it used.
 # Never reuse a removed label for a different meaning (history would mix meanings).
-version: tx1
+version: tx2
 
 event_types:
   results: "Quarterly/annual results, results vs expectations"
@@ -20,6 +20,46 @@ event_types:
   disaster: "Natural disasters, fires, plant shutdowns"
   business_update: "Monthly sales, volumes, operational updates, guidance"
   other: "Anything else"
+
+# Structured event subtypes (tx2, Phase 7): produced by rules from filings and disclosures, never by
+# the AI tagger. One subtype per counterparty so base rates are learned separately. `parent` is the
+# news event type it belongs to (playbooks and analogue fallback use it).
+structured_event_types:
+  insider_buy_promoter: {parent: block_deal, description: "Promoter bought shares (insider disclosure)"}
+  insider_buy_promoter_group: {parent: block_deal, description: "Promoter-group entity bought shares"}
+  insider_buy_director_kmp: {parent: block_deal, description: "Director or key managerial person bought shares"}
+  insider_buy_other: {parent: block_deal, description: "Other insider bought shares"}
+  insider_sell_promoter: {parent: block_deal, description: "Promoter sold shares"}
+  insider_sell_promoter_group: {parent: block_deal, description: "Promoter-group entity sold shares"}
+  insider_sell_director_kmp: {parent: block_deal, description: "Director or key managerial person sold shares"}
+  insider_sell_other: {parent: block_deal, description: "Other insider sold shares"}
+  deal_buy_promoter: {parent: block_deal, description: "Bulk/block deal: promoter bought"}
+  deal_buy_promoter_group: {parent: block_deal, description: "Bulk/block deal: promoter group bought"}
+  deal_buy_fii: {parent: block_deal, description: "Bulk/block deal: foreign investor bought"}
+  deal_buy_mf_dii: {parent: block_deal, description: "Bulk/block deal: mutual fund / domestic institution bought"}
+  deal_buy_other: {parent: block_deal, description: "Bulk/block deal: other buyer"}
+  deal_sell_promoter: {parent: block_deal, description: "Bulk/block deal: promoter sold"}
+  deal_sell_promoter_group: {parent: block_deal, description: "Bulk/block deal: promoter group sold"}
+  deal_sell_fii: {parent: block_deal, description: "Bulk/block deal: foreign investor sold"}
+  deal_sell_mf_dii: {parent: block_deal, description: "Bulk/block deal: mutual fund / domestic institution sold"}
+  deal_sell_other: {parent: block_deal, description: "Bulk/block deal: other seller"}
+  pledge_increase: {parent: block_deal, description: "Promoter pledge went up (shareholding / encumbrance)"}
+  pledge_decrease: {parent: block_deal, description: "Promoter pledge went down"}
+  holding_up_promoter: {parent: block_deal, description: "Quarterly shareholding: promoter stake up"}
+  holding_down_promoter: {parent: block_deal, description: "Quarterly shareholding: promoter stake down"}
+  holding_up_fii: {parent: block_deal, description: "Quarterly shareholding: FII stake up"}
+  holding_down_fii: {parent: block_deal, description: "Quarterly shareholding: FII stake down"}
+  holding_up_mf_dii: {parent: block_deal, description: "Quarterly shareholding: MF/DII stake up"}
+  holding_down_mf_dii: {parent: block_deal, description: "Quarterly shareholding: MF/DII stake down"}
+  rating_upgrade: {parent: rating, description: "Credit rating upgraded"}
+  rating_downgrade: {parent: rating, description: "Credit rating downgraded"}
+  sebi_order: {parent: regulatory, description: "SEBI order against the company"}
+  usfda_adverse: {parent: regulatory, description: "USFDA warning letter, import alert or OAI"}
+  results_beat: {parent: results, description: "Results above the company's own trend"}
+  results_miss: {parent: results, description: "Results below the company's own trend"}
+  results_inline: {parent: results, description: "Results in line with trend"}
+  auto_sales_strong: {parent: business_update, description: "Monthly auto sales well up year on year"}
+  auto_sales_weak: {parent: business_update, description: "Monthly auto sales well down year on year"}
 
 # Macro themes: keyword list used by the keyword pass (case-insensitive substring of title+body).
 themes:

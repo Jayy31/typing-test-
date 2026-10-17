@@ -106,6 +106,7 @@ class MacroSnapshot(Base):
     fii_net: Mapped[float | None] = mapped_column(Float)
     dii_net: Mapped[float | None] = mapped_column(Float)
     adr_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    commodities_json: Mapped[dict[str, float] | None] = mapped_column(Json)  # Phase 7: name -> last
 
 
 class OptionQuote(Base):
@@ -223,6 +224,8 @@ class Signal(Base):
     prediction_source: Mapped[str | None] = mapped_column(String(8))  # panel / single
     calibration_method: Mapped[str | None] = mapped_column(String(16))  # shrink / platt / isotonic
     ai_weight: Mapped[float | None] = mapped_column(Float)  # share of AI paths in the EV simulation
+    # Phase 7: signals made after the close / on holidays enter at the next open (+ first 15 min)
+    enter_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SignalVersion(Base):
@@ -685,3 +688,172 @@ class AiSmokeRun(Base):
     panel_seconds: Mapped[float | None] = mapped_column(Float)
     results_json: Mapped[dict[str, Any]] = mapped_column(Json)
     fixes_json: Mapped[list[str] | None] = mapped_column(Json)  # auto-fixes applied
+
+
+# --- Phase 7: deeper data sources -------------------------------------------------------------
+# Every disclosure table keeps BOTH the event date (when it happened) and disclosed_at (when it
+# became public). Research (event study, rules mode, backtester) only ever uses disclosed_at.
+
+
+class _Structured:
+    """Shared columns: evidence outcome of a structured row."""
+
+    subtype: Mapped[str | None] = mapped_column(String(64))  # tx2 structured event type
+    material: Mapped[bool] = mapped_column(Boolean, default=False)
+    materiality_json: Mapped[dict[str, Any] | None] = mapped_column(Json)  # why (not) material
+    news_id: Mapped[int | None] = mapped_column(ForeignKey("news_items.id"))  # evidence row
+    raw_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+
+
+class InsiderTrade(_Structured, Base):
+    __tablename__ = "insider_trades"
+    __table_args__ = (UniqueConstraint("ref", name="uq_insider_trades_ref"),)
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    ref: Mapped[str] = mapped_column(String(64))  # hash of the disclosure
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    person: Mapped[str | None] = mapped_column(Text)
+    person_category: Mapped[str | None] = mapped_column(String(64))
+    counterparty: Mapped[str] = mapped_column(
+        String(16)
+    )  # promoter/promoter_group/director_kmp/other
+    side: Mapped[str] = mapped_column(String(4))  # buy / sell
+    quantity: Mapped[float | None] = mapped_column(Float)
+    value_inr: Mapped[float | None] = mapped_column(Float)
+    mode: Mapped[str | None] = mapped_column(String(64))
+    event_date: Mapped[date | None] = mapped_column(Date)  # trade date
+    disclosed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class BulkBlockDeal(_Structured, Base):
+    __tablename__ = "bulk_block_deals"
+    __table_args__ = (UniqueConstraint("ref", name="uq_bulk_block_deals_ref"),)
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    ref: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(8))  # bulk / block
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    client: Mapped[str | None] = mapped_column(Text)
+    counterparty: Mapped[str] = mapped_column(
+        String(16)
+    )  # promoter/promoter_group/fii/mf_dii/other
+    side: Mapped[str] = mapped_column(String(4))
+    quantity: Mapped[float | None] = mapped_column(Float)
+    price: Mapped[float | None] = mapped_column(Float)
+    value_inr: Mapped[float | None] = mapped_column(Float)
+    event_date: Mapped[date | None] = mapped_column(Date)  # deal date
+    disclosed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class Shareholding(_Structured, Base):
+    __tablename__ = "shareholding"
+    __table_args__ = (UniqueConstraint("symbol", "event_date", name="uq_shareholding"),)
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    event_date: Mapped[date] = mapped_column(Date)  # quarter end
+    disclosed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    promoter_pct: Mapped[float | None] = mapped_column(Float)
+    fii_pct: Mapped[float | None] = mapped_column(Float)
+    dii_pct: Mapped[float | None] = mapped_column(Float)
+    public_pct: Mapped[float | None] = mapped_column(Float)
+    pledge_pct: Mapped[float | None] = mapped_column(Float)  # % of promoter holding pledged
+    subtypes: Mapped[list[str] | None] = mapped_column(Json)  # one filing can move several stakes
+
+
+class Rating(_Structured, Base):
+    __tablename__ = "ratings"
+    __table_args__ = (UniqueConstraint("ref", name="uq_ratings_ref"),)
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    ref: Mapped[str] = mapped_column(String(64))
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    agency: Mapped[str | None] = mapped_column(String(32))
+    action: Mapped[str] = mapped_column(String(16))  # upgrade / downgrade / reaffirm / other
+    event_date: Mapped[date | None] = mapped_column(Date)  # rating action date
+    disclosed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    title: Mapped[str] = mapped_column(Text)
+    url: Mapped[str | None] = mapped_column(Text)
+
+
+class RegulatoryAction(_Structured, Base):
+    __tablename__ = "regulatory_actions"
+    __table_args__ = (UniqueConstraint("ref", name="uq_regulatory_actions_ref"),)
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    ref: Mapped[str] = mapped_column(String(64))
+    regulator: Mapped[str] = mapped_column(String(16))  # sebi / usfda
+    action_type: Mapped[str | None] = mapped_column(String(64))
+    symbol: Mapped[str | None] = mapped_column(
+        String(32), index=True
+    )  # null = not mapped to a stock
+    event_date: Mapped[date | None] = mapped_column(Date)  # order / letter date
+    disclosed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    title: Mapped[str] = mapped_column(Text)
+    url: Mapped[str | None] = mapped_column(Text)
+
+
+class ResultsExtract(_Structured, Base):
+    __tablename__ = "results_extracts"
+    __table_args__ = (UniqueConstraint("symbol", "period_end", name="uq_results_extracts"),)
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    period_end: Mapped[date] = mapped_column(Date)
+    disclosed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    method: Mapped[str] = mapped_column(String(8))  # xbrl / ai
+    consolidated: Mapped[bool | None] = mapped_column(Boolean)
+    revenue: Mapped[float | None] = mapped_column(Float)  # Rs crore
+    pat: Mapped[float | None] = mapped_column(Float)
+    ebitda: Mapped[float | None] = mapped_column(Float)
+    revenue_yoy_pct: Mapped[float | None] = mapped_column(Float)
+    pat_yoy_pct: Mapped[float | None] = mapped_column(Float)
+    margin_change_pp: Mapped[float | None] = mapped_column(Float)
+    guidance: Mapped[str | None] = mapped_column(String(16))  # raised / cut / maintained / none
+    surprise_score: Mapped[float | None] = mapped_column(Float)  # -1..1 vs own trend
+    surprise_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    model: Mapped[str | None] = mapped_column(String(128))
+    prompt_ver: Mapped[str | None] = mapped_column(String(32))
+    source_url: Mapped[str | None] = mapped_column(Text)
+    latency_s: Mapped[float | None] = mapped_column(Float)  # disclosure -> extract stored
+
+
+class BusinessUpdate(_Structured, Base):
+    __tablename__ = "business_updates"
+    __table_args__ = (UniqueConstraint("symbol", "period", "metric", name="uq_business_updates"),)
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    period: Mapped[date] = mapped_column(Date)  # month
+    metric: Mapped[str] = mapped_column(String(32))  # total_units / domestic_units / exports_units
+    value: Mapped[float | None] = mapped_column(Float)
+    yoy_pct: Mapped[float | None] = mapped_column(Float)
+    disclosed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    model: Mapped[str | None] = mapped_column(String(128))
+    prompt_ver: Mapped[str | None] = mapped_column(String(32))
+
+
+class MacroRelease(Base):
+    __tablename__ = "macro_releases"
+    __table_args__ = (UniqueConstraint("name", "period", name="uq_macro_releases"),)
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(32))  # cpi / wpi / iip / gdp / gst / pmi_mfg ...
+    period: Mapped[date] = mapped_column(Date)
+    value: Mapped[float | None] = mapped_column(Float)
+    prior: Mapped[float | None] = mapped_column(Float)
+    released_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    source: Mapped[str | None] = mapped_column(String(32))
+
+
+class StockStats(Base):
+    """Nightly materiality inputs: 20-day average traded value and market cap."""
+
+    __tablename__ = "stock_stats"
+
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+    adv20_inr: Mapped[float | None] = mapped_column(Float)
+    issued_shares: Mapped[float | None] = mapped_column(Float)
+    close: Mapped[float | None] = mapped_column(Float)
+    mcap_inr: Mapped[float | None] = mapped_column(Float)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
