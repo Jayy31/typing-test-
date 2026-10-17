@@ -18,6 +18,7 @@ const PAGES: [string, string, string][] = [
   ["/suggestions", "Suggestions", "Learning-loop changes to accept or reject"],
   ["/ai-vs-rules", "AI vs rules", "AI decisions vs the rules-only path"],
   ["/quality", "Data quality", "Checks, database size, AI cost"],
+  ["/golive", "Go-live checks", "2-hour check, first-run report, unverified items"],
   ["/health", "System health", "Jobs, sources, AI spend"],
   ["/settings", "Settings", "Owner switches, config, change log"],
 ];

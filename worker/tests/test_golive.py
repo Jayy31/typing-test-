@@ -93,3 +93,24 @@ def test_preflight_lists_missing_env() -> None:
     assert (
         "DATABASE_URL" not in miss and "TELEGRAM_BOT_TOKEN" in miss and "ANTHROPIC_API_KEY" in miss
     )
+
+
+def test_r2_restore_downloads_everything(tmp_path) -> None:
+    from app.history import backup
+
+    class Fake:
+        got: list[tuple[str, str]] = []
+
+        def get_paginator(self, _):
+            class P:
+                def paginate(self, Bucket):  # noqa: N803
+                    return [{"Contents": [{"Key": "history.duckdb"}, {"Key": "parquet/a.parquet"}]}]
+
+            return P()
+
+        def download_file(self, bucket, key, target):
+            self.got.append((key, target))
+
+    f = Fake()
+    assert backup.restore(f) == 2
+    assert f.got[0][1].endswith(".duckdb") and f.got[1][1].endswith("parquet/a.parquet")
