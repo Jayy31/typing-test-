@@ -10,6 +10,7 @@ from sqlalchemy import Engine
 from app.config import IST
 from app.db.models import JobRun
 from app.db.session import session_scope
+from app.logsafe import redact
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ def run_job(
             error = None
             break
         except Exception as exc:  # noqa: BLE001 - job boundary
-            error = f"{type(exc).__name__}: {exc}"
+            error = redact(f"{type(exc).__name__}: {exc}")
             log.warning("job %s attempt %d failed: %s", name, attempt + 1, error)
             if attempt < retries:
                 time.sleep(backoff_s * 2**attempt)

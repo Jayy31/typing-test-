@@ -204,6 +204,11 @@ class PositionState:
         return sum(f.fraction * (f.price / self.entry - 1) * 100 for f in self.fills)
 
 
+def _snap(fraction: float, lots: int) -> float:
+    """Remaining position as an exact multiple of 1/lots (no rounding drift across fills)."""
+    return round(fraction * lots) / lots if lots else round(fraction, 9)
+
+
 def _close(
     state: PositionState,
     event: str,
@@ -275,7 +280,7 @@ def step(state: PositionState, bar: Bar, rules: ExitRules) -> PositionState:
         state = replace(
             state,
             targets_hit=hit,
-            remaining=round(state.remaining - frac, 6),
+            remaining=_snap(state.remaining - frac, rules.lots),
             stop=stop,
             fills=new_fills,
             closed=last or state.remaining - frac <= 1e-9,

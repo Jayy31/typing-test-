@@ -84,7 +84,11 @@ def run_paths(
             last = k == nt - 1
             frac = remaining.copy() if last else np.minimum(rules.book_fractions[k], remaining)
             fill(m, f"T{k + 1}", frac, np.maximum(targets[k], p))
-            remaining[m] = np.round(remaining[m] - frac[m], 6)
+            remaining[m] = (
+                np.round((remaining[m] - frac[m]) * rules.lots) / rules.lots
+                if rules.lots
+                else np.round(remaining[m] - frac[m], 9)
+            )  # exact multiples of 1/lots, like the pure module
             hit[m] = k + 1
             if k + 1 >= rules.trail_after:
                 stop[m] = np.maximum(stop[m], targets[rules.trail_after - 2])

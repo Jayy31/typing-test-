@@ -360,6 +360,9 @@ def fit_calibrators() -> int:
 
 def main() -> None:
     logging.basicConfig(level=get_settings().log_level)
+    from app import logsafe
+
+    logsafe.install()  # secrets never reach the logs
     for noisy in ("httpx", "httpcore"):  # their INFO logs print full URLs (bot token!)
         logging.getLogger(noisy).setLevel(logging.WARNING)
     log.info("worker starting")

@@ -177,9 +177,18 @@ def candidate_changes(
                     "months": months,
                 },
             }
-            if ok and (best is None or effect > best["expected_effect"]):
+            row["_effect"], row["_step"] = effect, abs(float(v) - cur[p])
+            # largest effect; on a tie the smaller change (less to undo if it does not hold up)
+            better = (
+                best is None
+                or effect > best["_effect"] + 1e-9
+                or (abs(effect - best["_effect"]) <= 1e-9 and row["_step"] < best["_step"])
+            )
+            if ok and better:
                 best = row
         if best:
+            best.pop("_effect")
+            best.pop("_step")
             out.append(best)
     return sorted(out, key=lambda r: -r["expected_effect"])
 
@@ -381,6 +390,9 @@ def merge_monthly(
         return 0
     start = datetime.combine(month_start(now.date()), time(0), IST)
     with session_scope(engine) as s:
+        done = s.scalars(select(Suggestion).where(Suggestion.applied_at.is_not(None))).all()
+        if any(g.applied_at and as_ist(g.applied_at) >= start for g in done):
+            return 0  # one change per month, even if the job runs again
         ready = [
             g
             for g in s.scalars(

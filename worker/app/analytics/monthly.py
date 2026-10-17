@@ -318,11 +318,11 @@ def pdf(text: str, summary: str | None, path: Path) -> Path:
     doc.add_page()
     lines = text.splitlines()
     doc.set_font("Helvetica", "B", 15)
-    doc.multi_cell(0, 8, _latin(lines[0]))
+    doc.multi_cell(0, 8, _latin(lines[0]), new_x="LMARGIN", new_y="NEXT")
     doc.ln(2)
     if summary:
         doc.set_font("Helvetica", "I", 10)
-        doc.multi_cell(0, 5, _latin(summary))
+        doc.multi_cell(0, 5, _latin(summary), new_x="LMARGIN", new_y="NEXT")
         doc.ln(3)
     for ln in lines[1:]:
         if ln and ln.isupper() and not ln.startswith(" "):
@@ -330,7 +330,7 @@ def pdf(text: str, summary: str | None, path: Path) -> Path:
             doc.set_font("Helvetica", "B", 11)
         else:
             doc.set_font("Helvetica", "", 9)
-        doc.multi_cell(0, 5, _latin(ln) or " ")
+        doc.multi_cell(0, 5, _latin(ln) or " ", new_x="LMARGIN", new_y="NEXT")
     path.parent.mkdir(parents=True, exist_ok=True)
     doc.output(str(path))
     return path

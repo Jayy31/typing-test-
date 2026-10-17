@@ -125,16 +125,22 @@ def test_owner_can_only_decide_pending_suggestions(db, monkeypatch: pytest.Monke
     sync_owner(db)
     with db.begin() as c:
         for i, status in ((1, "pending"), (2, "applied")):
-            c.execute(text(
-                "INSERT INTO suggestions (id, month, kind, param, file, yaml_path, current_value, proposed_value, "
-                f"expected_effect, evidence_json, status) VALUES ({i}, '2026-10-01', 'change', 'p{i}', 'f', 'a.b', 1, 2, 3, '{{}}', '{status}')"
-            ))
+            c.execute(
+                text(
+                    "INSERT INTO suggestions (id, month, kind, param, file, yaml_path, current_value, proposed_value, "
+                    f"expected_effect, evidence_json, status) VALUES ({i}, '2026-10-01', 'change', 'p{i}', 'f', 'a.b', 1, 2, 3, '{{}}', '{status}')"
+                )
+            )
     with db.begin() as c:
         _as(c, "owner@example.com")
         assert _try(c, "UPDATE suggestions SET status = 'accepted' WHERE id = 1")
         assert not _try(c, "UPDATE suggestions SET proposed_value = 99 WHERE id = 1")  # status only
-        c.execute(text("UPDATE suggestions SET status = 'rejected' WHERE id = 2"))  # not pending: no row matches
-        c.execute(text("UPDATE suggestions SET status = 'applied' WHERE id = 1"))  # no longer pending: no-op
+        c.execute(
+            text("UPDATE suggestions SET status = 'rejected' WHERE id = 2")
+        )  # not pending: no row matches
+        c.execute(
+            text("UPDATE suggestions SET status = 'applied' WHERE id = 1")
+        )  # no longer pending: no-op
         c.execute(text("RESET ROLE"))
     with db.connect() as c:
         rows = dict(c.execute(text("SELECT id, status FROM suggestions")).all())
