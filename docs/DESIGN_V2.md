@@ -416,3 +416,29 @@ Added by the owner after Phase 3a. Values in config; nothing here is auto-applie
 - **H6 Sector benchmark.** Abnormal return vs the stock's sector index (map in `history.yaml`),
   falling back to Nifty 50; both stored. Market-wide event types (policy, macro, geopolitical,
   commodity) always use Nifty 50.
+
+### Owner decisions for Phase 5 (multi-agent, probabilities, calibration)
+- **Panel**: researcher + novelty (cheap) -> bull + bear in parallel (mid) -> judge (strongest),
+  all citations checked against the provided news ids. At most `AI_MULTI_AGENT_MAX_PER_DAY` (4)
+  panels per day for the top candidates by pre-AI rank, then the single analyst up to
+  `AI_SINGLE_ANALYST_MAX_PER_DAY` (5), then rejected as `ai_cap`. Every prediction is tagged
+  `panel` or `single`; scorecard, calibration, /stats and the digest report them separately
+  and combined.
+- **Budget reserve**: `AI_TAGGER_RESERVE_INR` (15/day) is kept back from both caps for the live
+  tagger. Panel, single analyst and post-mortems pause first; the health alert names what paused.
+- **Calibration**: Platt scaling from `CALIBRATION_MIN_RECORDS` (50), isotonic from
+  `CALIBRATION_ISOTONIC_MIN` (200); the method in use is stored on each signal and shown in /why
+  and the digest. Records are grouped by originating news event (cluster): each event weighs one
+  when fitting and in the Brier score; reports show records and independent events. Only
+  predictions after `AI_MODEL_KNOWLEDGE_CUTOFF` count (R1). Targets: `p_move` (scorecard) and
+  `p_t1_before_sl` (paper trade or counterfactual replay).
+- **How calibration reaches EV**: the simulated probability and EV are linear in the share of AI
+  scenario paths (the rest follow the market distribution). Before calibration that share is
+  `SCENARIO_SHRINK_WEIGHT`; after, it is the share that reproduces the calibrated probability
+  (`p_move` calibrator for the predicted move / edge ratio, `p_t1` calibrator per candidate for
+  EV and the probability gate).
+- **Selection gates** (config `options.yaml` `selection`): EV > 0 and >= 10% of premium,
+  P(T1 before SL) >= 0.55, plus the edge-ratio gate.
+- **Prices** live in `config/ai.yaml` per model id (checked 2026-10-17), tier fallback.
+- **Post-mortems** (B4) use the mid model with a fixed cause list; the **weekly digest** (R3) is
+  rule-based (no AI cost) and only suggests.
