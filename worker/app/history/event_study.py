@@ -384,22 +384,37 @@ def weighted_quantile(values: np.ndarray, weights: np.ndarray, q: float) -> floa
     return float(np.interp(q * w.sum(), cum, v))
 
 
-def compute_stats(con: duckdb.DuckDBPyConnection) -> int:
-    """Direction-adjusted, weighted abnormal-return statistics for analogue lookup. Several
-    articles about the same event (same stock, type, direction, reaction day) count once."""
-    vix = dict(
-        con.execute(
-            "SELECT date, close FROM hist_index WHERE lower(index_name) = 'india vix'"
-        ).fetchall()
-    )
-    data = con.execute("""
+def reaction_rows(
+    con: duckdb.DuckDBPyConnection, before: date | None = None
+) -> list[tuple[Any, ...]]:
+    """One row per (event cluster, window): (event_type, sector, symbol, window, direction,
+    reaction_day, weight, abnormal %). Several articles about the same event count once.
+    `before`: only reactions whose whole 10-day window ended before this date (backtests)."""
+    rows = con.execute("""
         SELECT e.event_type, e.sector, r.symbol, r."window", e.direction, r.reaction_day,
                max(r.weight) AS w, arg_max(r.abnormal_ret, r.weight) AS abn
         FROM event_reactions r JOIN hist_events e USING (event_id)
         WHERE e.direction IN ('bullish', 'bearish') AND r."window" >= 0 AND r.weight > 0
         GROUP BY ALL""").fetchall()
+    if before is None:
+        return rows
+    cal = [r[0] for r in con.execute("SELECT DISTINCT date FROM hist_prices ORDER BY 1").fetchall()]
+    horizon = max(int(w) for w in _cfg()["windows"])
+
+    def window_end(d: date) -> date:
+        i = bisect.bisect_left(cal, d) + horizon
+        return cal[i] if i < len(cal) else date.max
+
+    return [r for r in rows if window_end(r[5]) < before]
+
+
+def aggregate(
+    rows: list[tuple[Any, ...]], vix: dict[date, float]
+) -> dict[tuple[Any, ...], tuple[Any, ...]]:
+    """Weighted, direction-adjusted stats per (event_type, sector, symbol, regime, window):
+    (n, n_eff, mean, median, hit_rate, std, p25, p75)."""
     groups: dict[tuple[Any, ...], list[tuple[float, float]]] = defaultdict(list)
-    for etype, sector, sym, w, direction, d, wt, abn in data:
+    for etype, sector, sym, w, direction, d, wt, abn in rows:
         signed = abn if direction == "bullish" else -abn
         for reg in dict.fromkeys((regime(vix, d), "all")):
             for key in (
@@ -408,31 +423,38 @@ def compute_stats(con: duckdb.DuckDBPyConnection) -> int:
                 (etype, None, None, reg, w),
             ):
                 groups[key].append((signed, wt))
-    con.execute("DELETE FROM analogue_stats")
-    now = datetime.now().replace(microsecond=0)
-    out = []
-    for (etype, sector, sym, reg, w), vals in groups.items():
+    out: dict[tuple[Any, ...], tuple[Any, ...]] = {}
+    for key, vals in groups.items():
         a = np.array([v for v, _ in vals])
         wt = np.array([x for _, x in vals])
         mean = float(np.average(a, weights=wt))
-        out.append(
-            (
-                etype,
-                sector,
-                sym,
-                reg,
-                w,
-                len(a),
-                float(wt.sum()),
-                mean,
-                weighted_quantile(a, wt, 0.5),
-                float(np.average(a > 0, weights=wt)),
-                float(np.sqrt(np.average((a - mean) ** 2, weights=wt))),
-                weighted_quantile(a, wt, 0.25),
-                weighted_quantile(a, wt, 0.75),
-                now,
-            )
+        out[key] = (
+            len(a),
+            float(wt.sum()),
+            mean,
+            weighted_quantile(a, wt, 0.5),
+            float(np.average(a > 0, weights=wt)),
+            float(np.sqrt(np.average((a - mean) ** 2, weights=wt))),
+            weighted_quantile(a, wt, 0.25),
+            weighted_quantile(a, wt, 0.75),
         )
+    return out
+
+
+def vix_series(con: duckdb.DuckDBPyConnection) -> dict[date, float]:
+    return dict(
+        con.execute(
+            "SELECT date, close FROM hist_index WHERE lower(index_name) = 'india vix'"
+        ).fetchall()
+    )
+
+
+def compute_stats(con: duckdb.DuckDBPyConnection) -> int:
+    """Direction-adjusted, weighted abnormal-return statistics for analogue lookup."""
+    stats = aggregate(reaction_rows(con), vix_series(con))
+    con.execute("DELETE FROM analogue_stats")
+    now = datetime.now().replace(microsecond=0)
+    out = [(*key, *vals, now) for key, vals in stats.items()]
     con.executemany(
         "INSERT INTO analogue_stats VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", out
     )
