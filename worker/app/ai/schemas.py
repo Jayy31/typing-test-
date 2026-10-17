@@ -84,3 +84,96 @@ class AnalystOutput(BaseModel):
                 f"need 2-5 scenarios with probabilities summing to 1 (got {total:.2f})"
             )
         return self
+
+
+def _check_scenarios(scenarios: list[Scenario]) -> None:
+    total = sum(s.probability for s in scenarios)
+    if not 2 <= len(scenarios) <= 5 or abs(total - 1.0) > 0.02:
+        raise ValueError(f"need 2-5 scenarios with probabilities summing to 1 (got {total:.2f})")
+
+
+# ---- multi-agent panel (Phase 5) ------------------------------------------------------
+class Fact(BaseModel):
+    fact: str
+    confirmed: bool = Field(description="Official filing or several independent sources")
+    news_ids: list[int] = Field(description="Ids of the provided news items stating this fact")
+
+
+class ResearchOutput(BaseModel):
+    """Researcher (cheap model): facts only, no opinion on direction."""
+
+    facts: list[Fact]
+    key_numbers: list[str] = Field(description="Numbers that matter (amounts, %, dates)")
+    open_questions: list[str] = Field(description="Unknown or contradictory points")
+    cited_news_ids: list[int]
+
+
+class NoveltyOutput(BaseModel):
+    """Novelty checker (cheap model): how new the information is and how much is priced in."""
+
+    novelty: float = Field(ge=0, le=1, description="0 = old/recap, 1 = brand-new material fact")
+    priced_in: Literal["not_priced", "partly", "fully"]
+    reasons: list[str]
+    cited_news_ids: list[int]
+
+
+class Argument(BaseModel):
+    point: str
+    news_ids: list[int] = Field(description="Ids of the provided news items this rests on")
+
+
+class CaseOutput(BaseModel):
+    """Bull or bear advocate (mid model): the strongest honest case for one side."""
+
+    side: Literal["bull", "bear"]
+    thesis: str
+    arguments: list[Argument]
+    weaknesses: list[str] = Field(description="Weak points of this case")
+    expected_move_pct: float = Field(ge=0, le=50, description="Absolute stock move in % if right")
+    window_days: int = Field(ge=1, le=30)
+    confidence: Literal["low", "medium", "high"]
+    scenarios: list[Scenario] = Field(description="2-5 scenarios whose probabilities sum to 1")
+    cited_news_ids: list[int]
+
+    @model_validator(mode="after")
+    def _scenarios_ok(self) -> "CaseOutput":
+        _check_scenarios(self.scenarios)
+        return self
+
+
+class JudgeOutput(AnalystOutput):
+    """Judge (strongest model): the final view. Same fields as the single analyst plus the
+    ruling, so everything downstream treats panel and single predictions alike."""
+
+    winning_side: Literal["bull", "bear", "neither"]
+    rejected_side_reasons: list[str] = Field(description="Why the losing case (or both) failed")
+
+
+# ---- post-mortems (B4) ----------------------------------------------------------------
+PostMortemCause = Literal[
+    "thesis_right",
+    "thesis_wrong",
+    "timing",
+    "priced_in",
+    "iv_crush",
+    "theta_decay",
+    "slippage_gap",
+    "liquidity",
+    "market_move",
+    "news_reversal",
+    "exit_rules",
+    "lucky",
+    "other",
+]
+
+
+class PostMortemOutput(BaseModel):
+    primary_cause: PostMortemCause
+    secondary_causes: list[PostMortemCause]
+    thesis_correct: bool | None = Field(
+        description="Did the stock move as the thesis said? null if unclear"
+    )
+    summary: str = Field(description="2-3 sentences")
+    what_went_right: list[str]
+    what_went_wrong: list[str]
+    lessons: list[str]

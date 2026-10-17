@@ -40,3 +40,12 @@ simulator:
 
 implied_move:
   edge_gate_flag: feat.implied_move_gate   # gate threshold comes from env EDGE_RATIO_MIN
+
+# Selection gates (owner rules, Phase 5). Applied to the best candidate after the edge-ratio gate
+# (EDGE_RATIO_MIN). EV is % of the entry premium after costs. Probabilities and EV come from the
+# calibrated simulation once a calibrator exists, else from the shrunk one.
+selection:
+  enabled: true
+  min_ev_pct: 0                 # EV must be above this ...
+  min_ev_pct_of_premium: 10     # ... and at least this % of the premium
+  min_p_t1_before_sl: 0.55

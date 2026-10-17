@@ -160,6 +160,7 @@ class Analysis(Base):
     model: Mapped[str | None] = mapped_column(String(128))
     prompt_ver: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+    prediction_source: Mapped[str | None] = mapped_column(String(8))  # panel / single (Phase 5)
 
 
 class Signal(Base):
@@ -218,6 +219,10 @@ class Signal(Base):
     )  # stock move in our direction before signal
     data_age_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
     theme_key: Mapped[str | None] = mapped_column(String(64), index=True)  # overlap grouping (A5)
+    # Phase 5: who made the prediction and how probabilities were calibrated
+    prediction_source: Mapped[str | None] = mapped_column(String(8))  # panel / single
+    calibration_method: Mapped[str | None] = mapped_column(String(16))  # shrink / platt / isotonic
+    ai_weight: Mapped[float | None] = mapped_column(Float)  # share of AI paths in the EV simulation
 
 
 class SignalVersion(Base):
@@ -452,6 +457,10 @@ class Calibrator(Base):
     brier: Mapped[float | None] = mapped_column(Float)
     fitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     active: Mapped[bool] = mapped_column(Boolean, default=False)
+    source: Mapped[str] = mapped_column(
+        String(8), default="all", server_default="all"
+    )  # all/panel/single
+    n_events: Mapped[int | None] = mapped_column(Integer)  # independent news events (clusters)
 
 
 class CalibrationRecord(Base):
@@ -469,6 +478,14 @@ class CalibrationRecord(Base):
     outcome: Mapped[bool | None] = mapped_column(Boolean)
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Phase 5: `predicted` is the RAW model probability (calibrator input); predicted_used is what
+    # the gates used. cluster_key groups records from the same news event (weighted as one).
+    analysis_id: Mapped[int | None] = mapped_column(ForeignKey("analyses.id"), index=True)
+    rejection_id: Mapped[int | None] = mapped_column(ForeignKey("rejected_candidates.id"))
+    symbol: Mapped[str | None] = mapped_column(String(32))
+    source: Mapped[str | None] = mapped_column(String(8))  # panel / single
+    cluster_key: Mapped[str | None] = mapped_column(String(64), index=True)
+    predicted_used: Mapped[float | None] = mapped_column(Float)
 
 
 class KgNode(Base):
@@ -603,6 +620,7 @@ class PredictionScore(Base):
     predicted_move_pct: Mapped[float] = mapped_column(Float)  # our direction, shrunk (gating value)
     predicted_move_raw_pct: Mapped[float | None] = mapped_column(Float)  # AI scenario tree alone
     predicted_source: Mapped[str | None] = mapped_column(String(16))
+    prediction_source: Mapped[str | None] = mapped_column(String(8))  # panel / single
     p_move: Mapped[float | None] = mapped_column(Float)
     window_days: Mapped[int] = mapped_column(Integer)
     spot_start: Mapped[float] = mapped_column(Float)
@@ -619,3 +637,35 @@ class PredictionScore(Base):
     max_favourable_pct: Mapped[float | None] = mapped_column(Float)
     max_adverse_pct: Mapped[float | None] = mapped_column(Float)
     scored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PostMortem(Base):
+    """AI post-mortem of a closed paper trade (v2.1 B4)."""
+
+    __tablename__ = "post_mortems"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    trade_id: Mapped[int] = mapped_column(ForeignKey("paper_trades.id"), unique=True)
+    analysis_id: Mapped[int | None] = mapped_column(ForeignKey("analyses.id"))
+    prediction_source: Mapped[str | None] = mapped_column(String(8))
+    primary_cause: Mapped[str] = mapped_column(String(24), index=True)
+    secondary_causes: Mapped[list[str] | None] = mapped_column(Json)
+    thesis_correct: Mapped[bool | None] = mapped_column(Boolean)
+    summary: Mapped[str] = mapped_column(Text)
+    output_json: Mapped[dict[str, Any]] = mapped_column(Json)
+    model: Mapped[str] = mapped_column(String(128))
+    prompt_ver: Mapped[str] = mapped_column(String(32))
+    cost_inr: Mapped[float] = mapped_column(Float, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class Digest(Base):
+    """Weekly review digest (DESIGN_V2 R3): suggestions only, never applied automatically."""
+
+    __tablename__ = "digests"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    week_start: Mapped[date] = mapped_column(Date, unique=True)
+    text: Mapped[str] = mapped_column(Text)
+    data_json: Mapped[dict[str, Any]] = mapped_column(Json)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())

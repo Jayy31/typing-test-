@@ -11,9 +11,11 @@ from sqlalchemy.orm import Session
 from app import flags
 from app.ai import analyst
 from app.ai.client import AiClient, AiOutputError, BudgetExceededError
-from app.ai.schemas import AnalystOutput, Scenario
+from app.ai.panel import PANEL_PROMPT_VERSION, AgentStep, run_panel
+from app.ai.schemas import AnalystOutput, JudgeOutput, Scenario
+from app.calibration import service as calibration
 from app.config import IST, get_settings
-from app.db.models import Analysis, Instrument, MacroSnapshot, Signal, SignalCandidate
+from app.db.models import AgentRun, Analysis, Instrument, MacroSnapshot, Signal, SignalCandidate
 from app.db.models import Scenario as ScenarioRow
 from app.db.session import session_scope
 from app.flags import ENGINE_VERSION
@@ -30,6 +32,7 @@ from app.signals.lifecycle import LifecycleEvent, apply_analysis, expire_stale, 
 from app.signals.options_stage import OptionPlan, candidate_rows_json, plan_options
 from app.signals.prediction import Prediction, combine, from_scenarios, shrink
 from app.signals.rejections import record_rejection
+from app.signals.routing import choose_mode, prescreen
 from app.signals.scoring import Score, compute_score
 from app.timeutil import as_ist
 from app.tracking.scorecard import create_score
@@ -48,6 +51,10 @@ class WorkItem:
     sector: str
     sub_sector: str | None
     analogue: AnalogueResult | None = None  # event-study base rate (Phase 4)
+    prescreen: float = 0.0  # pre-AI rank for the daily panel / analyst caps (Phase 5)
+    source: str = "single"  # panel / single
+    steps: list[AgentStep] | None = None  # agent outputs, stored in agent_runs
+    policy: calibration.Policy | None = None  # how the prediction is tempered (shrink/calibrated)
 
 
 def predict(item: WorkItem, out: AnalystOutput) -> tuple[Prediction | None, list[Scenario]]:
@@ -111,10 +118,20 @@ def plan_work(s: Session, now: datetime) -> tuple[list[WorkItem], dict[str, floa
             etypes = sorted(cand.event_types) or ["other"]
             analogue = lookup(etypes, inst.sector, cand.symbol, cand.direction, now.date())
         message, ids = analyst.build_user_message(s, cand, hits, changes, now, analogue)
-        work.append(WorkItem(cand, hits, message, ids, inst.sector, inst.sub_sector, analogue))
-        if len(work) >= int(cfg["max_analyses_per_cycle"]):
-            break
-    return work, changes
+        work.append(
+            WorkItem(
+                cand,
+                hits,
+                message,
+                ids,
+                inst.sector,
+                inst.sub_sector,
+                analogue,
+                prescreen(cand, hits),
+            )
+        )
+    work.sort(key=lambda w: -w.prescreen)  # strongest candidates get the panel first
+    return work[: int(cfg["max_analyses_per_cycle"])], changes
 
 
 def _option(direction: str) -> str | None:
@@ -130,9 +147,10 @@ def price_analysis(
 ) -> OptionPlan | None:
     """Options stage (network reads), only for a directional view with live data available."""
     pred, dist = predict(item, out)
-    if pred is None or source is None or not source.available:
-        return None
     with session_scope(engine) as s:
+        item.policy = calibration.policy(s, item.source, pred.p_move if pred else None)
+        if pred is None or source is None or not source.available:
+            return None
         if not flags.active(s, "feat.simulator"):
             return None
         inst = s.get(Instrument, item.cand.symbol)
@@ -150,6 +168,7 @@ def price_analysis(
             lot,
             now,
             engine,
+            item.policy,
         )
     except Exception as exc:  # noqa: BLE001 - degrade to "pricing pending", never lose the signal
         log.warning("options stage failed for %s: %s", item.cand.symbol, exc)
@@ -185,11 +204,13 @@ def store_result(
             direction="neutral",
             scores_json={**base, "failed": True},
             model=model,
-            prompt_ver=analyst.PROMPT_VERSION,
+            prompt_ver=_prompt_ver(item),
             created_at=now,
+            prediction_source=item.source,
         )
         s.add(failed)
         s.flush()
+        _store_agent_runs(s, failed.id, item)
         record_rejection(
             s,
             dedupe_key=f"analysis:{cand.symbol}:{failed.id}",
@@ -246,14 +267,19 @@ def store_result(
             "cited_news_ids": out.cited_news_ids,
             "analogue_notes": out.analogue_notes,
             "options": _plan_json(plan),
+            "prediction_source": item.source,
+            "calibration": _policy_json(item.policy),
+            "panel": _panel_json(out),
         },
         confidence=out.confidence,
         model=model,
-        prompt_ver=analyst.PROMPT_VERSION,
+        prompt_ver=_prompt_ver(item),
         created_at=now,
+        prediction_source=item.source,
     )
     s.add(analysis)
     s.flush()
+    _store_agent_runs(s, analysis.id, item)
     for sc in out.scenarios:
         s.add(
             ScenarioRow(
@@ -302,10 +328,11 @@ def _score_prediction(
 ) -> None:
     """Every directional prediction with a known starting price goes on the scorecard (v2.1 B3)."""
     pred, _ = predict(item, out)
+    new = next((ev.signal_id for ev in events if ev.kind == "new"), None)
+    _calibration_records(s, analysis, item, pred, plan, new)
     if pred is None or plan is None or plan.spot is None:
         return
-    shrunk = shrink(pred, float(get_settings().scenario_shrink_weight))
-    new = next((ev.signal_id for ev in events if ev.kind == "new"), None)
+    shrunk = shrink(pred, _move_weight(item))
     create_score(
         s,
         analysis,
@@ -317,7 +344,90 @@ def _score_prediction(
         now,
         new,
         pred.source,
+        item.source,
     )
+
+
+def _move_weight(item: WorkItem) -> float:
+    if item.policy is not None:
+        return item.policy.move_weight
+    return min(max(float(get_settings().scenario_shrink_weight), 0.0), 1.0)
+
+
+def _prompt_ver(item: WorkItem) -> str:
+    return PANEL_PROMPT_VERSION if item.source == "panel" else analyst.PROMPT_VERSION
+
+
+def _store_agent_runs(s: Session, analysis_id: int, item: WorkItem) -> None:
+    for st in item.steps or []:
+        s.add(
+            AgentRun(
+                analysis_id=analysis_id,
+                agent=st.agent,
+                model=st.usage.model if st.usage else "",
+                prompt_ver=st.prompt_ver,
+                input_refs={"news_ids": sorted(item.provided_ids), "source": item.source},
+                output_json=st.output if st.output is not None else {"error": st.error},
+                input_tokens=st.usage.input_tokens if st.usage else 0,
+                output_tokens=st.usage.output_tokens if st.usage else 0,
+                cost_inr=st.usage.cost_inr if st.usage else 0.0,
+            )
+        )
+
+
+def _calibration_records(
+    s: Session,
+    analysis: Analysis,
+    item: WorkItem,
+    pred: Prediction | None,
+    plan: OptionPlan | None,
+    signal_id: int | None,
+) -> None:
+    """Raw model probabilities for later calibration (directional predictions only)."""
+    pol = item.policy
+    if pred is not None and pred.p_move is not None:
+        used = shrink(pred, _move_weight(item)).p_move
+        calibration.add_record(
+            s,
+            analysis,
+            "p_move",
+            pred.p_move,
+            used,
+            item.source,
+            pol.move_cal.id if pol and pol.move_cal else None,
+            signal_id,
+        )
+    best = plan.best_reference if plan else None
+    if best is not None and best.raw is not None and best.result is not None:
+        calibration.add_record(
+            s,
+            analysis,
+            "p_t1_before_sl",
+            best.raw.p_t1_before_sl,
+            best.result.p_t1_before_sl,
+            item.source,
+            pol.t1_cal.id if pol and pol.t1_cal else None,
+            signal_id,
+        )
+
+
+def _policy_json(p: calibration.Policy | None) -> dict[str, Any] | None:
+    if p is None:
+        return None
+    return {
+        "method": p.method,
+        "move_weight": round(p.move_weight, 4),
+        "shrink": p.shrink,
+        "move_calibrator": p.move_cal.label() if p.move_cal else None,
+        "t1_calibrator": p.t1_cal.label() if p.t1_cal else None,
+        "calibrator_id": p.calibrator_id,
+    }
+
+
+def _panel_json(out: AnalystOutput) -> dict[str, Any] | None:
+    if not isinstance(out, JudgeOutput):
+        return None
+    return {"winning_side": out.winning_side, "rejected_side_reasons": out.rejected_side_reasons}
 
 
 def _plan_json(plan: OptionPlan | None) -> dict[str, Any] | None:
@@ -398,9 +508,7 @@ def _record_not_signalled(
         score=score.final,
         analysis_id=analysis.id,
         spot_at_reject=plan.spot if plan else None,
-        predicted_move_pct=(
-            shrink(pred, float(get_settings().scenario_shrink_weight)).move_pct if pred else None
-        ),
+        predicted_move_pct=shrink(pred, _move_weight(item)).move_pct if pred else None,
         window_days=out.window_days,
         ref_expiry=best.row.expiry if best else None,
         ref_strike=best.row.strike if best else None,
@@ -424,11 +532,21 @@ def stamp_signal(
 ) -> None:
     """Configuration provenance, prediction, option choice, EV and latency on a live signal."""
     sig.engine_version = ENGINE_VERSION
-    sig.flags_json = flags.snapshot(s)
-    w = float(get_settings().scenario_shrink_weight)
+    snap = flags.snapshot(s)
+    if item is not None:  # what actually ran for THIS signal, not just what is switched on
+        snap["feat.multi_agent"]["active"] = (
+            snap["feat.multi_agent"]["active"] and item.source == "panel"
+        )
+        used_cal = item.policy is not None and item.policy.method != "shrink"
+        snap["feat.probabilities"]["active"] = snap["feat.probabilities"]["active"] and used_cal
+    sig.flags_json = snap
+    w = _move_weight(item) if item is not None else float(get_settings().scenario_shrink_weight)
     pred = (
         predict(item, out)[0] if item is not None else from_scenarios(out.scenarios, out.direction)
     )
+    if item is not None:
+        sig.prediction_source = item.source
+        sig.calibration_method = item.policy.method if item.policy else "shrink"
     if pred is not None:
         shrunk = shrink(pred, w)
         sig.shrink_weight = w
@@ -454,6 +572,9 @@ def stamp_signal(
         sig.pricing_status = "pending"
         return
     sig.pricing_status = "priced" if plan.chosen else plan.status
+    sig.calibrator_id = plan.calibrator_id
+    sig.calibration_method = plan.calibration_method
+    sig.ai_weight = plan.chosen.ai_weight if plan.chosen else None
     sig.premove_pct = plan.premove_pct
     sig.implied_move_pct = plan.implied_move_pct
     sig.edge_ratio = plan.edge_ratio
@@ -607,6 +728,16 @@ def sector_watch(s: Session, now: datetime) -> int:
     return sent
 
 
+def _threads_ok(engine: Engine | None) -> bool:
+    """Bull and bear run in parallel threads, except on SQLite (tests share one connection)."""
+    eng = engine
+    if eng is None:
+        from app.db.session import get_engine
+
+        eng = get_engine()
+    return eng.dialect.name != "sqlite"
+
+
 def run_signal_cycle(
     engine: Engine | None = None, ai: AiClient | None = None, source: UpstoxOptionData | None = None
 ) -> int:
@@ -619,26 +750,52 @@ def run_signal_cycle(
     if not work:
         return 0
     ai = ai or AiClient(engine=engine)
-    model = ai.model_for("analyst")
     done = 0
     source = source or UpstoxOptionData(engine)
     for item in work:
-        out, error = None, None
+        with session_scope(engine) as s:
+            mode, why = choose_mode(s, ai, now)
+            if mode is None:
+                record_rejection(
+                    s,
+                    dedupe_key=f"ai_cap:{item.cand.symbol}:{item.cand.max_tag_id}",
+                    ts=now,
+                    symbol=item.cand.symbol,
+                    stage="ai_cap",
+                    reason=why,
+                    direction=item.cand.direction,
+                    score=item.prescreen,
+                )
+                continue
+        item.source = mode
+        out: AnalystOutput | None = None
+        error: str | None = None
         plan: OptionPlan | None = None
         try:
-            out = analyst.analyse(ai, item.message, item.provided_ids)
+            if mode == "panel":
+                res = run_panel(
+                    ai, item.message, item.provided_ids, None if _threads_ok(engine) else False
+                )
+                out, error, item.steps = res.out, res.error, res.steps
+                model = ai.model_for("judge")
+            else:
+                model = ai.model_for("analyst")
+                try:
+                    out, usage = analyst.analyse_with_usage(ai, item.message, item.provided_ids)
+                    item.steps = [
+                        AgentStep(
+                            "analyst", analyst.PROMPT_VERSION, out.model_dump(mode="json"), usage
+                        )
+                    ]
+                except AiOutputError as exc:
+                    error = str(exc)
         except BudgetExceededError as exc:
-            log.warning("AI budget reached; deep analysis paused")
+            log.warning("AI budget reached; deep analysis paused (%s)", exc)
             with session_scope(engine) as s:
                 enqueue_alert(
-                    s,
-                    "health",
-                    f"SYSTEM PROBLEM\nAI budget reached ({exc}). Deep analysis is paused.",
-                    f"budget:{now.date()}",
+                    s, "health", exc.alert_text(), f"budget:{exc.scope}:{exc.role}:{now.date()}"
                 )
             break
-        except AiOutputError as exc:
-            error = str(exc)
         if out is not None:
             plan = price_analysis(item, out, now, engine, source)
         with session_scope(engine) as s:

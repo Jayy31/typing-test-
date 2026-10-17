@@ -31,7 +31,13 @@ class Settings(BaseSettings):
     ai_model_bull: str = ""  # mid
     ai_model_bear: str = ""  # mid
     ai_model_judge: str = ""  # strongest
-    ai_multi_agent_max_per_day: int = 30
+    # Phase 5 daily caps: full panels (researcher, novelty, bull, bear, judge) for the top
+    # candidates, then the single analyst for overflow, then 'skipped for budget'
+    ai_multi_agent_max_per_day: int = 4
+    ai_single_analyst_max_per_day: int = 5
+    # Kept back from the daily/monthly caps for the live tagger: panel, analyst and post-mortem
+    # calls pause first when a cap is near
+    ai_tagger_reserve_inr: float = 15
     # Latest training cutoff of any AI model used (YYYY-MM-DD). Before it, AI gives labels only
     # (DESIGN_V2 "Research integrity" R1); empty = treat all history as contaminated.
     ai_model_knowledge_cutoff: str = ""
@@ -80,6 +86,11 @@ class Settings(BaseSettings):
     # Analogue weight = n / (n + prior); analogues ignored below the minimum number of events
     analogue_prior_n: float = 20
     analogue_min_n: int = 5
+
+    # Calibration (Phase 5): Platt scaling from CALIBRATION_MIN_RECORDS independent outcomes,
+    # isotonic from CALIBRATION_ISOTONIC_MIN
+    calibration_min_records: int = 50
+    calibration_isotonic_min: int = 200
 
     # Optional Cloudflare R2 backup of the Parquet history (Phase 4), off by default
     r2_backup_enabled: bool = False

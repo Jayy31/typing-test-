@@ -44,6 +44,60 @@ def analogue_lines(a: dict[str, Any]) -> list[str]:
     ]
 
 
+SOURCE_NAMES = {
+    "panel": "multi-agent panel (researcher, novelty, bull, bear, judge)",
+    "single": "single analyst",
+}
+
+
+def calibration_lines(sig: Signal, cal: dict[str, Any] | None) -> list[str]:
+    """Which calibration method produced the probabilities (owner rule: always shown)."""
+    method = sig.calibration_method or (cal or {}).get("method") or "shrink"
+    if method == "shrink" or not sig.calibrator_id:
+        w = sig.shrink_weight if sig.shrink_weight is not None else (cal or {}).get("shrink")
+        share = f"{w:.0%} AI / {1 - w:.0%} market" if w is not None else "configured shrink"
+        return [f"  Probabilities are NOT YET CALIBRATED: shrunk toward the market ({share})."]
+    used = [x for x in ((cal or {}).get("t1_calibrator"), (cal or {}).get("move_calibrator")) if x]
+    w = f"; AI share of simulated paths {sig.ai_weight:.0%}" if sig.ai_weight is not None else ""
+    return [f"  Calibrated with {method}: {', '.join(used) or method}{w}."]
+
+
+def debate_lines(runs: list[AgentRun], panel: dict[str, Any] | None) -> list[str]:
+    if not runs or all(r.agent == "analyst" for r in runs):
+        return []
+    by = {r.agent: (r.output_json or {}) for r in runs}
+    out = ["", "PANEL DEBATE"]
+    if "researcher" in by:
+        facts = by["researcher"].get("facts") or []
+        out.append(
+            f"  Researcher: {len(facts)} fact(s); "
+            + "; ".join(str(f.get("fact"))[:90] for f in facts[:3])
+        )
+    if "novelty" in by:
+        n = by["novelty"]
+        out.append(
+            f"  Novelty: {n.get('novelty')} ({n.get('priced_in')}): "
+            + "; ".join(n.get("reasons") or [])[:160]
+        )
+    for side in ("bull", "bear"):
+        if side in by:
+            c = by[side]
+            out.append(
+                f"  {side.capitalize()} ({c.get('confidence')}, {c.get('expected_move_pct')}%): {str(c.get('thesis'))[:200]}"
+            )
+    if panel:
+        out.append(
+            f"  Judge: {panel.get('winning_side')} case won; rejected because: "
+            + "; ".join(panel.get("rejected_side_reasons") or [])[:240]
+        )
+    cost = sum(r.cost_inr or 0 for r in runs)
+    out.append(f"  Panel cost Rs {cost:.1f} ({len(runs)} agent calls)")
+    errors = [r.agent for r in runs if "error" in (r.output_json or {})]
+    if errors:
+        out.append(f"  Failed agents: {', '.join(errors)}")
+    return out
+
+
 def build_why(s: Session, signal_id: int) -> str | None:
     sig = s.get(Signal, signal_id)
     if sig is None:
@@ -164,8 +218,10 @@ def build_why(s: Session, signal_id: int) -> str | None:
 
     out += ["", "PREDICTION"]
     out += [f"  {line}" for line in v2_lines(sig)] or ["  no prediction yet"]
-    if not sig.calibrator_id:
-        out.append("  Probabilities are NOT YET CALIBRATED (no calibrator fitted on outcomes yet).")
+    out += calibration_lines(sig, js.get("calibration"))
+    out.append(
+        f"  Prediction by: {SOURCE_NAMES.get(sig.prediction_source or js.get('prediction_source') or '', 'single analyst')}"
+    )
     scen = s.scalars(select(ScenarioRow).where(ScenarioRow.analysis_id == an.id)).all()
     out += ["", "SCENARIO TREE"]
     out += [
@@ -174,9 +230,7 @@ def build_why(s: Session, signal_id: int) -> str | None:
         for r in scen
     ] or ["  none recorded"]
     runs = s.scalars(select(AgentRun).where(AgentRun.analysis_id == an.id)).all()
-    if runs:
-        out += ["", "DEBATE (bull / bear / judge)"]
-        out += [f"  {r.agent}: {str((r.output_json or {}).get('summary', ''))[:200]}" for r in runs]
+    out += debate_lines(list(runs), js.get("panel"))
     out += [
         "",
         "ENGINE",

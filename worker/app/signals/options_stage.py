@@ -15,6 +15,7 @@ from sqlalchemy import Engine, select
 
 from app import flags
 from app.ai.schemas import Scenario
+from app.calibration.service import Policy, weight_for
 from app.config import get_settings
 from app.db.models import EventCalendar, OptionQuote
 from app.db.session import session_scope
@@ -23,7 +24,14 @@ from app.market.live import UpstoxOptionData, atm_iv, iv_percentile
 from app.market.options import OptionChain, OptionQuoteRow
 from app.signals.expiry import trading_days_between
 from app.signals.filters import load_holidays
-from app.sim.simulator import CandidateInput, SimResult, evaluate, seed_for, simulate_stock
+from app.sim.simulator import (
+    CandidateInput,
+    SimResult,
+    blend_results,
+    evaluate,
+    seed_for,
+    simulate_stock,
+)
 from app.timeutil import as_ist
 from app.trading.exits import ExitRules
 from app.yaml_config import load_yaml
@@ -35,8 +43,12 @@ log = logging.getLogger(__name__)
 class EvaluatedCandidate:
     row: OptionQuoteRow
     input: CandidateInput | None
-    result: SimResult | None
+    result: SimResult | None  # what gates/ranking use (AI paths at `ai_weight`, rest market)
     rejected_reason: str | None
+    raw: SimResult | None = None  # AI scenario paths only (calibrator input)
+    market: SimResult | None = None  # market paths only
+    ai_weight: float | None = None
+    p_t1_calibrated: float | None = None
 
 
 @dataclass
@@ -54,7 +66,9 @@ class OptionPlan:
     implied_move_pct: float | None = None
     edge_ratio: float | None = None  # shrunk prediction / implied (used for the gate)
     edge_ratio_raw: float | None = None  # raw AI prediction / implied (reported)
-    ai_weight: float = 1.0
+    ai_weight: float = 1.0  # prediction-level weight (move, edge ratio, pre-move check)
+    calibration_method: str = "shrink"
+    calibrator_id: int | None = None
     predicted_move_raw: float | None = None
     predicted_move: float | None = None  # shrunk toward the market until calibration
     raw_result: SimResult | None = None  # chosen candidate simulated with AI-only paths
@@ -154,11 +168,13 @@ def plan_options(
     lot_size: int,
     now: datetime,
     engine: Engine | None = None,
+    policy: Policy | None = None,
 ) -> OptionPlan:
     settings = get_settings()
-    # Until calibration, gates and ranking use the prediction shrunk toward the market
-    # (DESIGN_V2 R-shrink): raw AI values are kept alongside for reporting.
-    ai_w = min(max(float(settings.scenario_shrink_weight), 0.0), 1.0)
+    # Gates and ranking use the prediction tempered toward the market: by the configured shrink
+    # until a calibrator exists, then by the calibrated weight (Phase 5). Raw AI values are kept.
+    shrink = min(max(float(settings.scenario_shrink_weight), 0.0), 1.0)
+    ai_w = policy.move_weight if policy else shrink
     predicted_raw = predicted_move_pct
     predicted_move_pct = predicted_raw * ai_w
     opt_type = "CE" if direction == "bullish" else "PE"
@@ -168,6 +184,8 @@ def plan_options(
     plan = OptionPlan(
         status="priced",
         ai_weight=ai_w,
+        calibration_method=policy.method if policy else "shrink",
+        calibrator_id=policy.calibrator_id if policy else None,
         predicted_move_raw=predicted_raw,
         predicted_move=round(predicted_move_pct, 3),
     )
@@ -243,14 +261,13 @@ def plan_options(
     max_td = max(trading_days_between(today, c.expiry, holidays) for c in chains)
     horizon = max(1, min(int(sim_cfg["horizon_cap_days"]), max_td - rules.time_stop_trading_days))
     daily_vol = (plan.atm_iv_pct or 30.0) / 100 / (252**0.5)
-    stock = simulate_stock(
-        quote.last_price,
-        scenarios,
-        daily_vol,
-        horizon,
-        settings.mc_paths,
-        seed_for(f"{symbol}:{now:%Y%m%d}"),
-        ai_weight=ai_w,
+    seed = seed_for(f"{symbol}:{now:%Y%m%d}")
+    # AI-only and market-only path sets: any mix is a linear blend of the two results
+    stock_ai = simulate_stock(
+        quote.last_price, scenarios, daily_vol, horizon, settings.mc_paths, seed, ai_weight=1.0
+    )
+    stock_mkt = simulate_stock(
+        quote.last_price, scenarios, daily_vol, horizon, settings.mc_paths, seed, ai_weight=0.0
     )
     event_day = None
     if events:
@@ -262,7 +279,8 @@ def plan_options(
             reason = liquidity_check(row, now)
             if reason is None and td <= rules.time_stop_trading_days:
                 reason = "too close to expiry for the time stop"
-            inp = res = None
+            inp = res = r_ai = r_mkt = None
+            w_c = p_cal = None
             if reason is None and row.bid and row.ask:
                 inp = CandidateInput(
                     chain.expiry,
@@ -275,9 +293,7 @@ def plan_options(
                     td,
                     lot_size,
                 )
-                res = evaluate(
-                    inp,
-                    stock,
+                args = (
                     rules,
                     sign,
                     predicted_move_pct,
@@ -286,7 +302,16 @@ def plan_options(
                     event_day,
                     plan.pre_news_spot,
                 )
-            plan.candidates.append(EvaluatedCandidate(row, inp, res, reason))
+                r_ai = evaluate(inp, stock_ai, *args)
+                r_mkt = evaluate(inp, stock_mkt, *args)
+                w_c = ai_w
+                if policy and policy.t1_cal:
+                    p_cal = policy.t1_cal.apply(r_ai.p_t1_before_sl)
+                    w_c = weight_for(r_ai.p_t1_before_sl, p_cal, r_mkt.p_t1_before_sl, ai_w)
+                res = blend_results(r_ai, r_mkt, w_c)
+            plan.candidates.append(
+                EvaluatedCandidate(row, inp, res, reason, r_ai, r_mkt, w_c, p_cal)
+            )
 
     priced = [c for c in plan.candidates if c.result]
     if not priced:
@@ -316,32 +341,34 @@ def plan_options(
                 f"is {best.result.ev_pct:+.1f}%",
             ),
         )
+    if plan.rejection is None and best.result is not None:
+        plan.rejection = selection_rejection(best.result)
+        if plan.rejection:
+            plan.status = "rejected"
     if plan.rejection is None:
         plan.chosen = best
-    if best.input is not None and ai_w < 1.0:  # report what the AI alone would have implied
-        raw_paths = simulate_stock(
-            quote.last_price,
-            scenarios,
-            daily_vol,
-            horizon,
-            settings.mc_paths,
-            seed_for(f"{symbol}:{now:%Y%m%d}"),
-            ai_weight=1.0,
-        )
-        plan.raw_result = evaluate(
-            best.input,
-            raw_paths,
-            rules,
-            sign,
-            predicted_raw,
-            window_days,
-            settings.risk_free_rate,
-            event_day,
-            plan.pre_news_spot,
-        )
-    elif best.result is not None:
-        plan.raw_result = best.result
+    plan.raw_result = best.raw  # what the AI alone would have implied
     return plan
+
+
+def selection_rejection(r: SimResult) -> tuple[str, str] | None:
+    """Owner selection gates (config/options.yaml `selection`)."""
+    c = load_yaml("options.yaml").get("selection") or {}
+    if not c.get("enabled", True):
+        return None
+    if r.ev_pct <= float(c["min_ev_pct"]):
+        return ("ev", f"EV {r.ev_pct:+.1f}% after costs is not above {c['min_ev_pct']}%")
+    if r.ev_pct < float(c["min_ev_pct_of_premium"]):
+        return (
+            "ev",
+            f"EV {r.ev_pct:+.1f}% is below the minimum {c['min_ev_pct_of_premium']}% of premium",
+        )
+    if r.p_t1_before_sl < float(c["min_p_t1_before_sl"]):
+        return (
+            "probability",
+            f"P(T1 before SL) {r.p_t1_before_sl:.0%} below {float(c['min_p_t1_before_sl']):.0%}",
+        )
+    return None
 
 
 def candidate_rows_json(plan: OptionPlan) -> list[dict[str, Any]]:
@@ -351,6 +378,9 @@ def candidate_rows_json(plan: OptionPlan) -> list[dict[str, Any]]:
             "strike": c.row.strike,
             "rejected": c.rejected_reason,
             "ev_pct": c.result.ev_pct if c.result else None,
+            "ai_weight": c.ai_weight,
+            "p_t1_raw": c.raw.p_t1_before_sl if c.raw else None,
+            "p_t1_calibrated": c.p_t1_calibrated,
         }
         for c in plan.candidates
     ]

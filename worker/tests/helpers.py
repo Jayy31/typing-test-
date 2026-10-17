@@ -127,3 +127,72 @@ def seed_news(
             )
             ids.append(item.id)
     return ids
+
+
+class FakeByType(FakeMessages):
+    """Returns the queued output for the requested schema (output_format) - for the panel."""
+
+    def __init__(self, by_type: dict[type, Any], stop_reason: str = "end_turn") -> None:
+        super().__init__(None, stop_reason=stop_reason)
+        self.by_type = {k: list(v) if isinstance(v, list) else [v] for k, v in by_type.items()}
+
+    def parse(self, **kwargs: Any) -> Any:
+        self.calls.append(kwargs)
+        queue = self.by_type[kwargs["output_format"]]
+        out = queue.pop(0) if len(queue) > 1 else queue[0]
+        if callable(out) and not hasattr(out, "model_dump"):
+            out = out(kwargs)
+        usage = SimpleNamespace(
+            input_tokens=3000,
+            output_tokens=500,
+            cache_read_input_tokens=0,
+            cache_creation_input_tokens=0,
+        )
+        return SimpleNamespace(parsed_output=out, stop_reason=self.stop_reason, usage=usage)
+
+
+def panel_outputs(news_id: int = 1, **judge: Any) -> dict[type, Any]:
+    from app.ai.schemas import (
+        Argument,
+        CaseOutput,
+        Fact,
+        JudgeOutput,
+        NoveltyOutput,
+        ResearchOutput,
+    )
+
+    base = analyst_output().model_dump()
+    base.update(
+        cited_news_ids=[news_id],
+        winning_side="bull",
+        rejected_side_reasons=["bear case relied on no new facts"],
+    )
+    base.update(judge)
+    sc = analyst_output().scenarios
+
+    def case(side: str) -> CaseOutput:
+        return CaseOutput(
+            side=side,
+            thesis=f"{side} thesis",
+            arguments=[Argument(point="tariff hike", news_ids=[news_id])],
+            weaknesses=["single source"],
+            expected_move_pct=3.0,
+            window_days=3,
+            confidence="medium",
+            scenarios=sc,
+            cited_news_ids=[news_id],
+        )
+
+    return {
+        ResearchOutput: ResearchOutput(
+            facts=[Fact(fact="Airtel raised tariffs 10%", confirmed=True, news_ids=[news_id])],
+            key_numbers=["10%"],
+            open_questions=["Will Jio follow?"],
+            cited_news_ids=[news_id],
+        ),
+        NoveltyOutput: NoveltyOutput(
+            novelty=0.9, priced_in="not_priced", reasons=["first report"], cited_news_ids=[news_id]
+        ),
+        CaseOutput: [case("bull"), case("bear")],
+        JudgeOutput: JudgeOutput(**base),
+    }

@@ -29,6 +29,10 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
   single-call analyst used until multi-agent lands in Phase 5.
 - Selection (from Phase 5, all in config): EV > 0 after costs, `p_t1_before_sl` >= 0.55, minimum EV of
   10% of premium, and edge_ratio >= `EDGE_RATIO_MIN` (1.2). Raw score is kept for comparison.
+- Phase 5: max 4 full panels/day (`AI_MULTI_AGENT_MAX_PER_DAY`), then single analyst (5/day), judge on the
+  strongest model; `AI_TAGGER_RESERVE_INR` (15) kept for the tagger, other AI pauses first; calibration Platt
+  from 50, isotonic from 200 (`CALIBRATION_ISOTONIC_MIN`) independent news events, each event weighted as one;
+  predictions tagged panel/single and reported separately and combined; AI prices per model in `config/ai.yaml`.
 - History: 5 years. Optional Cloudflare R2 backup of Parquet (Phase 4), off by default
   (`R2_BACKUP_ENABLED`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET`).
 - **Before any one-off AI job (e.g. historical batch tagging) show the owner the cost estimate
@@ -38,8 +42,9 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 - Dashboard and `/why` must say "not yet calibrated" until a calibrator exists, and always show the
   source of each predicted move (scenario tree / analogues / blended).
 - `.env.example` holds keys only (blank values); the owner sets values at deploy.
-- Until calibration (Phase 5): EV, probabilities, pre-move and edge gates use the prediction SHRUNK toward the
-  option-implied market distribution (`SCENARIO_SHRINK_WEIGHT`, default 0.5); raw AI values are stored and shown.
+- Until a calibrator exists: EV, probabilities, pre-move and edge gates use the prediction SHRUNK toward the
+  option-implied market distribution (`SCENARIO_SHRINK_WEIGHT`, default 0.5); after, the calibrated AI share of
+  simulated paths. Raw AI values are always stored and shown.
 - Option quotes: full resolution archived to Parquet before thinning; never thin stocks with open trades or
   live signals until 2 days after they close.
 
@@ -94,15 +99,15 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 | 3b | Paper engine with v2.1 exits A1-A3, entry timing A4a, overlap A5, notional capital A6, counterfactual tracker (B1), P&L attribution (B2), prediction scorecard (B3), live stock benchmark (B6), trade alerts, R2 fills, R4 quote archive, R5 EV shrinkage | done |
 | 3c | Owner fixes: whole-lot booking (per_lot / single_exit), gap/slippage per fill and per trade | done |
 | 4 | History: 5y backfill (bhavcopy, announcements, GDELT, events YAML), batch tagging (R1: labels only before cutoff), event study + analogue lookup, R6 IV history backfill from bhavcopy, Cloudflare R2 backup | done (backfill runs on VM) |
-| 5 | Multi-agent analysis + probability blending + calibration + EV ranking + AI post-mortems (B4) + R1 post-cutoff-only evaluation + R3 weekly digest (Telegram) | next |
-| 6 | Backtester (walk-forward, costs, no look-ahead / survivorship) + fixed vs v2.1 rule comparison, metrics module (B5), benchmarks (B6), R1 enforcement, R2 with/without unfillable metrics | |
+| 5 | Multi-agent analysis + probability blending + calibration + EV ranking + AI post-mortems (B4) + R1 post-cutoff-only evaluation + R3 weekly digest (Telegram) | done |
+| 6 | Backtester (walk-forward, costs, no look-ahead / survivorship) + fixed vs v2.1 rule comparison, metrics module (B5), benchmarks (B6), R1 enforcement, R2 with/without unfillable metrics | next |
 | 7 | Deeper data sources (+ their tables) incl. results fast-path | |
 | 8 | Knowledge graph + 2nd/3rd-order signals | |
 | 9 | Dashboard (all pages from both docs + Rejected page, portfolio views) + morning brief / evening summary incl. top rejected (B8), R1 backtest note, R2 toggle, R3 digest page | |
 | 10 | Analytics, monthly report, learning loop, hardening | |
 
 ## Current phase
-Phase 5 – Multi-agent analysis, probability blending, calibration, EV ranking, post-mortems, R3 weekly digest (incl. slippage). Update this line when a phase is done.
+Phase 6 – Backtester (walk-forward, costs, no look-ahead / survivorship), fixed vs v2.1 rules and per_lot vs single_exit comparison, metrics (B5), benchmarks (B6), R1 enforcement, R2 with/without unfillable; inferred-lot results in % of premium. Update this line when a phase is done.
 
 ## Progress log
 - Phase 0 (PR `phase-0-foundation`): worker skeleton, full §14 schema + Alembic migrations (RLS enabled on all tables), settings, job runner with `job_runs` + retries, health heartbeat, symbol master (148 stocks) + NSE lot-size loader, APScheduler, Dockerfile, Makefile, CI. No Sentry (owner decision). NSE lot-size fetch untested against live NSE (blocked in build sandbox); Dockerfile untested (no Docker daemon).
@@ -113,3 +118,4 @@ Phase 5 – Multi-agent analysis, probability blending, calibration, EV ranking,
 - Phase 3b (PR `phase-3b-paper-trading`): migration 0006 (paper_trades contract/state/fills/benchmark/attribution columns, trade_events quantities, option_quotes bid/ask qty, signal theme_key + raw/shrunk fields, tables portfolio_snapshots, prediction_scores), paper engine (`trading_cycle`: chain polling for live signals + open trades, entry at ask after the first 15 min with entry TTL and pre-move recheck, exits via the shared rules incl. underlying stop / window stop, opposite-signal flag|close, close with costs, fills, stock benchmark), fill checks (chain best-level qty, depth-quote fallback, fillable/partial/unfillable/unknown), Greeks P&L attribution (delta/theta/vega/spread/residual, sums to gross P&L), notional portfolio snapshots + theme exposure, counterfactual tracker for rejections, prediction scorecard, trade alerts and /open /closed /stats (with/without unfillable) /portfolio /exposure, raw quote Parquet archive + protected thinning, EV shrinkage toward the market (`SCENARIO_SHRINK_WEIGHT`). Unverified live: Upstox quantities fields (fallback in place).
 - Phase 3c (PR `phase-3c-lots-slippage`): migration 0007 (trade_events lots/trigger_level/slippage_inr/gap, paper_trades booking_mode/slippage_inr, portfolio capital_used_inr), booking plan in whole lots (`LOTS_PER_SIGNAL`=3, `PARTIAL_BOOKING_MODE` per_lot | single_exit, `single_exit_target`), exits record trigger vs fill + gap flag, slippage per event/trade in alerts and /stats, capital used in portfolio, EV per position. Confirmed the 3b example: the trail exit at 21.65 vs stop 24.16 was a gap between polls filled at the bid.
 - Phase 4 (PR `phase-4-history`): DuckDB schema v2 (loaded_files, hist_raw_news, hist_iv, hist_atm_iv), NSE file parsers driven by `config/history.yaml` columns (equity full bhavdata, F&O old + UDiFF, indices), polite cached downloader, backfill/verify CLIs, NSE announcements + GDELT history, labels-only batch tagging with estimate + `--yes` guard (R1 `integrity.py`), event study (beta-adjusted abnormal returns, VIX regimes, ATM option returns) + analogue stats, live analogue lookup blended into the predicted move (source `blended`), IV backfill (vectorised BS inversion) feeding live IV percentile, curated events + live tag sync, nightly/Sunday history jobs, optional R2 backup. `ENGINE_VERSION` 4.0.0; flag event_study built. Owner fixes H1-H6 (DESIGN_V2): corporate actions (adjusted prices, ±3-day window exclusion, contract adjustment, verify flags >25% moves without an action), reaction day from announcement time, point-in-time F&O universe + lot sizes (pre-July-2024 lots inferred, `data/lot_size_overrides.yaml` wins; results on inferred lots report % of premium first, rupees marked approximate), confounded events down-weighted/excluded and duplicate coverage counted once, analogue weight n/(n+`ANALOGUE_PRIOR_N`) with `ANALOGUE_MIN_N`, sector-index benchmark (both stored); DuckDB schema v3. Unverified live: NSE archive URLs/columns, announcements API, GDELT; backfill must be run on the VM (docs/setup/phase-4.md).
+- Phase 5 (PR `phase-5-multi-agent`): migration 0008 (prediction_source on analyses/signals/prediction_scores, signal calibration_method/ai_weight, calibration_records analysis/rejection/source/cluster_key/predicted_used, calibrators source/n_events, tables post_mortems + digests with RLS), multi-agent panel (researcher, novelty, bull+bear in parallel, judge; prompts *_v1, citations checked, agent_runs with cost), routing by pre-AI rank with daily caps (panel 4, single 5, else `ai_cap` rejection), budget reserve for the tagger with a health alert naming what paused, per-model prices in `config/ai.yaml` (checked 2026-10-17; Sonnet cache-read corrected to $0.10), calibration (Platt/isotonic, cluster-weighted fit and Brier, R1 post-cutoff only, per source with fallback to combined; targets p_move via scorecard and p_t1_before_sl via trades/counterfactuals), calibrated AI share of simulated paths (results blended linearly from AI-only and market-only simulations), owner selection gates in `options.yaml`, post-mortems (B4, fixed causes), rule-based weekly digest (R3), /why panel debate + calibration method, /stats panel vs single, /calibration. `ENGINE_VERSION` 5.0.0; flags multi_agent + probabilities built; signal flag snapshot records what actually ran. Unverified live: real Anthropic panel calls (structured outputs per agent), Opus/Sonnet thinking defaults with `messages.parse`.

@@ -1,20 +1,33 @@
-# AI cost model. Model ids come from env (AI_MODEL_<ROLE>); prices are per price tier and editable.
-# USD per million tokens. Check current pricing at https://www.anthropic.com/pricing
+# AI cost model. Model ids come from env (AI_MODEL_<ROLE>). Prices are config, not code: edit
+# them here when Anthropic changes pricing. USD per million tokens.
+# Checked against https://platform.claude.com/docs/en/about-claude/pricing on 2026-10-17.
+prices_checked: "2026-10-17"
 usd_inr: 88.0
 batch_discount: 0.5          # Message Batches API bills 50% of standard prices
+# Per model id (the exact value you set in AI_MODEL_<ROLE>). cache_write = 5-minute cache writes
+# (what the client uses). long_context: prices for a request whose prompt (input + cache reads +
+# cache writes) is over `threshold` tokens.
+models:
+  claude-haiku-5-5:
+    {input: 0.10, output: 0.50, cache_read: 0.01, cache_write: 0.125,
+     long_context: {threshold: 100000, input: 0.50, output: 2.50, cache_read: 0.05, cache_write: 0.625}}
+  claude-sonnet-5-5: {input: 2.00, output: 10.00, cache_read: 0.10, cache_write: 2.50}
+  claude-opus-5-5:   {input: 4.00, output: 20.00, cache_read: 0.20, cache_write: 5.00}
+# Fallback by tier when a model id is not listed above (same numbers as the models above).
 prices:
-  cheap:  {input: 0.10, output: 0.50, cache_read: 0.01, cache_write: 0.125}   # e.g. Haiku tier
-  mid:    {input: 2.00, output: 10.00, cache_read: 0.20, cache_write: 2.50}   # e.g. Sonnet tier
-  strong: {input: 4.00, output: 20.00, cache_read: 0.40, cache_write: 5.00}   # e.g. Opus tier
+  cheap:  {input: 0.10, output: 0.50, cache_read: 0.01, cache_write: 0.125}   # Haiku 5.5
+  mid:    {input: 2.00, output: 10.00, cache_read: 0.10, cache_write: 2.50}   # Sonnet 5.5
+  strong: {input: 4.00, output: 20.00, cache_read: 0.20, cache_write: 5.00}   # Opus 5.5
 # Which price tier each role's model belongs to. Keep in sync with the AI_MODEL_* values you choose.
 roles:
   tagger: cheap
   researcher: cheap
   novelty: cheap
-  analyst: mid          # single-call analyst, used until multi-agent (Phase 5) replaces it
+  analyst: mid          # single-call analyst: overflow candidates beyond the daily panel cap
   bull: mid
   bear: mid
   judge: strong
+  postmortem: mid     # AI post-mortems use AI_MODEL_ANALYST (mid)
 # Tagger batching and limits
 tagger:
   max_items_per_run: 40
@@ -26,3 +39,16 @@ tagger:
   # Rough per-item token sizes used only for cost ESTIMATES shown before one-off batch jobs.
   est_input_tokens: 1400
   est_output_tokens: 250
+
+# Multi-agent panel (Phase 5). max_tokens include thinking. `effort` per role is optional
+# (omitted = the model's default effort).
+agents:
+  researcher: {max_tokens: 4000}
+  novelty: {max_tokens: 2000}
+  bull: {max_tokens: 8000}
+  bear: {max_tokens: 8000}
+  judge: {max_tokens: 12000}
+  analyst: {max_tokens: 8000}
+  postmortem: {max_tokens: 3000}
+  parallel_bull_bear: true
+  effort: {}

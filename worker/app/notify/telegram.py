@@ -211,6 +211,8 @@ class TelegramBot:
                 return _closed_trades(s)
             if cmd == "/stats":
                 return _stats(s)
+            if cmd == "/calibration":
+                return _calibration(s)
             if cmd == "/portfolio":
                 return _portfolio(s)
             if cmd == "/exposure":
@@ -227,7 +229,8 @@ class TelegramBot:
 
 HELP = (
     "Commands:\n/why S-<id>  full reasoning for a signal\n/signals  live signals\n"
-    "/open  open paper trades\n/closed  recent closed trades\n/stats  performance (with/without unfillable)\n"
+    "/open  open paper trades\n/closed  recent closed trades\n/stats  performance (with/without unfillable, panel vs single)\n"
+    "/calibration  calibration by source (records and independent events)\n"
     "/portfolio  equity and drawdown\n/exposure  open risk per theme\n"
     "/mute  /unmute  pause or resume signal alerts (health alerts always arrive)"
 )
@@ -272,12 +275,41 @@ def _stats(s: Session) -> str:
     fillable = [t for t in closed if t.fillability != "unfillable"]
     slip = sum(t.slippage_inr or 0.0 for t in closed)
     gaps = sum(1 for t in closed if (t.slippage_inr or 0) < 0)
+    src = dict(s.execute(select(Signal.id, Signal.prediction_source)).all())
     return (
         line("All", closed)
         + "\n"
         + line("Excluding unfillable", fillable)
+        + "\n"
+        + line("Panel predictions", [t for t in closed if src.get(t.signal_id) == "panel"])
+        + "\n"
+        + line("Single analyst", [t for t in closed if src.get(t.signal_id) == "single"])
         + f"\nGap/slippage vs trigger levels: Rs {slip:+,.0f} across {gaps} trade(s)"
     )
+
+
+def _calibration(s: Session) -> str:
+    from app.calibration import service as calibration
+    from app.db.models import Calibrator
+
+    lines = []
+    for target in calibration.TARGETS:
+        rep = calibration.report(s, target)
+        parts = [
+            f"{src} {r['records']} rec / {r['events']} events, Brier {r['brier_used']:.3f}"
+            if (r := rep.get(src) or {}).get("records")
+            else f"{src} none"
+            for src in calibration.SOURCES
+        ]
+        lines.append(f"{target}: " + "; ".join(parts))
+        if rep.get("cutoff") is None:
+            lines.append("  AI_MODEL_KNOWLEDGE_CUTOFF not set: nothing counts yet (R1)")
+    active = s.scalars(select(Calibrator).where(Calibrator.active.is_(True))).all()
+    lines += [
+        f"active {c.target}/{c.source}: {c.method} v{c.version}, {c.n_events} events, Brier {c.brier:.3f}"
+        for c in active
+    ] or ["No calibrator yet: probabilities are NOT YET CALIBRATED (shrunk toward the market)."]
+    return "\n".join(lines)
 
 
 def _portfolio(s: Session) -> str:

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db.config_store import get_config
 
-ENGINE_VERSION = "4.0.0"
+ENGINE_VERSION = "5.0.0"
 
 DEFAULTS: dict[str, bool] = {
     "feat.event_study": True,
@@ -27,11 +27,11 @@ DEFAULTS: dict[str, bool] = {
 BUILT: dict[str, bool] = {
     "feat.event_study": True,  # Phase 4
     "feat.implied_move_gate": True,  # Phase 3a
-    "feat.probabilities": False,  # Phase 5
+    "feat.probabilities": True,  # Phase 5
     "feat.simulator": True,  # Phase 3a
     "feat.deep_data": False,  # Phase 7
     "feat.knowledge_graph": False,  # Phase 8
-    "feat.multi_agent": False,  # Phase 5
+    "feat.multi_agent": True,  # Phase 5
 }
 
 
