@@ -669,3 +669,19 @@ class Digest(Base):
     text: Mapped[str] = mapped_column(Text)
     data_json: Mapped[dict[str, Any]] = mapped_column(Json)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class AiSmokeRun(Base):
+    """Live AI smoke test: one panel, one single-analyst call, one post-mortem on fixed samples."""
+
+    __tablename__ = "ai_smoke_runs"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    trigger: Mapped[str] = mapped_column(String(16))  # startup / manual
+    passed: Mapped[bool] = mapped_column(Boolean, default=False)
+    total_cost_inr: Mapped[float] = mapped_column(Float, default=0)
+    panel_seconds: Mapped[float | None] = mapped_column(Float)
+    results_json: Mapped[dict[str, Any]] = mapped_column(Json)
+    fixes_json: Mapped[list[str] | None] = mapped_column(Json)  # auto-fixes applied

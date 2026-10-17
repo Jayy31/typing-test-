@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.base import BaseTrigger
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import Engine
 
@@ -227,7 +228,22 @@ def main() -> None:
     for noisy in ("httpx", "httpcore"):  # their INFO logs print full URLs (bot token!)
         logging.getLogger(noisy).setLevel(logging.WARNING)
     log.info("worker starting")
-    build_scheduler().start()
+    sched = build_scheduler()
+    # Live AI smoke test once, shortly after startup, until it has passed (results to Telegram)
+    sched.add_job(
+        lambda: run_job("ai_smoke_startup", ai_smoke_startup),
+        DateTrigger(run_date=datetime.now(IST) + timedelta(minutes=2)),
+        id="ai_smoke_startup",
+    )
+    sched.start()
+
+
+def ai_smoke_startup() -> int:
+    from app.ai.smoke import startup_check
+
+    outcome = startup_check()
+    log.info("AI smoke test at startup: %s", outcome)
+    return 1 if outcome in ("passed", "failed") else 0
 
 
 if __name__ == "__main__":

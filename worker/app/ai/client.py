@@ -6,7 +6,8 @@ Two modes: `parse` (one live structured call) and `submit_batch` / `batch_result
 
 import json
 import logging
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Protocol, TypeVar, cast
 
@@ -112,8 +113,12 @@ def compute_cost_inr(
 class CallUsage:
     model: str
     input_tokens: int
-    output_tokens: int
+    output_tokens: int  # includes thinking tokens
     cost_inr: float
+    cache_read: int = 0
+    cache_write: int = 0
+    duration_s: float = 0.0
+    effort: str | None = None
 
 
 @dataclass(frozen=True)
@@ -182,6 +187,21 @@ class AiClient:
             raise RuntimeError(f"AI_MODEL_{env_role.upper()} is not set")
         return model
 
+    def effort_for(self, role: str) -> str | None:
+        """Per-role effort: a config-table override `ai.effort.<role>` (set by the smoke test's
+        auto-fixes or the owner) wins over config/ai.yaml `agents.effort`."""
+        from app.db.config_store import get_config
+
+        try:
+            with session_scope(self.engine) as s:
+                override = get_config(s, f"ai.effort.{role}")
+        except Exception:  # noqa: BLE001 - no DB (e.g. one-off scripts): use the YAML value
+            override = None
+        if override:
+            return str(override)
+        value = (load_yaml("ai.yaml").get("agents") or {}).get("effort", {}).get(role)
+        return str(value) if value else None
+
     def configured(self, *roles: str) -> bool:
         return all(getattr(self.settings, f"ai_model_{MODEL_ROLE.get(r, r)}", "") for r in roles)
 
@@ -247,11 +267,16 @@ class AiClient:
         }
         if thinking is not None:
             kwargs["thinking"] = thinking
-        effort = (load_yaml("ai.yaml").get("agents") or {}).get("effort", {}).get(role)
+        effort = self.effort_for(role)
         if effort:
             kwargs["output_config"] = {"effort": effort}
+        t0 = time.monotonic()
         resp = self._messages.parse(**kwargs)
-        usage = self._record_usage(role, model, resp.usage)
+        usage = replace(
+            self._record_usage(role, model, resp.usage),
+            duration_s=round(time.monotonic() - t0, 2),
+            effort=effort,
+        )
         if resp.stop_reason == "refusal":
             raise AiOutputError("model refused the request")
         if resp.parsed_output is None:
@@ -324,4 +349,11 @@ class AiClient:
                     cost_inr=cost,
                 )
             )
-        return CallUsage(model, int(usage.input_tokens), int(usage.output_tokens), cost)
+        return CallUsage(
+            model,
+            int(usage.input_tokens),
+            int(usage.output_tokens),
+            cost,
+            int(cache_read),
+            int(cache_write),
+        )
