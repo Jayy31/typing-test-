@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db.config_store import get_config
 
-ENGINE_VERSION = "5.0.0"
+ENGINE_VERSION = "6.0.0"
 
 DEFAULTS: dict[str, bool] = {
     "feat.event_study": True,

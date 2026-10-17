@@ -1,0 +1,45 @@
+# Backtester (Phase 6). Daily (end-of-day) history from the DuckDB store; no intraday quotes.
+
+# Owner rules: rule sets compared side by side (A1-A3 off = the original fixed rules)
+rule_sets:
+  fixed: {stop_mode: premium, targets_mode: fixed, window_stop: false}
+  v21: {stop_mode: underlying+premium, targets_mode: predicted_move, window_stop: true}
+
+# Modelled bid/ask until fitted from our live quote archive. Half-spread % of the option price;
+# the first matching tier wins. moneyness = |strike / spot - 1| in %. OI / volume in LOTS.
+# "large cap" = among the top `large_cap_top_n` stocks by traded value that day (point in time).
+spread:
+  tiers:
+    - {name: liquid_large_cap_atm, large_cap: true, max_moneyness_pct: 3, min_oi_lots: 500, min_volume_lots: 100, half_spread_pct: 2}
+    - {name: liquid_otm_or_midcap_atm, max_moneyness_pct: 8, min_oi_lots: 200, min_volume_lots: 20, half_spread_pct: 4}
+    - {name: illiquid_or_deep_otm, half_spread_pct: 9}
+  min_half_spread_inr: 0.05       # one tick
+  large_cap_top_n: 50
+  sensitivity: [1.0, 1.5, 2.0]    # every comparison also runs at these spread multiples
+
+# Bhavcopy units (verify on the VM; column units differ between the old and UDiFF formats)
+units:
+  fo_old: {volume: contracts, oi: shares}
+  fo_udiff: {volume: shares, oi: shares}
+
+fills:                            # R2 on daily volume
+  max_participation: 0.10         # fillable if our lots <= 10% of the day's traded lots
+stale_prices:                     # zero volume: the close is not a tradable price
+  use_settlement: true            # use the settlement price (flagged); none -> no trade that day
+
+entry:                            # event reaction day decides entry; enter at that day's close
+  min_trading_days_to_expiry: 8
+  one_trade_per_symbol: true      # skip a new signal while a trade on the stock is open
+same_bar: stop_first              # stop and target touched the same day: stop assumed first
+
+rules_mode:                       # signals without AI (labels + analogue base rates), all 5 years
+  analogue_window: 3
+  min_hit_rate: 0.5               # trade the event direction only if analogues moved our way this often
+  min_mean_pct: 0.0               # ... and the mean abnormal move our way is above this
+  paths: 2000                     # Monte Carlo paths per candidate (live uses MC_PATHS)
+
+walk_forward:
+  train_months: 12
+  test_months: 3
+
+bootstrap: {samples: 1000, seed: 11}

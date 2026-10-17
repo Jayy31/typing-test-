@@ -442,3 +442,20 @@ Added by the owner after Phase 3a. Values in config; nothing here is auto-applie
 - **Prices** live in `config/ai.yaml` per model id (checked 2026-10-17), tier fallback.
 - **Post-mortems** (B4) use the mid model with a fixed cause list; the **weekly digest** (R3) is
   rule-based (no AI cost) and only suggests.
+
+### Owner decisions for Phase 6 (backtester)
+- End-of-day data only. **Entry at the close of the event's reaction day**; exits checked from the
+  next day with the same pure exit rules as live; **stop first** when a day touches both.
+- **Spread model** (until fitted from the live quote archive): half-spread by tier in
+  `config/backtest.yaml` (liquid large-cap ATM 2%, liquid OTM or mid-cap ATM 4%, illiquid/deep OTM
+  9%), minimum one tick (Rs 0.05); every comparison also runs at x1.5 and x2.
+- **Stale prices**: a zero-volume close is not tradable; the settlement price is used and
+  flagged; with neither there is no entry or exit that day. Reports count settlement-price trades.
+- **Walk-forward** 12 months train / 3 months test; analogue statistics per fold only from events
+  whose 10-day outcome window ended before the fold. Point-in-time F&O universe and lot sizes.
+- **AI mode** replays stored live predictions only, after `AI_MODEL_KNOWLEDGE_CUTOFF` (R1).
+- Rules mode (no AI): direction = event label when its analogues moved that way (hit >= 50%, mean
+  > 0); predicted distribution = analogue quantiles mixed with the market at weight n / (n + 20);
+  live gates (pre-move, edge ratio, EV / probability) apply.
+- Compared side by side: v2.1 vs fixed rules, per_lot vs single_exit, spread x1.5 / x2, random
+  direction and ATM-without-gates benchmarks, stock with the same capital, Nifty buy and hold.
