@@ -7,6 +7,7 @@ shadow mode, one pipeline, one output). **Where they conflict, `docs/DESIGN_V2.m
 backtester can compare v2.1 rules with the original fixed rules. Section "Research integrity and
 review" adds R1 AI look-ahead protection (pre-`AI_MODEL_KNOWLEDGE_CUTOFF` history: AI labels only, never
 predictions), R2 realistic fills (fillable/partial/unfillable), R3 weekly Sunday digest (suggestions only).
+Unverified live assumptions are listed in `docs/UNVERIFIED.md` (add to it every phase).
 Phase-specific research notes live in `docs/notes/` (e.g. `docs/notes/upstox-api.md`).
 
 ## What this is
@@ -105,9 +106,13 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 | 8 | Knowledge graph + 2nd/3rd-order signals | next |
 | 9 | Dashboard (all pages from both docs + Rejected page, portfolio views) + morning brief / evening summary incl. top rejected (B8), R1 backtest note, R2 toggle, R3 digest page | |
 | 10 | Analytics, monthly report, learning loop, hardening | |
+| 11 | Go-live: `docs/setup/deploy.md` (zero to running: VM + persistent volume, Docker, every account/key and where it goes, one bootstrap script, auto-redeploy on main), first-run Telegram report 24 h after first start (each source OK/failed, row counts, AI smoke result, Upstox token, field-name mismatches, errors), one-pass check of `docs/UNVERIFIED.md` | |
 
 ## Current phase
 Phase 8 – Knowledge graph + 2nd/3rd-order signals. Update this line when a phase is done.
+
+## Owner notes
+- Not deploying until all phases are done; external accounts and keys come in the Go-live phase.
 
 ## Progress log
 - Phase 0 (PR `phase-0-foundation`): worker skeleton, full §14 schema + Alembic migrations (RLS enabled on all tables), settings, job runner with `job_runs` + retries, health heartbeat, symbol master (148 stocks) + NSE lot-size loader, APScheduler, Dockerfile, Makefile, CI. No Sentry (owner decision). NSE lot-size fetch untested against live NSE (blocked in build sandbox); Dockerfile untested (no Docker daemon).
