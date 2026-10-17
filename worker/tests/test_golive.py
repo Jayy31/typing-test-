@@ -84,3 +84,12 @@ def test_quick_and_full_run_once_from_first_start(engine) -> None:
         assert "FIRST-RUN REPORT" in rows[1].text and "unverified" in rows[1].text
         assert rows[0].text.index("nse_probe") < rows[0].text.index("database")  # NSE first
         assert isinstance(get_config(s, "unverified_alerts"), list)
+
+
+def test_preflight_lists_missing_env() -> None:
+    from app.preflight import missing_env
+
+    miss = missing_env({"DATABASE_URL": "postgresql://x", "TELEGRAM_BOT_TOKEN": "  "})
+    assert (
+        "DATABASE_URL" not in miss and "TELEGRAM_BOT_TOKEN" in miss and "ANTHROPIC_API_KEY" in miss
+    )

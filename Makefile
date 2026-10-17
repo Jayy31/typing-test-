@@ -1,4 +1,4 @@
-.PHONY: setup migrate test run lint smoke-ai
+.PHONY: setup migrate test run lint smoke-ai preflight golive-quick golive-full
 
 WORKER = cd worker &&
 
@@ -19,3 +19,12 @@ lint:
 
 smoke-ai:  # live AI smoke test (real models, hard limit Rs 50)
 	$(WORKER) uv run python -m app.ai.smoke
+
+preflight:  # env, migrations at head, Telegram + Supabase reachable (run before the first start)
+	$(WORKER) uv run python -m app.preflight
+
+golive-quick:  # go-live quick check now (NSE endpoints first); also runs itself 2 h after first start
+	$(WORKER) uv run python -m app.golive quick
+
+golive-full:  # first-run report now; also runs itself 24 h after first start
+	$(WORKER) uv run python -m app.golive full
