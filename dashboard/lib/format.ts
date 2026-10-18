@@ -59,3 +59,13 @@ export const ORDER_LABEL: Record<number, string> = {
 export function calibrationLabel(calibratorId: unknown, method: unknown): string {
   return calibratorId && method && method !== "shrink" ? `calibrated (${String(method)})` : "not yet calibrated";
 }
+
+/** Short Indian-style rupees for chart axes: ₹10.8L, ₹1.2Cr, ₹45k. */
+export function inrShort(x: number): string {
+  const a = Math.abs(x), s = x < 0 ? "-" : "";
+  const f = (v: number) => (v >= 100 ? v.toFixed(0) : v.toFixed(v >= 10 ? 1 : 2).replace(/\.?0+$/, ""));
+  if (a >= 1e7) return `${s}₹${f(a / 1e7)}Cr`;
+  if (a >= 1e5) return `${s}₹${f(a / 1e5)}L`;
+  if (a >= 1e3) return `${s}₹${f(a / 1e3)}k`;
+  return `${s}₹${Math.round(a)}`;
+}

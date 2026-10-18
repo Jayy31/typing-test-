@@ -4,6 +4,7 @@
 import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
+import { inrShort } from "@/lib/format";
 
 const axis = { stroke: "var(--axis)", tick: { fill: "var(--muted)", fontSize: 11 }, tickLine: false };
 const tooltip = {
@@ -14,8 +15,8 @@ const tooltip = {
 
 export interface Pt { x: string; y: number }
 
-export function LineSeries({ data, height = 180, unit = "", refs = [], label }: {
-  data: Pt[]; height?: number; unit?: string; refs?: { y: number; label: string }[]; label: string;
+export function LineSeries({ data, height = 180, unit = "", refs = [], label, rupees = false }: {
+  data: Pt[]; height?: number; unit?: string; refs?: { y: number; label: string }[]; label: string; rupees?: boolean;
 }) {
   return (
     <figure aria-label={label}>
@@ -23,7 +24,7 @@ export function LineSeries({ data, height = 180, unit = "", refs = [], label }: 
         <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -8 }}>
           <CartesianGrid stroke="var(--grid)" vertical={false} />
           <XAxis dataKey="x" {...axis} minTickGap={24} />
-          <YAxis {...axis} width={56} domain={["auto", "auto"]} tickFormatter={(v: number) => `${v.toLocaleString("en-IN")}${unit}`} />
+          <YAxis {...axis} width={56} domain={["auto", "auto"]} tickFormatter={(v: number) => (rupees ? inrShort(v) : `${v.toLocaleString("en-IN")}${unit}`)} />
           {refs.map((r) => (
             <ReferenceLine key={r.label} y={r.y} stroke="var(--axis)" strokeDasharray="4 4"
               label={{ value: r.label, position: "insideTopRight", fill: "var(--ink-2)", fontSize: 10 }} />
