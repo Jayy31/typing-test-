@@ -25,7 +25,7 @@ export default async function Portfolio() {
         </div>
       )}
       <Card title="Equity" className="mt-3">
-        <LineSeries data={snaps.map((s) => ({ x: day(s.ts).slice(0, 6), y: Math.round(s.equity) }))} label="Equity" unit="" />
+        <LineSeries data={snaps.map((s) => ({ x: day(s.ts).slice(0, 6), y: Math.round(s.equity) }))} label="Equity" rupees />
       </Card>
       <Card title="Drawdown" className="mt-3">
         <LineSeries data={snaps.map((s) => ({ x: day(s.ts).slice(0, 6), y: -+s.drawdown_pct.toFixed(2) }))} label="Drawdown" unit="%" height={140} />
