@@ -151,6 +151,23 @@ def _pct(x: Any) -> str:
     return "n/a" if x is None else f"{x:+.1f}%"
 
 
+def _rs(x: Any) -> str:
+    """Rupees with Indian digit grouping: 1041200 -> Rs 10,41,200."""
+    if x is None:
+        return "n/a"
+    sign, n = ("-" if x < 0 else ""), f"{abs(round(x)):d}"
+    head, tail = n[:-3], n[-3:]
+    while len(head) > 2:
+        tail, head = f"{head[-2:]},{tail}", head[:-2]
+    return f"{sign}Rs {head + ',' if head else ''}{tail}"
+
+
+def _heading(line: str) -> bool:
+    """Section titles are capitals, optionally followed by a note in brackets."""
+    title = line.split(" (", 1)[0]
+    return bool(line) and not line.startswith(" ") and title.isupper()
+
+
 def render(d: dict[str, Any]) -> str:
     a, f = d["trades"]["all"], d["trades"]["excluding_unfillable"]
 
@@ -176,7 +193,7 @@ def render(d: dict[str, Any]) -> str:
         "P&L",
         line("All", a),
         line("Excluding unfillable", f),
-        f"  Equity {d['equity']['start'] or 'n/a'} -> {d['equity']['end'] or 'n/a'}; max drawdown "
+        f"  Equity {_rs(d['equity']['start'])} -> {_rs(d['equity']['end'])}; max drawdown "
         f"{r.get('max_drawdown_pct', 'n/a')}%; Sharpe {r.get('sharpe', 'n/a')}",
         "",
         "WHAT WORKED",
@@ -210,10 +227,15 @@ def render(d: dict[str, Any]) -> str:
         ]
         or ["  none resolved"]
     )
-    out += ["", f"AI spend Rs {d['ai_spend_inr']:,.0f} of Rs {d['ai_budget_inr']:,.0f} budget"]
+    out += [
+        "",
+        "COSTS AND UPTIME",
+        f"  AI spend Rs {d['ai_spend_inr']:,.0f} of Rs {d['ai_budget_inr']:,.0f} budget",
+    ]
     weak = {k: v for k, v in d["uptime"].items() if v < 0.95}
     out.append(
-        "Jobs below 95% success: " + (", ".join(f"{k} {v:.0%}" for k, v in weak.items()) or "none")
+        "  Jobs below 95% success: "
+        + (", ".join(f"{k} {v:.0%}" for k, v in weak.items()) or "none")
     )
     out += ["", "SUGGESTIONS (open the dashboard to accept or reject)"] + (
         [
@@ -325,7 +347,7 @@ def pdf(text: str, summary: str | None, path: Path) -> Path:
         doc.multi_cell(0, 5, _latin(summary), new_x="LMARGIN", new_y="NEXT")
         doc.ln(3)
     for ln in lines[1:]:
-        if ln and ln.isupper() and not ln.startswith(" "):
+        if _heading(ln):
             doc.ln(2)
             doc.set_font("Helvetica", "B", 11)
         else:

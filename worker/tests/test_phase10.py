@@ -599,3 +599,12 @@ def test_one_trading_day_end_to_end(
     assert "Realised Rs" in text and "(1 closed)" in text and "S-1 BHARTIARTL" in text
     assert stats["all"]["n"] == 1 and stats["breakdowns"]["prediction_source"]
     get_settings.cache_clear()
+
+
+def test_report_rupees_and_headings() -> None:
+    assert monthly._rs(1041200) == "Rs 10,41,200" and monthly._rs(-950) == "Rs -950".replace(
+        "Rs -", "-Rs "
+    )
+    assert monthly._rs(12500000) == "Rs 1,25,00,000" and monthly._rs(None) == "n/a"
+    assert monthly._heading("REJECTED (counterfactual)") and monthly._heading("COSTS AND UPTIME")
+    assert not monthly._heading("  ai: 22 calls") and not monthly._heading("AI spend Rs 1")
