@@ -707,7 +707,48 @@ const premiumPath = (entry: number, drift: number, n: number) =>
       +(entry * (1 + (drift * i) / n + Math.sin(i / 2) * 0.03)).toFixed(2),
   );
 
+const watch = (
+  id: number,
+  sym: string,
+  k: number,
+  opt: string,
+  status: string,
+  pnl: number | null,
+  gate: string,
+): Row => ({
+  id,
+  signal_id: id + 3000,
+  book: "watchlist",
+  symbol: sym,
+  option_type: opt,
+  strike: k,
+  expiry: "2026-11-24",
+  lots: 3,
+  lot_size: 400,
+  entry_ts: D(status === "OPEN" ? 1 : 6),
+  entry_premium: 20,
+  sl: 10,
+  t1: 25,
+  t2: 30,
+  t3: 40,
+  status,
+  last_premium: status === "OPEN" ? 22 : null,
+  last_ts: T(5),
+  exit_ts: status === "OPEN" ? null : D(2),
+  exit_premium: pnl == null ? null : 20 * (1 + pnl / 100),
+  exit_reason: status === "OPEN" ? null : pnl! > 0 ? "T2" : "SL",
+  pnl: pnl == null ? null : pnl * 240,
+  pnl_pct: pnl,
+  fillability: "fillable",
+  booking_mode: "per_lot",
+  state_json: { targets_hit: pnl! > 0 ? 2 : 0 },
+  watch_gate: gate,
+});
+
 const paper_trades: Row[] = [
+  watch(901, "INFY", 1500, "CE", "CLOSED", 18.5, "edge_ratio"),
+  watch(902, "SUNPHARMA", 1700, "PE", "CLOSED", -31.0, "p_t1_before_sl"),
+  watch(903, "WIPRO", 300, "CE", "OPEN", null, "ev_pct"),
   {
     id: 210,
     signal_id: 1039,

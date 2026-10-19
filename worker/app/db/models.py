@@ -176,6 +176,7 @@ class Signal(Base):
     expiry: Mapped[date | None] = mapped_column(Date)
     score: Mapped[float] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(24), index=True)
+    book: Mapped[str] = mapped_column(String(12), default="main", server_default="main")  # Phase 12
     analysis_id: Mapped[int | None] = mapped_column(ForeignKey("analyses.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
@@ -253,6 +254,7 @@ class PaperTrade(Base):
     t2: Mapped[float] = mapped_column(Float)
     t3: Mapped[float] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(16), index=True)
+    book: Mapped[str] = mapped_column(String(12), default="main", server_default="main", index=True)
     exit_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     exit_premium: Mapped[float | None] = mapped_column(Float)
     pnl: Mapped[float | None] = mapped_column(Float)  # Rs per position, after costs
@@ -475,6 +477,7 @@ class CalibrationRecord(Base):
 
     id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
     signal_id: Mapped[int | None] = mapped_column(ForeignKey("signals.id"), index=True)
+    book: Mapped[str] = mapped_column(String(12), default="main", server_default="main")  # Phase 12
     trade_id: Mapped[int | None] = mapped_column(ForeignKey("paper_trades.id"))
     target: Mapped[str] = mapped_column(String(32))
     predicted: Mapped[float] = mapped_column(Float)

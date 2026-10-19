@@ -113,6 +113,11 @@ const PAGES: [string, string, string[]][] = [
   ["/ai-vs-rules", "26-ai-vs-rules", ["AI signals", "Rules (analogues only)"]],
   ["/quality", "27-quality", ["bid above ask", "Database", "Cache hits"]],
   [
+    "/watchlist",
+    "30-watchlist",
+    ["Main book vs watchlist book", "Edge ratio", "missed: Min EV %"],
+  ],
+  [
     "/stocks/BHARTIARTL",
     "29-stock",
     ["Option-market positioning", "long buildup", "S-1042", "Paper trades"],

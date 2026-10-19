@@ -16,7 +16,15 @@ from app.ai.schemas import AnalystOutput, JudgeOutput, Scenario
 from app.analytics import ai_vs_rules
 from app.calibration import service as calibration
 from app.config import IST, get_settings
-from app.db.models import AgentRun, Analysis, Instrument, MacroSnapshot, Signal, SignalCandidate
+from app.db.models import (
+    AgentRun,
+    Analysis,
+    CalibrationRecord,
+    Instrument,
+    MacroSnapshot,
+    Signal,
+    SignalCandidate,
+)
 from app.db.models import Scenario as ScenarioRow
 from app.db.session import session_scope
 from app.flags import ENGINE_VERSION
@@ -364,8 +372,62 @@ def store_result(
     ai_vs_rules.record(s, analysis, cand.direction, item.analogue, made)  # B3 (Phase 10)
     if not any(ev.kind == "new" for ev in events) and live_signal(s, cand.symbol) is None:
         _record_not_signalled(s, item, out, analysis, score, checks, plan, now)
+        if flags.active(s, "feat.watchlist_book"):
+            _open_watchlist(s, item, out, analysis, score.final, checks, plan, now)
     _enqueue_events(s, events, analysis, cand, out, item.analogue)
     return events
+
+
+def _open_watchlist(
+    s: Session,
+    item: WorkItem,
+    out: AnalystOutput,
+    analysis: Analysis,
+    score: float,
+    checks: list[Any],
+    plan: OptionPlan | None,
+    now: datetime,
+) -> Signal | None:
+    """Phase 12: a near-miss (one soft gate missed within the margin) enters the watchlist book.
+    Same contract the gates saw, same paper rules; no AI call, no alert."""
+    from app.regime import gates as regime_gates
+    from app.trading import watchlist
+
+    hard_ok = all(
+        c.passed
+        for c in checks
+        if not (
+            c.name.startswith("options_") and c.name[len("options_") :] in watchlist.SOFT_STAGES
+        )
+    )
+    reg = current_regime_in(s, now.date()) if flags.active(s, "feat.regime") else None
+    gates = regime_gates.for_regime(reg.vol if reg else None)
+    miss = watchlist.near_miss(score, hard_ok, plan, gates, now.date(), out.direction)
+    if miss is None or plan is None:
+        return None
+    sig = Signal(
+        symbol=item.cand.symbol,
+        sector=item.sector,
+        direction=_option(out.direction) or out.direction,
+        score=score,
+        status=watchlist.STATUS,
+        book=watchlist.BOOK,
+        analysis_id=analysis.id,
+        created_at=now,
+        updated_at=now,
+    )
+    s.add(sig)
+    s.flush()
+    stamp_signal(s, sig, out, item, watchlist.plan_for_book(plan), now)
+    sig.flags_json = {
+        **(sig.flags_json or {}),
+        "watchlist": {"gate": miss.gate, "value": miss.value, "required": miss.required},
+    }
+    for r in s.scalars(
+        select(CalibrationRecord).where(CalibrationRecord.analysis_id == analysis.id)
+    ):
+        r.signal_id, r.book = sig.id, watchlist.BOOK  # outcome from the watchlist trade's fills
+    return sig
 
 
 def _score_prediction(

@@ -200,10 +200,14 @@ def evening_summary_text(s: Session, now: datetime) -> str | None:
     if not is_trading_day(today, holidays):
         return None
     start = datetime.combine(today, time(0), IST)
-    opened = s.scalars(select(PaperTrade).where(PaperTrade.status == "OPEN")).all()
+    opened = s.scalars(
+        select(PaperTrade).where(PaperTrade.status == "OPEN", PaperTrade.book == "main")
+    ).all()
     closed = [
         t
-        for t in s.scalars(select(PaperTrade).where(PaperTrade.status == "CLOSED"))
+        for t in s.scalars(
+            select(PaperTrade).where(PaperTrade.status == "CLOSED", PaperTrade.book == "main")
+        )
         if t.exit_ts and as_ist(t.exit_ts) >= start
     ]
     lines = [f"EVENING SUMMARY  {today:%a %d-%b-%Y}", "", f"OPEN TRADES ({len(opened)})"]
@@ -227,7 +231,9 @@ def evening_summary_text(s: Session, now: datetime) -> str | None:
         "TODAY'S P&L",
         f"  Realised Rs {realised:+,.0f} ({len(closed)} closed), open Rs {unreal:+,.0f}",
     ]
-    raised = s.scalars(select(Signal).where(Signal.created_at >= start)).all()
+    raised = s.scalars(
+        select(Signal).where(Signal.created_at >= start, Signal.book == "main")
+    ).all()
     cancelled = s.scalars(
         select(SignalVersion).where(SignalVersion.ts >= start, SignalVersion.status == "CANCELLED")
     ).all()
@@ -250,6 +256,8 @@ def evening_summary_text(s: Session, now: datetime) -> str | None:
     lines += [f"  {p.path_key.replace('>', ' > ')} ({p.sign_basis})" for p in paths[:5]] or [
         "  none"
     ]
+    if flags.active(s, "feat.watchlist_book"):
+        lines += ["", *_watchlist_lines(s, start)]
     flows = _fii_dii(s, today)
     lines += [
         "",
@@ -259,6 +267,30 @@ def evening_summary_text(s: Session, now: datetime) -> str | None:
         else "  pending (NSE publishes around 19:00; final figures in tomorrow's brief)",
     ]
     return "\n".join(lines)
+
+
+def _watchlist_lines(s: Session, start: datetime) -> list[str]:
+    """Phase 12: near-miss book, kept apart from the main book (no alert per trade)."""
+    opened = s.scalars(
+        select(PaperTrade).where(PaperTrade.book == "watchlist", PaperTrade.entry_ts >= start)
+    ).all()
+    closed = [
+        t
+        for t in s.scalars(
+            select(PaperTrade).where(PaperTrade.book == "watchlist", PaperTrade.status == "CLOSED")
+        )
+        if t.exit_ts and as_ist(t.exit_ts) >= start
+    ]
+    still = s.scalars(
+        select(PaperTrade).where(PaperTrade.book == "watchlist", PaperTrade.status == "OPEN")
+    ).all()
+    out = ["WATCHLIST BOOK (near-misses, separate from the main book)"]
+    out.append(
+        f"  Opened today {len(opened)}, closed today {len(closed)} "
+        f"(Rs {sum(t.pnl or 0 for t in closed):+,.0f}), open {len(still)}"
+    )
+    out += [f"  {t.symbol} {t.strike:g}{t.option_type}: {t.pnl_pct or 0:+.1f}%" for t in closed[:5]]
+    return out
 
 
 def _send(engine: Engine | None, which: str, build: Any, now: datetime | None) -> int:

@@ -31,11 +31,13 @@ from app.timeutil import as_ist
 from app.tracking.scorecard import summary as scorecard_summary
 
 
-def _trades(s: Session, start: date, end: date) -> list[tuple[PaperTrade, str | None]]:
+def _trades(
+    s: Session, start: date, end: date, book: str = "main"
+) -> list[tuple[PaperTrade, str | None]]:
     rows = s.execute(
         select(PaperTrade, Signal.prediction_source)
         .join(Signal, Signal.id == PaperTrade.signal_id)
-        .where(PaperTrade.status == "CLOSED")
+        .where(PaperTrade.status == "CLOSED", PaperTrade.book == book)
     ).all()
     return [(t, src) for t, src in rows if t.exit_ts and start <= as_ist(t.exit_ts).date() < end]
 
@@ -66,6 +68,7 @@ def build(s: Session, week_start: date) -> tuple[str, dict[str, Any]]:
             "panel": _trade_stats([t for t, src in rows if src == "panel"]),
             "single": _trade_stats([t for t, src in rows if src == "single"]),
         },
+        "watchlist": _trade_stats([t for t, _ in _trades(s, week_start, end, "watchlist")]),
         "slippage_inr": round(sum(t.slippage_inr or 0.0 for t in trades), 0),
         "gap_trades": sum(1 for t in trades if (t.slippage_inr or 0) < 0),
         "scorecard": scorecard_summary(s, week_start),
@@ -213,6 +216,9 @@ def render(d: dict[str, Any]) -> str:
         f"  Panel: {_fmt(tr['panel'])}",
         f"  Single analyst: {_fmt(tr['single'])}",
         f"  Gap/slippage vs trigger levels: Rs {d['slippage_inr']:+,.0f} across {d['gap_trades']} trade(s)",
+        "",
+        "WATCHLIST BOOK (near-misses, separate from the main book)",
+        f"  {_fmt(d.get('watchlist') or {'n': 0})}",
         "",
         "PREDICTIONS (post-cutoff only, R1)"
         + ("" if sc.get("cutoff") else ": AI_MODEL_KNOWLEDGE_CUTOFF not set, none counted"),

@@ -18,7 +18,16 @@ const PAGES: [string, string, string][] = [
   ["/suggestions", "Suggestions", "Learning-loop changes to accept or reject"],
   ["/ai-vs-rules", "AI vs rules", "AI decisions vs the rules-only path"],
   ["/quality", "Data quality", "Checks, database size, AI cost"],
-  ["/golive", "Go-live checks", "2-hour check, first-run report, unverified items"],
+  [
+    "/watchlist",
+    "Watchlist book",
+    "Near-misses traded apart from the main book",
+  ],
+  [
+    "/golive",
+    "Go-live checks",
+    "2-hour check, first-run report, unverified items",
+  ],
   ["/health", "System health", "Jobs, sources, AI spend"],
   ["/settings", "Settings", "Owner switches, config, change log"],
 ];
@@ -29,9 +38,18 @@ export default function More() {
       <PageTitle title="More" />
       <Card>
         {PAGES.map(([href, title, sub]) => (
-          <Link key={href} href={href} className="flex items-center justify-between border-t border-line py-3 first:border-t-0">
-            <span><span className="block text-sm font-medium">{title}</span><span className="text-xs text-ink-2">{sub}</span></span>
-            <span aria-hidden className="text-muted">›</span>
+          <Link
+            key={href}
+            href={href}
+            className="flex items-center justify-between border-t border-line py-3 first:border-t-0"
+          >
+            <span>
+              <span className="block text-sm font-medium">{title}</span>
+              <span className="text-xs text-ink-2">{sub}</span>
+            </span>
+            <span aria-hidden className="text-muted">
+              ›
+            </span>
           </Link>
         ))}
       </Card>

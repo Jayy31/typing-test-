@@ -93,7 +93,9 @@ def run_post_mortems(engine: Engine | None = None, ai: AiClient | None = None) -
         todo = [
             t.id
             for t in s.scalars(
-                select(PaperTrade).where(PaperTrade.status == "CLOSED").order_by(PaperTrade.exit_ts)
+                select(PaperTrade)
+                .where(PaperTrade.status == "CLOSED", PaperTrade.book == "main")
+                .order_by(PaperTrade.exit_ts)
             )
             if t.id not in done
         ][:MAX_PER_RUN]

@@ -1,0 +1,14 @@
+# Watchlist paper book (Phase 12, feat.watchlist_book). A near-miss passed every hard check
+# (liquidity, ban list, corporate actions, expiry, core rules, entry rules) but failed EXACTLY ONE
+# soft gate, by no more than the margin below. Near-misses are paper-traded in a separate book with
+# the same entry, exit, fill and cost rules. No extra AI calls; no Telegram alert per trade.
+margins:
+  score_points: 5               # score at least threshold - 5
+  edge_ratio_min: 1.1           # gate 1.2 (EDGE_RATIO_MIN)
+  min_p_t1_before_sl: 0.50      # gate 0.55
+  min_ev_pct_of_premium: 7      # gate 10
+calibration:
+  include_in_fit: true          # watchlist outcomes also fit the calibrator (grouped by news event);
+                                # reports always show main and watchlist separately
+learning:
+  include: true                 # feed watchlist trades to the learning loop (are the gates too strict?)

@@ -269,7 +269,9 @@ def _live_signals(s: Session) -> str:
 def _open_trades(s: Session) -> str:
     from app.trading.portfolio import open_value
 
-    trades = s.scalars(select(PaperTrade).where(PaperTrade.status == "OPEN").limit(20)).all()
+    trades = s.scalars(
+        select(PaperTrade).where(PaperTrade.status == "OPEN", PaperTrade.book == "main").limit(20)
+    ).all()
     lines = []
     for t in trades:
         unreal, _, _ = open_value(t)
@@ -290,7 +292,11 @@ def _stats(s: Session) -> str:
         wins = [p for p in pnl if p > 0]
         return f"{label}: {len(pnl)} trades, win rate {len(wins) / len(pnl):.0%}, P&L Rs {sum(pnl):+,.0f}"
 
-    closed = list(s.scalars(select(PaperTrade).where(PaperTrade.status == "CLOSED")))
+    closed = list(
+        s.scalars(
+            select(PaperTrade).where(PaperTrade.status == "CLOSED", PaperTrade.book == "main")
+        )
+    )
     fillable = [t for t in closed if t.fillability != "unfillable"]
     slip = sum(t.slippage_inr or 0.0 for t in closed)
     gaps = sum(1 for t in closed if (t.slippage_inr or 0) < 0)
@@ -369,7 +375,7 @@ def _exposure(s: Session) -> str:
 def _closed_trades(s: Session) -> str:
     trades = s.scalars(
         select(PaperTrade)
-        .where(PaperTrade.status != "OPEN")
+        .where(PaperTrade.status != "OPEN", PaperTrade.book == "main")
         .order_by(PaperTrade.id.desc())
         .limit(10)
     ).all()

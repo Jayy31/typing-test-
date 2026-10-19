@@ -28,6 +28,7 @@ from app.db.models import Analysis, CalibrationRecord, Calibrator, PaperTrade, R
 from app.db.session import session_scope
 from app.history.integrity import knowledge_cutoff
 from app.timeutil import as_ist
+from app.yaml_config import load_yaml
 
 log = logging.getLogger(__name__)
 TARGETS = ("p_move", "p_t1_before_sl")
@@ -234,12 +235,20 @@ def eligible(rows: list[CalibrationRecord]) -> list[CalibrationRecord]:
     return [r for r in rows if as_ist(r.recorded_at).date() > cutoff and r.outcome is not None]
 
 
-def dataset(s: Session, target: str, source: str) -> list[CalibrationRecord]:
+def dataset(
+    s: Session, target: str, source: str, book: str | None = None
+) -> list[CalibrationRecord]:
+    """Records for fitting/reporting. `book`: "main" / "watchlist" only, or None = what the fit
+    uses (main, plus the watchlist book when config/watchlist.yaml calibration.include_in_fit)."""
     q = select(CalibrationRecord).where(
         CalibrationRecord.target == target, CalibrationRecord.outcome.is_not(None)
     )
     if source != "all":
         q = q.where(CalibrationRecord.source == source)
+    if book is not None:
+        q = q.where(CalibrationRecord.book == book)
+    elif not load_yaml("watchlist.yaml")["calibration"]["include_in_fit"]:
+        q = q.where(CalibrationRecord.book == "main")
     return eligible(list(s.scalars(q)))
 
 
@@ -314,8 +323,11 @@ def report(s: Session, target: str, since: date | None = None) -> dict[str, Any]
     """Records, independent events and weighted Brier (raw vs used) per source, R1-filtered."""
     cutoff = knowledge_cutoff()
     res: dict[str, Any] = {"cutoff": cutoff.isoformat() if cutoff else None}
-    for source in SOURCES:
-        rows = dataset(s, target, source)
+    for source in (*SOURCES, "book:main", "book:watchlist"):
+        if source.startswith("book:"):  # Phase 12: main and watchlist books reported separately
+            rows = dataset(s, target, "all", source.split(":")[1])
+        else:
+            rows = dataset(s, target, source)
         if since:
             rows = [r for r in rows if as_ist(r.recorded_at).date() >= since]
         if not rows:

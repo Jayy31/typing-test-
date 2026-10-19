@@ -45,11 +45,19 @@ class Opp:
 def opportunities(s: Session, start: datetime, end: datetime) -> list[Opp]:
     out: list[Opp] = []
     sig = {g.id: g for g in s.scalars(select(Signal))}
+    # Phase 12: watchlist near-misses count with their real fills instead of the counterfactual
+    use_watch = bool(load_yaml("watchlist.yaml")["learning"]["include"])
+    watched: set[int] = set()
     for t in s.scalars(select(PaperTrade).where(PaperTrade.status == "CLOSED")):
         when = as_ist(t.exit_ts or t.entry_ts)
         g = sig.get(t.signal_id)
         if g is None or not (start <= when < end) or t.pnl_pct is None:
             continue
+        if t.book != "main":
+            if not use_watch:
+                continue
+            if g.analysis_id:
+                watched.add(g.analysis_id)
         out.append(
             Opp(
                 when,
@@ -60,7 +68,7 @@ def opportunities(s: Session, start: datetime, end: datetime) -> list[Opp]:
                     "p_t1_before_sl": g.p_t1_before_sl,
                     "ev_pct": g.expected_value,
                 },
-                True,
+                t.book == "main",  # only main-book trades passed every gate
             )
         )
     for r in s.scalars(
@@ -69,6 +77,8 @@ def opportunities(s: Session, start: datetime, end: datetime) -> list[Opp]:
         when = as_ist(r.ts)
         if r.option_return_pct is None or not (start <= when < end):
             continue
+        if r.analysis_id in watched:
+            continue  # already counted from the watchlist trade
         d = r.details_json or {}
         out.append(
             Opp(

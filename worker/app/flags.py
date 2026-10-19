@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db.config_store import get_config
 
-ENGINE_VERSION = "8.3.0"
+ENGINE_VERSION = "8.4.0"
 
 DEFAULTS: dict[str, bool] = {
     "feat.event_study": True,
@@ -23,6 +23,7 @@ DEFAULTS: dict[str, bool] = {
     "feat.multi_agent": True,
     "feat.regime": True,
     "feat.positioning": True,
+    "feat.watchlist_book": True,
 }
 
 # Flip to True in the phase that ships each stage.
@@ -36,6 +37,7 @@ BUILT: dict[str, bool] = {
     "feat.multi_agent": True,  # Phase 5
     "feat.regime": True,  # Phase 12 PR 1
     "feat.positioning": True,  # Phase 12 PR 2
+    "feat.watchlist_book": True,  # Phase 12 PR 3
 }
 
 
