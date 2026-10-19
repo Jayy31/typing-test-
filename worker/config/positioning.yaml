@@ -1,0 +1,46 @@
+# Option-market positioning (Phase 12, feat.positioning). Evidence only, never a signal on its own.
+# Each feature has a state per stock per day. A state is support-only (shown, no effect) until the
+# event study has ANALOGUE_MIN_N history days in that state; then its learned base rate (forward
+# abnormal return) tilts the prediction, weighted n / (n + ANALOGUE_PRIOR_N), capped below.
+oi_buildup:                    # near-month futures: price change vs OI change
+  min_price_chg_pct: 0.5
+  min_oi_chg_pct: 2.0
+pcr:                           # put OI / call OI, near-month options
+  high_above: 1.3
+  low_below: 0.7
+  change_min: 0.15             # day-on-day change counted as rising / falling
+iv_skew:                       # OTM put IV minus OTM call IV (vol points), near month
+  otm_pct: 5.0                 # strikes about this far out of the money
+  put_skew_above: 4.0
+  call_skew_below: -2.0
+term_structure:                # near ATM IV minus next-month ATM IV (vol points)
+  inverted_above: 3.0
+  steep_below: -3.0
+basis:                         # (near future - spot) / spot, %
+  premium_above: 0.8
+  discount_below: -0.2
+rollover:                      # expiry week only: next-month OI share of near + next
+  expiry_week_days: 5
+  high_above: 0.75
+  low_below: 0.55
+unusual_activity:              # any near-month strike: volume AND OI change vs its 20-day average
+  lookback_days: 20
+  volume_mult: 4.0
+  oi_mult: 3.0
+  min_volume: 500
+delivery:                      # delivery % vs its 20-day average (percentage points)
+  lookback_days: 20
+  high_above_pts: 15
+  low_below_pts: -15
+# Which way each state leans (for display while support-only; the learned base rate decides later)
+lean:
+  long_buildup: bullish
+  short_buildup: bearish
+  short_covering: bullish
+  long_unwinding: bearish
+  unusual_calls: bullish
+  unusual_puts: bearish
+evidence:
+  window: 3                    # forward trading days for the base rate
+  max_total_weight: 0.25       # positioning's share of the prediction, at most
+  max_states: 4                # strongest usable states per signal

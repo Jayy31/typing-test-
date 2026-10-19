@@ -14,7 +14,7 @@ import duckdb
 
 from app.config import get_settings
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 DDL = [
     """CREATE TABLE IF NOT EXISTS hist_prices (
@@ -70,6 +70,16 @@ DDL = [
     """CREATE TABLE IF NOT EXISTS hist_kg_edges (
         src VARCHAR, dst VARCHAR, type VARCHAR, weight DOUBLE, dst_sector VARCHAR,
         valid_from DATE, valid_to DATE, PRIMARY KEY (src, dst, type))""",
+    # v6 (Phase 12): stock futures (data only, never traded) and option-market positioning states
+    """CREATE TABLE IF NOT EXISTS hist_futures (
+        date DATE, symbol VARCHAR, expiry DATE, close DOUBLE, settle DOUBLE,
+        oi BIGINT, chg_oi BIGINT, volume BIGINT, PRIMARY KEY (date, symbol, expiry))""",
+    """CREATE TABLE IF NOT EXISTS hist_positioning (
+        date DATE, symbol VARCHAR, feature VARCHAR, state VARCHAR, value DOUBLE,
+        PRIMARY KEY (date, symbol, feature))""",
+    """CREATE TABLE IF NOT EXISTS positioning_stats (
+        feature VARCHAR, state VARCHAR, "window" INTEGER, n INTEGER, mean_ret DOUBLE,
+        hit_up DOUBLE, std DOUBLE, computed_at TIMESTAMP, PRIMARY KEY (feature, state, "window"))""",
 ]
 # Positional inserts into hist_events (the v4 event_date column is filled only for structured events)
 HIST_EVENTS_INSERT = (

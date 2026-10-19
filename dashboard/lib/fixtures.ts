@@ -261,6 +261,46 @@ const analyses: Row[] = [
       },
     ],
     scores_json: {
+      regime: "normal/risk_on",
+      positioning: {
+        as_of: "2026-10-14",
+        source: "eod",
+        evidence: [
+          {
+            feature: "oi_buildup",
+            state: "long_buildup",
+            value: 1.8,
+            basis: "base_rate",
+            lean: "bullish",
+            n: 212,
+            mean_pct: 0.62,
+            hit_up: 0.57,
+            weight: 0.13,
+          },
+          {
+            feature: "pcr",
+            state: "high_rising",
+            value: 1.42,
+            basis: "support",
+            lean: null,
+            n: 3,
+            mean_pct: null,
+            hit_up: null,
+            weight: 0,
+          },
+          {
+            feature: "delivery",
+            state: "high",
+            value: 18.5,
+            basis: "support",
+            lean: null,
+            n: 4,
+            mean_pct: null,
+            hit_up: null,
+            weight: 0,
+          },
+        ],
+      },
       cited_news_ids: [9001, 9002, 9003],
       agg_sentiment: 0.71,
       sources: ["nse_announcements", "et_markets", "deep:bulk_deal:rule"],
@@ -1137,6 +1177,35 @@ const digests: Row[] = [
   },
 ];
 
+const positioning_snapshots: Row[] = [
+  {
+    day: "2026-10-14",
+    symbol: "BHARTIARTL",
+    source: "eod",
+    computed_at: D(1),
+    states_json: {
+      oi_buildup: ["long_buildup", 1.8],
+      pcr: ["high_rising", 1.42],
+      iv_skew: ["flat", 1.1],
+      term_structure: ["inverted", 4.2],
+      basis: ["flat", 0.4],
+      unusual_activity: ["unusual_calls", 5.3],
+      delivery: ["high", 18.5],
+    },
+  },
+  {
+    day: "2026-10-13",
+    symbol: "BHARTIARTL",
+    source: "eod",
+    computed_at: D(2),
+    states_json: {
+      oi_buildup: ["flat", 0.2],
+      pcr: ["neutral", 1.05],
+      delivery: ["normal", 2.0],
+    },
+  },
+];
+
 const market_regime: Row[] = [
   {
     day: "2026-10-15",
@@ -1636,6 +1705,7 @@ export const TABLES: Record<string, Row[]> = {
   ai_vs_rules,
   golive_checks,
   market_regime,
+  positioning_snapshots,
 };
 
 export { premiumPath };

@@ -22,6 +22,8 @@ from app.history.corp_actions import contract_factor
 from app.history.event_study import bootstrap_mean_ci, regime
 from app.history.universe import value_report
 from app.market.implied import n_day_move_pct
+from app.positioning.evidence import assess as assess_positioning
+from app.positioning.evidence import tilt as tilt_positioning
 from app.pricing.bs import implied_vol
 from app.regime import gates as regime_gates
 from app.regime.analogues import blend as blend_regime
@@ -58,6 +60,7 @@ class Variant:
     kg_depth: int = 0  # Phase 8: 0 = no graph; 2 = live default; 3 = comparison variant
     regime_aware: bool = False  # Phase 12: analogues conditioned on the market regime
     regime_gates: str | None = None  # Phase 12: regime.yaml backtest_variants key (gate overrides)
+    positioning: bool = False  # Phase 12: positioning base rates tilt the prediction (as live)
 
     def rules(self) -> ExitRules:
         over = dict(_cfg()["rule_sets"][self.rule_set])
@@ -262,6 +265,7 @@ def rules_signal(
     data: HistoryData,
     variant: Variant,
     groups: dict[tuple[Any, ...], list[tuple[float, float]]] | None = None,
+    pos_stats: dict[tuple[str, str, int], tuple[int, float, float, float]] | None = None,
 ) -> Signal | Skip:
     cfg = _cfg()["rules_mode"]
     w = int(cfg["analogue_window"])
@@ -286,6 +290,10 @@ def rules_signal(
     if variant.direction_mode == "random":
         direction = random.Random(f"{ev.key}:dir").choice(("bullish", "bearish"))
     scen = analogue_scenarios(an, direction, direction == ev.direction, 1.0, w)
+    if variant.positioning and pos_stats is not None:
+        states = data.positioning(ev.symbol, _prev_day(data, ev.day))
+        evid = assess_positioning(states, lambda f, s, win: pos_stats.get((f, s, win)))
+        scen = tilt_positioning(scen, evid, w)
     pred = from_scenarios(scen, direction)
     assert pred is not None
     a = {

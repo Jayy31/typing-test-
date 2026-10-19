@@ -142,6 +142,23 @@ class Context:
             return "news only"
         return "base rate" if any("base_rate" in x for x in structured) else "hand-set rule"
 
+    def market_regime(self, t: PaperTrade) -> str:
+        """Phase 12 regime label stored on the analysis (calm/normal/stressed x risk-on/off)."""
+        a = self.analysis(t)
+        return str((a.scores_json or {}).get("regime") or "unknown") if a else "unknown"
+
+    def positioning(self, t: PaperTrade) -> str:
+        """Phase 12: the strongest positioning state behind the trade (base rate first)."""
+        a = self.analysis(t)
+        ev = ((a.scores_json or {}).get("positioning") or {}).get("evidence", []) if a else []
+        if not ev:
+            return "none"
+        used = sorted((e for e in ev if e.get("weight")), key=lambda e: -float(e["weight"]))
+        if used:
+            return f"{used[0]['feature']}={used[0]['state']} (base rate)"
+        build = next((e for e in ev if e["feature"] == "oi_buildup"), None)
+        return f"oi_buildup={build['state']} (support)" if build else "support only"
+
     def regime(self, t: PaperTrade) -> str:
         when = as_ist(t.entry_ts)
         v = next((x for ts, x in reversed(self.vix) if ts <= when), None)
@@ -168,6 +185,8 @@ BREAKDOWNS: dict[str, Callable[[Context, PaperTrade], str]] = {
         "after hours" if t.signal_id in c.sig and c.sig[t.signal_id].enter_after else "normal"
     ),
     "evidence_basis": lambda c, t: c.evidence_basis(t),
+    "market_regime": lambda c, t: c.market_regime(t),
+    "positioning": lambda c, t: c.positioning(t),
 }
 
 

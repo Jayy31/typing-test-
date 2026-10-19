@@ -28,6 +28,8 @@ from app.history.event_study import (
     vix_series,
 )
 from app.history.integrity import ai_predictions_allowed, knowledge_cutoff
+from app.positioning.history import stat_rows as positioning_rows
+from app.positioning.history import summarize as positioning_summary
 from app.timeutil import as_ist
 from app.yaml_config import load_yaml
 
@@ -111,12 +113,17 @@ def run_rules(
             labels,
         )
         stats = summarize(groups)
+        pos_stats = (
+            positioning_summary(positioning_rows(con, before=f.test_start))
+            if variant.positioning
+            else None
+        )
         sigs: list[Signal] = []
         evs = data.events(f.test_start, f.test_end)
         if variant.kg_depth:  # graph-propagated events as of each date (no look-ahead)
             evs = evs + data.linked_events(evs, variant.kg_depth)
         for ev in evs:
-            out = rules_signal(ev, stats, data, variant, groups)
+            out = rules_signal(ev, stats, data, variant, groups, pos_stats)
             (res.skips.append(out) if isinstance(out, Skip) else sigs.append(out))
         _execute(sigs, data, variant, res)
     if not res.folds:

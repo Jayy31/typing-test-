@@ -9,7 +9,7 @@ import io
 import logging
 import time
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -118,6 +118,8 @@ class FoParsed:
     ]  # (date, symbol, expiry, strike, type, o, h, l, c, settle, oi, chg_oi, volume)
     lots: dict[str, int]  # symbol -> lot size (UDiFF only)
     underlying: dict[str, float]  # symbol -> underlying price (UDiFF only)
+    # Phase 12: stock futures, data only (date, symbol, expiry, close, settle, oi, chg_oi, volume)
+    futures: list[tuple[Any, ...]] = field(default_factory=list)
 
 
 def parse_fo(raw: bytes, d: date, kind: str | None = None) -> FoParsed:
@@ -127,8 +129,14 @@ def parse_fo(raw: bytes, d: date, kind: str | None = None) -> FoParsed:
     rows = _rows(_text(raw))
     if rows:
         _need(rows[0], cols, kind)
-    opts, lots, und = [], {}, {}
+    opts, lots, und, futs = [], {}, {}, []
+    fut_code = cfg.get("futures_instrument")
     for r in rows:
+        if fut_code and r[cols["instrument"]] == fut_code:
+            fut = _future_row(r, cols, fmt, d)
+            if fut:
+                futs.append(fut)
+            continue
         if r[cols["instrument"]] != cfg["instrument"]:
             continue
         typ = r[cols["type"]]
@@ -167,7 +175,29 @@ def parse_fo(raw: bytes, d: date, kind: str | None = None) -> FoParsed:
             u = _num(r[cols["underlying"]])
             if u:
                 und[sym] = u
-    return FoParsed(opts, lots, und)
+    return FoParsed(opts, lots, und, futs)
+
+
+def _future_row(
+    r: dict[str, str], cols: dict[str, str], fmt: str, d: date
+) -> tuple[Any, ...] | None:
+    try:
+        expiry = datetime.strptime(
+            r[cols["expiry"]].title() if "%b" in fmt else r[cols["expiry"]], fmt
+        ).date()
+    except ValueError:
+        return None
+    oi, chg, vol = _num(r[cols["oi"]]), _num(r[cols["chg_oi"]]), _num(r[cols["volume"]])
+    return (
+        d,
+        r[cols["symbol"]],
+        expiry,
+        _num(r[cols["close"]]),
+        _num(r[cols["settle"]]),
+        int(oi) if oi is not None else None,
+        int(chg) if chg is not None else None,
+        int(vol) if vol is not None else None,
+    )
 
 
 def parse_index(raw: bytes, d: date) -> list[tuple[Any, ...]]:

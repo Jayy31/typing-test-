@@ -74,6 +74,7 @@ class HistoryData:
             ).fetchall()
         )
         self._regimes: dict[date, str] | None = None
+        self._positioning: dict[tuple[str, date], dict[str, tuple[str, float]]] | None = None
         self.prices: dict[str, dict[date, PriceBar]] = defaultdict(dict)
         for sym, d, o, h, lo, c, v in con.execute(
             "SELECT symbol, date, coalesce(open, close), coalesce(high, close), coalesce(low, close), close, volume FROM hist_prices"
@@ -254,6 +255,20 @@ class HistoryData:
                         )
                 frontier = nxt
         return out
+
+    def positioning(self, symbol: str, day: date) -> dict[str, tuple[str, float]]:
+        """Phase 12 positioning states of a stock at a history day's close."""
+        if self._positioning is None:
+            self._positioning = defaultdict(dict)
+            try:
+                rows = self.con.execute(
+                    "SELECT symbol, date, feature, state, value FROM hist_positioning"
+                ).fetchall()
+            except duckdb.Error:
+                rows = []
+            for sym, d, feat, state, value in rows:
+                self._positioning[(sym, d)][feat] = (state, float(value or 0.0))
+        return dict(self._positioning.get((symbol, day), {}))
 
     def regime_label(self, day: date) -> str:
         """Phase 12 market regime of a history day (VIX + Nifty up to that day)."""
