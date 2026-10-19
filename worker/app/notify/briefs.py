@@ -256,6 +256,8 @@ def evening_summary_text(s: Session, now: datetime) -> str | None:
     lines += [f"  {p.path_key.replace('>', ' > ')} ({p.sign_basis})" for p in paths[:5]] or [
         "  none"
     ]
+    if flags.active(s, "feat.positioning"):
+        lines += ["", *_positioning_lines(s)]
     if flags.active(s, "feat.watchlist_book"):
         lines += ["", *_watchlist_lines(s, start)]
     flows = _fii_dii(s, today)
@@ -267,6 +269,30 @@ def evening_summary_text(s: Session, now: datetime) -> str | None:
         else "  pending (NSE publishes around 19:00; final figures in tomorrow's brief)",
     ]
     return "\n".join(lines)
+
+
+def _positioning_lines(s: Session) -> list[str]:
+    """Phase 12: positioning of stocks with open trades or live signals, with its freshness."""
+    from app.positioning.service import latest, source_label
+    from app.signals.lifecycle import LIVE
+
+    syms = sorted(
+        {str(t.symbol) for t in s.scalars(select(PaperTrade).where(PaperTrade.status == "OPEN"))}
+        | {g.symbol for g in s.scalars(select(Signal).where(Signal.status.in_(LIVE)))}
+    )
+    out = ["POSITIONING (evidence only)"]
+    for sym in syms[:8]:
+        snap = latest(s, sym)
+        if snap is None:
+            continue
+        st = snap.states_json or {}
+        parts = [f"{f} {st[f][0]}" for f in ("oi_buildup", "pcr", "unusual_activity") if f in st]
+        out.append(
+            f"  {sym}: {', '.join(parts) or 'no states'} [{source_label(snap.source, snap.day)}]"
+        )
+    if len(out) == 1:
+        out.append("  none")
+    return out
 
 
 def _watchlist_lines(s: Session, start: datetime) -> list[str]:

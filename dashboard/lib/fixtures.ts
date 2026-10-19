@@ -1278,6 +1278,27 @@ const market_regime: Row[] = [
 
 const golive_checks: Row[] = [
   {
+    id: 3,
+    kind: "auto",
+    created_at: D(0),
+    status: "ok",
+    text: "POSITIONING HISTORY READY (automatic)",
+    results_json: {
+      title: "Positioning history (automatic)",
+      checks: [
+        {
+          name: "positioning_history",
+          status: "ok",
+          summary: "1236 days, 948210 states, 61 base rates",
+          details: [
+            "futures: 1236 days parsed from the cache, 0 errors",
+            "nightly job adds each new day from now on",
+          ],
+        },
+      ],
+    },
+  },
+  {
     id: 1,
     kind: "quick",
     created_at: D(1),

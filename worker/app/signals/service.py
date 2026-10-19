@@ -36,6 +36,7 @@ from app.notify.outbox import enqueue_alert
 from app.positioning.evidence import tilt as positioning_tilt
 from app.positioning.service import evidence_from as positioning_evidence
 from app.positioning.service import for_signal as positioning_for
+from app.positioning.service import source_label as positioning_label
 from app.regime.service import current_in as current_regime_in
 from app.rules.engine import RuleContext, RuleHit, evaluate, fired_macro_rules
 from app.rules.macro_changes import compute_changes
@@ -162,7 +163,7 @@ def plan_work(
         if pos:
             lines = "\n".join(f"- {e.line()}" for e in positioning_evidence(pos))
             message += (
-                f"\n\nOPTION-MARKET POSITIONING (data only, as of {pos['as_of']}, {pos['source']}):\n"
+                f"\n\nOPTION-MARKET POSITIONING (data only; {positioning_label(pos['source'], pos['as_of'])}):\n"
                 f"{lines}"
             )
         work.append(

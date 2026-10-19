@@ -30,6 +30,7 @@ const PAGES: [string, string, string[]][] = [
       "blended (scenario tree + analogues)",
       "Option-market positioning",
       "support only",
+      "EOD, previous session (2026-10-14)",
       "Panel debate",
       "filing · hand-set rule (low weight)",
       "Candidate strikes",
@@ -120,12 +121,24 @@ const PAGES: [string, string, string[]][] = [
   [
     "/stocks/BHARTIARTL",
     "29-stock",
-    ["Option-market positioning", "long buildup", "S-1042", "Paper trades"],
+    [
+      "Option-market positioning",
+      "long buildup",
+      "EOD, previous session (2026-10-14)",
+      "S-1042",
+      "Paper trades",
+    ],
   ],
   [
     "/golive",
     "28-golive",
-    ["First-run report", "BLOCKED", "alternative: BSE insider", "needs you"],
+    [
+      "First-run report",
+      "BLOCKED",
+      "alternative: BSE insider",
+      "needs you",
+      "Positioning history (automatic)",
+    ],
   ],
 ];
 

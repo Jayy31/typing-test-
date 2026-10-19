@@ -160,7 +160,8 @@ def build(con: duckdb.DuckDBPyConnection) -> int:
         for sym, x in day_inputs(con, d, prev_of.get(d)).items():
             for feat, (state, value) in compute(x).items():
                 rows.append((d, sym, feat, state, value))
-        con.executemany("INSERT OR REPLACE INTO hist_positioning VALUES (?, ?, ?, ?, ?)", rows)
+        if rows:  # DuckDB rejects an empty batch
+            con.executemany("INSERT OR REPLACE INTO hist_positioning VALUES (?, ?, ?, ?, ?)", rows)
         n += len(rows)
     return n
 
@@ -214,10 +215,11 @@ def compute_stats(con: duckdb.DuckDBPyConnection) -> int:
     stats = summarize(stat_rows(con))
     con.execute("DELETE FROM positioning_stats")
     now = datetime.now().replace(microsecond=0)
-    con.executemany(
-        "INSERT INTO positioning_stats VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        [(*k, *v, now) for k, v in stats.items()],
-    )
+    if stats:  # DuckDB rejects an empty batch
+        con.executemany(
+            "INSERT INTO positioning_stats VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [(*k, *v, now) for k, v in stats.items()],
+        )
     return len(stats)
 
 
