@@ -311,6 +311,8 @@ def _stats(s: Session) -> str:
         + "\n"
         + line("Excluding unfillable", fillable)
         + "\n"
+        + line("Research agent", [t for t in closed if src.get(t.signal_id) == "agent"])
+        + "\n"
         + line("Panel predictions", [t for t in closed if src.get(t.signal_id) == "panel"])
         + "\n"
         + line("Single analyst", [t for t in closed if src.get(t.signal_id) == "single"])

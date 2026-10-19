@@ -55,6 +55,7 @@ def analogue_lines(a: dict[str, Any]) -> list[str]:
 
 
 SOURCE_NAMES = {
+    "agent": "research agent (tool-using investigation)",
     "panel": "multi-agent panel (researcher, novelty, bull, bear, judge)",
     "single": "single analyst",
 }
@@ -70,6 +71,60 @@ def calibration_lines(sig: Signal, cal: dict[str, Any] | None) -> list[str]:
     used = [x for x in ((cal or {}).get("t1_calibrator"), (cal or {}).get("move_calibrator")) if x]
     w = f"; AI share of simulated paths {sig.ai_weight:.0%}" if sig.ai_weight is not None else ""
     return [f"  Calibrated with {method}: {', '.join(used) or method}{w}."]
+
+
+def research_lines(s: Session, an: Any) -> list[str]:
+    """Phase 13: research file used, tools called, sources, bear case, lessons, model and cost."""
+    from app.db.models import ResearchFile, ResearchRun, ResearchToolCall
+
+    rid = getattr(an, "research_run_id", None)
+    if not rid:
+        return []
+    run = s.get(ResearchRun, rid)
+    if run is None:
+        return []
+    out = ["", "RESEARCH AGENT"]
+    used = an.prediction_source == "agent"
+    out.append(
+        f"  {run.model} ({run.role}, preset {run.preset}, effort {run.effort or 'default'}); "
+        f"status {run.status}"
+        + (f" ({run.limited_reason})" if run.limited_reason else "")
+        + f"; cost Rs {run.cost_inr:.2f}"
+        + ("" if used else " -> fell back to the single analyst")
+    )
+    if run.research_file_id:
+        f = s.get(ResearchFile, run.research_file_id)
+        if f is not None:
+            out.append(
+                f"  Research file: {f.subject} v{f.version} ({f.created_at:%Y-%m-%d}, {f.model})"
+            )
+    else:
+        out.append("  Research file: none yet")
+    calls = s.scalars(
+        select(ResearchToolCall)
+        .where(ResearchToolCall.run_id == rid)
+        .order_by(ResearchToolCall.seq)
+    ).all()
+    if calls:
+        counts: dict[str, int] = {}
+        for c in calls:
+            counts[c.tool] = counts.get(c.tool, 0) + 1
+        out.append("  Tools: " + ", ".join(f"{k} x{v}" for k, v in counts.items()))
+    urls = [x.get("url") for x in (run.sources_json or []) if x.get("url")]
+    cited = (run.output_json or {}).get("cited_urls") or []
+    if cited:
+        out.append("  Web sources cited: " + "; ".join(cited[:4]))
+    elif urls:
+        out.append(f"  Web pages seen: {len(urls)} (none cited)")
+    base_rate = (run.output_json or {}).get("base_rate")
+    if base_rate:
+        out.append(f"  Base rate: {str(base_rate)[:200]}")
+    if run.bear_case:
+        out.append(f"  Bear case: {run.bear_case[:300]}")
+    applied = [x for x in (run.lessons_json or []) if x.get("applied")]
+    if applied:
+        out += [f"  Lesson applied: {x['text'][:160]}" for x in applied[:3]]
+    return out
 
 
 def debate_lines(runs: list[AgentRun], panel: dict[str, Any] | None) -> list[str]:
@@ -274,6 +329,7 @@ def build_why(s: Session, signal_id: int) -> str | None:
     ] or ["  none recorded"]
     runs = s.scalars(select(AgentRun).where(AgentRun.analysis_id == an.id)).all()
     out += debate_lines(list(runs), js.get("panel"))
+    out += research_lines(s, an)
     out += [
         "",
         "ENGINE",

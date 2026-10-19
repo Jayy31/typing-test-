@@ -232,6 +232,7 @@ class SmokeResult:
     panel_ok: bool = False
     single_ok: bool = False
     postmortem_ok: bool = False
+    agent: dict[str, Any] | None = None  # Phase 13 research-agent run (reported separately)
     fixes: list[str] = field(default_factory=list)
     total_cost_inr: float = 0.0
     notes: list[str] = field(default_factory=list)
@@ -341,6 +342,52 @@ def run_postmortem_part(ai: GuardedClient, res: SmokeResult, run: str) -> None:
         )
 
 
+def run_agent_part(res: SmokeResult, engine: Engine | None) -> None:
+    """One research-agent investigation on the sample (research_live role of the current preset),
+    under its own hard limit. Reported on its own line; it does not decide `passed` (the
+    agent is behind feat.research_agent, and startup re-runs must not repeat its cost)."""
+    from dataclasses import replace
+
+    from app.research.agent import run_live
+    from app.research.config import role_config
+
+    cfg = _cfg()
+    limit = float(cfg.get("agent_limit_inr", 30))
+    try:
+        rc = role_config("research_live")
+    except (RuntimeError, ValueError) as exc:
+        res.agent = {"ok": False, "error": f"not configured: {exc}"}
+        return
+    rc = replace(rc, max_inr=min(rc.max_inr, limit - float(cfg.get("agent_margin_inr", 5))))
+    t0 = time.monotonic()
+    try:
+        r = run_live(
+            rc,
+            "BHARTIARTL",
+            "Telecom",
+            ["tariff_change"],
+            sample_message(datetime.now(IST)),
+            set(SAMPLE_IDS),
+            engine,
+            kind="smoke",
+        )
+    except Exception as exc:  # noqa: BLE001 - report, never crash the smoke test
+        res.agent = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+        return
+    res.agent = {
+        "ok": r.out is not None,
+        "status": r.status,
+        "error": r.error,
+        "model": r.model,
+        "preset": r.preset,
+        "cost_inr": round(r.cost_inr, 2),
+        "limit_inr": limit,
+        "seconds": round(time.monotonic() - t0, 1),
+        "tools": r.tools_used,
+        "run_id": r.run_id,
+    }
+
+
 def apply_fixes(res: SmokeResult, engine: Engine | None) -> list[str]:
     """Owner rule 4: lower effort for roles that failed their schema or made the panel too slow."""
     fixes: list[str] = []
@@ -378,8 +425,13 @@ def apply_fixes(res: SmokeResult, engine: Engine | None) -> list[str]:
 
 
 def run_smoke(
-    engine: Engine | None = None, trigger: str = "manual", base: AiClient | None = None
+    engine: Engine | None = None,
+    trigger: str = "manual",
+    base: AiClient | None = None,
+    agent: bool | None = None,
 ) -> SmokeResult:
+    """`agent`: also run one research-agent investigation (default: only against the real API,
+    not when `base` wraps a fake messages client)."""
     cfg = _cfg()
     base = base or AiClient(engine=engine)
     ai = GuardedClient(base, float(cfg["limit_inr"]))
@@ -397,7 +449,9 @@ def run_smoke(
                 run_single_part(ai, res, "after_fix")
             if not res.postmortem_ok:
                 run_postmortem_part(ai, res, "after_fix")
-    res.total_cost_inr = round(ai.spent, 2)
+    if agent if agent is not None else base._msg_override is None:
+        run_agent_part(res, engine)
+    res.total_cost_inr = round(ai.spent + float((res.agent or {}).get("cost_inr") or 0), 2)
     with session_scope(engine) as s:
         s.add(
             AiSmokeRun(
@@ -411,6 +465,7 @@ def run_smoke(
                     "calls": res.calls,
                     "notes": res.notes,
                     "limit_inr": cfg["limit_inr"],
+                    "agent": res.agent,
                 },
                 fixes_json=res.fixes,
             )
@@ -438,6 +493,19 @@ def render(res: SmokeResult) -> str:
             f"in {c['input_tokens']}, out {c['output_tokens']} (thinking ~{c['thinking_tokens_est']}), cached {c['cache_read']}/{c['cache_write']}; "
             f"Rs {c['cost_inr']:.2f} vs est Rs {c['estimate_inr']:.2f}; {c['seconds']:.1f}s"
         )
+    if res.agent is not None:
+        a = res.agent
+        if a.get("ok"):
+            lines.append(
+                f"research agent [{a['model']}, preset {a['preset']}]: ok ({a['status']}); "
+                f"Rs {a['cost_inr']:.2f} (own limit Rs {a['limit_inr']:.0f}); {a['seconds']:.0f}s; "
+                f"tools: {', '.join(a['tools']) or 'none'}"
+            )
+        else:
+            lines.append(
+                f"research agent: FAILED ({a.get('error')}) - reported only; "
+                "the panel/single analyst still work"
+            )
     if res.fixes:
         lines += ["", "AUTO-FIXES APPLIED:"] + [f"- {f}" for f in res.fixes]
     lines += [f"Note: {n}" for n in res.notes]

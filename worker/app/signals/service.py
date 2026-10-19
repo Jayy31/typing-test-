@@ -68,8 +68,9 @@ class WorkItem:
     sub_sector: str | None
     analogue: AnalogueResult | None = None  # event-study base rate (Phase 4)
     prescreen: float = 0.0  # pre-AI rank for the daily panel / analyst caps (Phase 5)
-    source: str = "single"  # panel / single
+    source: str = "single"  # agent / panel / single
     steps: list[AgentStep] | None = None  # agent outputs, stored in agent_runs
+    research: Any = None  # Phase 13: AgentResult of the research agent (also kept on fallback)
     policy: calibration.Policy | None = None  # how the prediction is tempered (shrink/calibrated)
     deferred: dict[str, Any] | None = None  # off-hours: priced at the next open (Phase 7)
     positioning: dict[str, Any] | None = None  # Phase 12: option-market positioning evidence
@@ -262,6 +263,7 @@ def store_result(
             created_at=now,
             prediction_source=item.source,
             impact_order=cand.impact_order,
+            **_ai_tags(item),
         )
         s.add(failed)
         s.flush()
@@ -327,6 +329,7 @@ def store_result(
             "panel": _panel_json(out),
             "positioning": item.positioning,
             "regime": getattr(current_regime_in(s, now.date()), "label", None),
+            "research": _research_json(item),
         },
         confidence=out.confidence,
         model=model,
@@ -334,6 +337,7 @@ def store_result(
         created_at=now,
         prediction_source=item.source,
         impact_order=cand.impact_order,
+        **_ai_tags(item),
     )
     s.add(analysis)
     s.flush()
@@ -469,7 +473,35 @@ def _move_weight(item: WorkItem) -> float:
 
 
 def _prompt_ver(item: WorkItem) -> str:
+    if item.source == "agent":
+        from app.research.agent import PROMPT_VERSION as AGENT_PROMPT
+
+        return AGENT_PROMPT
     return PANEL_PROMPT_VERSION if item.source == "panel" else analyst.PROMPT_VERSION
+
+
+def _ai_tags(item: WorkItem) -> dict[str, Any]:
+    """Phase 13 prediction tags: preset (agent only), model per role, total AI cost of this
+    analysis (a failed agent run that fell back to the single analyst counts too)."""
+    models: dict[str, str] = {}
+    cost = 0.0
+    for st in item.steps or []:
+        if st.usage:
+            models[st.agent] = st.usage.model
+            cost += st.cost_inr or st.usage.cost_inr
+    preset = None
+    run_id = None
+    if item.research is not None:
+        models[item.research.role] = item.research.model
+        cost += item.research.cost_inr
+        run_id = item.research.run_id
+        preset = item.research.preset if item.source == "agent" else None
+    return {
+        "research_run_id": run_id,
+        "ai_preset": preset,
+        "ai_models_json": models or None,
+        "ai_cost_inr": round(cost, 4),
+    }
 
 
 def _store_agent_runs(s: Session, analysis_id: int, item: WorkItem) -> None:
@@ -535,6 +567,23 @@ def _policy_json(p: calibration.Policy | None) -> dict[str, Any] | None:
         "move_calibrator": p.move_cal.label() if p.move_cal else None,
         "t1_calibrator": p.t1_cal.label() if p.t1_cal else None,
         "calibrator_id": p.calibrator_id,
+    }
+
+
+def _research_json(item: WorkItem) -> dict[str, Any] | None:
+    r = item.research
+    if r is None:
+        return None
+    return {
+        "run_id": r.run_id,
+        "status": r.status,
+        "used": item.source == "agent",
+        "fallback": None if item.source == "agent" else f"single analyst ({r.error})",
+        "role": r.role,
+        "model": r.model,
+        "preset": r.preset,
+        "cost_inr": round(r.cost_inr, 2),
+        "tools_used": r.tools_used,
     }
 
 
@@ -647,10 +696,15 @@ def stamp_signal(
 ) -> None:
     """Configuration provenance, prediction, option choice, EV and latency on a live signal."""
     sig.engine_version = ENGINE_VERSION
+    if item is not None and item.source == "agent" and item.research is not None:
+        sig.ai_preset = item.research.preset
     snap = flags.snapshot(s)
     if item is not None:  # what actually ran for THIS signal, not just what is switched on
         snap["feat.multi_agent"]["active"] = (
             snap["feat.multi_agent"]["active"] and item.source == "panel"
+        )
+        snap["feat.research_agent"]["active"] = (
+            snap["feat.research_agent"]["active"] and item.source == "agent"
         )
         used_cal = item.policy is not None and item.policy.method != "shrink"
         snap["feat.probabilities"]["active"] = snap["feat.probabilities"]["active"] and used_cal
@@ -861,6 +915,60 @@ def _threads_ok(engine: Engine | None) -> bool:
     return eng.dialect.name != "sqlite"
 
 
+def _run_agent(
+    item: WorkItem, ai: AiClient, now: datetime, engine: Engine | None
+) -> tuple[AnalystOutput | None, str | None, str]:
+    """Phase 13: research agent; on a failed run or a full research sub-cap, the single analyst
+    (never the panel). An exceeded OVERALL budget propagates (AI work pauses)."""
+    from app.research import runs as research_runs
+    from app.research.agent import run_live
+    from app.research.config import cfg as research_cfg
+    from app.research.config import role_config
+    from app.signals.routing import agent_role
+
+    with session_scope(engine) as s:
+        role = agent_role(s, now)
+        rc = role_config(role)
+        est = float(research_cfg()["estimates_inr"].get(role, 0))
+        try:
+            research_runs.check_budget(s, ai, "live", role, est, now)
+            capped = None
+        except BudgetExceededError as exc:
+            if not exc.role.startswith("research"):
+                raise
+            capped = str(exc)
+    if capped is None:
+        res = run_live(
+            rc,
+            item.cand.symbol,
+            item.sector,
+            sorted(item.cand.event_types),
+            item.message,
+            item.provided_ids,
+            engine,
+            now=now,
+        )
+        item.research = res
+        if res.out is not None:
+            item.source = "agent"
+            return res.out, None, rc.model
+        log.warning("research agent failed for %s: %s", item.cand.symbol, res.error)
+    item.source = "single"
+    from app.signals.routing import runs_today
+
+    with session_scope(engine) as s:
+        single_full = runs_today(s, "single", now) >= ai.settings.ai_single_analyst_max_per_day
+    if single_full:
+        why = capped or (item.research.error if item.research else "research agent unavailable")
+        return None, f"{why}; single analyst cap reached", ai.model_for("analyst")
+    try:
+        out, usage = analyst.analyse_with_usage(ai, item.message, item.provided_ids)
+    except AiOutputError as exc:
+        return None, str(exc), ai.model_for("analyst")
+    item.steps = [AgentStep("analyst", analyst.PROMPT_VERSION, out.model_dump(mode="json"), usage)]
+    return out, None, ai.model_for("analyst")
+
+
 def run_signal_cycle(
     engine: Engine | None = None,
     ai: AiClient | None = None,
@@ -901,7 +1009,9 @@ def run_signal_cycle(
         error: str | None = None
         plan: OptionPlan | None = None
         try:
-            if mode == "panel":
+            if mode == "agent":
+                out, error, model = _run_agent(item, ai, now, engine)
+            elif mode == "panel":
                 res = run_panel(
                     ai, item.message, item.provided_ids, None if _threads_ok(engine) else False
                 )
