@@ -86,4 +86,9 @@ smoke:
   limit_inr: 50                  # hard limit for one smoke run, including an auto-fix re-run
   max_panel_seconds: 180
   max_auto_attempts: 3           # startup runs stop after this many failed runs
+  # Phase 13: one research-agent run (research_live role, real tools and web) on the same sample.
+  # Its own hard limit, on top of limit_inr: the panel/analyst/post-mortem worst-case
+  # reservations leave too little of the Rs 50 for a ~Rs 26 investigation.
+  agent_limit_inr: 30
+  agent_margin_inr: 5            # the run stops this far below the limit (one turn can overshoot)
   estimates_inr: {researcher: 0.10, novelty: 0.05, bull: 3.2, bear: 3.2, judge: 9.5, analyst: 3.6, postmortem: 1.8}

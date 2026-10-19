@@ -250,3 +250,26 @@ def test_ir_override_file(tmp_path: Path) -> None:
     ov.write_text("overrides:\n  A: [https://www.a-ir.com/, a.com]\n  B: null\n")
     out = company_domains.__wrapped__(master, ov)
     assert out == {"A": ["a-ir.com", "a.com"], "B": []}
+
+
+def test_agent_and_files_import_no_trading_or_broker_code() -> None:
+    root = Path(__file__).resolve().parents[1] / "app" / "research"
+    for name in ("agent.py", "files.py", "runs.py", "config.py", "costing.py"):
+        tree = ast.parse((root / name).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                names = (
+                    [node.module or ""]
+                    if isinstance(node, ast.ImportFrom)
+                    else [a.name for a in node.names]
+                )
+                for n in names:
+                    assert not n.startswith(FORBIDDEN_IMPORTS[:4]), f"{name} imports {n}"
+
+
+def test_agent_offers_only_read_tools_and_submit() -> None:
+    from app.research.agent import _submit_spec
+    from app.research.tools import specs
+
+    offered = {t.name for t in specs()} | {_submit_spec().name}
+    assert offered == set(TOOLS) | {"submit_answer"}

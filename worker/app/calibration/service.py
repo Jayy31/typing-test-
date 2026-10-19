@@ -32,7 +32,7 @@ from app.yaml_config import load_yaml
 
 log = logging.getLogger(__name__)
 TARGETS = ("p_move", "p_t1_before_sl")
-SOURCES = ("all", "panel", "single")
+SOURCES = ("all", "agent", "panel", "single")
 MARKET_P = {"p_move": 0.5}  # p_t1's market value is simulated per candidate
 
 
@@ -97,7 +97,7 @@ class ActiveCalibrator:
 
 
 def active(s: Session, target: str, source: str | None) -> ActiveCalibrator | None:
-    for src in ([source] if source in ("panel", "single") else []) + ["all"]:
+    for src in ([source] if source in ("agent", "panel", "single") else []) + ["all"]:
         c = s.scalars(
             select(Calibrator).where(
                 Calibrator.target == target, Calibrator.source == src, Calibrator.active.is_(True)

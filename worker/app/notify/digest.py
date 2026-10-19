@@ -65,6 +65,7 @@ def build(s: Session, week_start: date) -> tuple[str, dict[str, Any]]:
             "excluding_unfillable": _trade_stats(
                 [t for t in trades if t.fillability != "unfillable"]
             ),
+            "agent": _trade_stats([t for t, src in rows if src == "agent"]),
             "panel": _trade_stats([t for t, src in rows if src == "panel"]),
             "single": _trade_stats([t for t, src in rows if src == "single"]),
         },
@@ -193,7 +194,7 @@ def _fmt(st: dict[str, Any]) -> str:
 
 def _cal_line(target: str, rep: dict[str, Any]) -> str:
     parts = []
-    for src in ("all", "panel", "single"):
+    for src in ("all", "agent", "panel", "single"):
         r = rep.get(src) or {}
         if r.get("records"):
             parts.append(
@@ -223,7 +224,7 @@ def render(d: dict[str, Any]) -> str:
         "PREDICTIONS (post-cutoff only, R1)"
         + ("" if sc.get("cutoff") else ": AI_MODEL_KNOWLEDGE_CUTOFF not set, none counted"),
     ]
-    for src in ("all", "panel", "single"):
+    for src in ("all", "agent", "panel", "single"):
         x = sc.get(src) or {}
         lines.append(
             f"  {src}: "

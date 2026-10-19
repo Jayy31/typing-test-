@@ -4,6 +4,11 @@ Candidates in a cycle are ranked by a pre-AI score (evidence strength, official 
 engine). The top ones get the full multi-agent panel until AI_MULTI_AGENT_MAX_PER_DAY panels ran
 today, the next ones the single analyst until AI_SINGLE_ANALYST_MAX_PER_DAY, the rest are
 recorded as rejected ('ai_cap'). The panel needs feat.multi_agent and all five panel models set.
+
+Phase 13: with feat.research_agent on, the research agent replaces the panel: the top
+`live.max_per_day` candidates of the day get an investigation (the first one on research_top when
+that role has its own model), the rest go to the single analyst within its cap. The panel is not
+used while the agent is on; a failed agent run falls back to the single analyst.
 """
 
 from datetime import datetime
@@ -39,6 +44,27 @@ def runs_today(s: Session, source: str, now: datetime) -> int:
     )
 
 
+def agent_runs_today(s: Session, now: datetime) -> int:
+    from app.db.models import ResearchRun
+
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(
+        s.scalar(
+            select(func.count(ResearchRun.id)).where(
+                ResearchRun.kind == "live", ResearchRun.created_at >= start
+            )
+        )
+        or 0
+    )
+
+
+def agent_role(s: Session, now: datetime) -> str:
+    """research_top for the day's first (strongest) investigation when it has its own model."""
+    from app.research.config import top_enabled
+
+    return "research_top" if top_enabled() and agent_runs_today(s, now) == 0 else "research_live"
+
+
 def graph_panels_today(s: Session, now: datetime) -> int:
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     return int(
@@ -56,10 +82,27 @@ def graph_panels_today(s: Session, now: datetime) -> int:
 def choose_mode(
     s: Session, ai: AiClient, now: datetime, impact_order: int = 1
 ) -> tuple[str | None, str]:
-    """('panel' | 'single' | None, why). Graph-propagated candidates (impact_order > 1) may use at
+    """('agent' | 'panel' | 'single' | None, why). Graph-propagated candidates (impact_order > 1) may use at
     most KG_MAX_PANEL_SLOTS of the daily panels; the rest go to the single analyst."""
     st = ai.settings
-    panel_n, single_n = runs_today(s, "panel", now), runs_today(s, "single", now)
+    single_n = runs_today(s, "single", now)
+    if flags.active(s, "feat.research_agent"):
+        from app.research.config import cfg as research_cfg
+
+        cap = int(research_cfg()["live"]["max_per_day"])
+        agent_n = agent_runs_today(s, now)
+        if agent_n < cap:
+            return "agent", f"research agent {agent_n + 1}/{cap} today"
+        if single_n < st.ai_single_analyst_max_per_day:
+            return "single", (
+                f"research agent cap reached ({cap}); single analyst "
+                f"{single_n + 1}/{st.ai_single_analyst_max_per_day} today"
+            )
+        return None, (
+            f"daily AI caps reached (research agent {agent_n}/{cap}, "
+            f"single {single_n}/{st.ai_single_analyst_max_per_day})"
+        )
+    panel_n = runs_today(s, "panel", now)
     panel_ok = flags.active(s, "feat.multi_agent") and ai.configured(*PANEL_ROLES)
     kg_full = impact_order > 1 and graph_panels_today(s, now) >= st.kg_max_panel_slots
     if panel_ok and panel_n < st.ai_multi_agent_max_per_day and not kg_full:

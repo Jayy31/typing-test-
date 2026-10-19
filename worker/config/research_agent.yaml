@@ -134,3 +134,7 @@ web_allowlist:
 tools:
   max_rows: 20
   max_result_chars: 8000
+
+# Lessons from the weekly self-review shown to the live agent (newest first, non-deleted)
+lessons:
+  max_in_prompt: 8

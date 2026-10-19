@@ -43,6 +43,7 @@ def create_score(
             predicted_move_raw_pct=predicted_raw,
             predicted_source=source,
             prediction_source=prediction_source,
+            ai_preset=analysis.ai_preset,
             p_move=p_move,
             window_days=int(analysis.window_days or 3),
             spot_start=spot,
@@ -135,7 +136,7 @@ def summary(s: Session, since: date | None = None) -> dict[str, Any]:
             and (since is None or as_ist(ps.created_at).date() >= since)
         ]
     )
-    for source in ("all", "panel", "single"):
+    for source in ("all", "agent", "panel", "single"):
         sel = [(ps, an) for ps, an in rows if source == "all" or ps.prediction_source == source]
         if not sel:
             out[source] = {"n": 0}
