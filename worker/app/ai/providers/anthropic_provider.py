@@ -182,7 +182,7 @@ class AnthropicConversation:
         stop = "end"
         for _ in range(MAX_PAUSE_RESUMES + 1):
             resp = self._request()
-            usage.add(usage_of(resp.usage))
+            usage.accumulate(usage_of(resp.usage))
             self.history.append({"role": "assistant", "content": [_dump(b) for b in resp.content]})
             tx, cl, so, qu = read_content(resp.content)
             if tx:
@@ -275,7 +275,7 @@ class AnthropicProvider:
         msg: Any = None
         for _ in range(MAX_PAUSE_RESUMES + 1):
             msg = self.client().messages.create(**params, timeout=timeout_s)
-            usage.add(usage_of(msg.usage))
+            usage.accumulate(usage_of(msg.usage))
             if msg.stop_reason != "pause_turn":
                 break
             params["messages"] = params["messages"] + [

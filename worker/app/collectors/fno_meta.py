@@ -33,10 +33,11 @@ class SymbolRow(BaseModel):
     sector: str
     sub_sector: str | None = None
     aliases: list[str] = Field(default_factory=list)
+    website: str | None = None  # company domain (Phase 13 research-agent web allowlist)
 
 
 def parse_symbol_master(text: str) -> list[SymbolRow]:
-    """CSV columns: symbol,name,sector,sub_sector,aliases (aliases separated by '|')."""
+    """CSV columns: symbol,name,sector,sub_sector,aliases (separated by '|'),website."""
     rows: list[SymbolRow] = []
     for r in csv.DictReader(io.StringIO(text)):
         aliases = [a.strip() for a in (r.get("aliases") or "").split("|") if a.strip()]
@@ -47,6 +48,7 @@ def parse_symbol_master(text: str) -> list[SymbolRow]:
                 sector=r["sector"].strip(),
                 sub_sector=(r.get("sub_sector") or "").strip() or None,
                 aliases=aliases,
+                website=(r.get("website") or "").strip() or None,
             )
         )
     return rows
