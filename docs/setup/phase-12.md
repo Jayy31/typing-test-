@@ -26,3 +26,14 @@ them you will see stage `core_rule` on the dashboard's Rejected page.
 3. Until a broker data source is connected, signals use the previous session's end-of-day states
    ("end of day" on the dashboard). Live intraday states switch on automatically with a broker.
 4. Thresholds: `worker/config/positioning.yaml`. Switch: dashboard Settings `feat.positioning`.
+
+## PR 3: watchlist paper book (`feat.watchlist_book`)
+1. Nothing to set up; the deploy applies migration 0017 (a `book` column, default `main`).
+2. Near-misses appear on the dashboard **Watchlist** page and in the evening summary / weekly digest.
+   They never send per-trade alerts and never count in main P&L, /stats, portfolio or the monthly report.
+3. Margins and switches: `worker/config/watchlist.yaml` (`calibration.include_in_fit`, `learning.include`).
+   Turn the book off with the dashboard Settings switch `feat.watchlist_book`.
+
+## Added AI cost for Phase 12
+About zero: regime ~40 and positioning ~200 extra input tokens per analysis (under Rs 1 a month at
+Haiku prices); the watchlist book makes no AI calls. No one-off AI job is needed.

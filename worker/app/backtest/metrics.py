@@ -183,6 +183,7 @@ def compute(res: RunResult, data: HistoryData) -> dict[str, Any]:
             else None,
         },
         "counterfactual_open_trade_on_same_stock": _perf(res.counterfactuals),
+        "watchlist_book": _perf(res.watchlist),  # Phase 12: near-misses, separate from main
         "notes": res.notes,
     }
     return m

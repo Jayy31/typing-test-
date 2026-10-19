@@ -72,6 +72,17 @@ class RunResult:
     folds: list[Fold] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     counterfactuals: list[Trade] = field(default_factory=list)  # skipped: open trade on same stock
+    watchlist: list[Trade] = field(default_factory=list)  # Phase 12: near-miss book, not in P&L
+
+
+WATCH_STAGES = {"edge", "ev", "probability"}
+
+
+def watch_busy_until(res: RunResult, day: date) -> set[str]:
+    """Stocks with an open watchlist trade on `day` (one trade per stock per book)."""
+    return {
+        t.signal.symbol for t in res.watchlist if t.entry_day <= day <= (t.exit_day or date.max)
+    }
 
 
 def _execute(sigs: list[Signal], data: HistoryData, variant: Variant, res: RunResult) -> None:
@@ -86,6 +97,10 @@ def _execute(sigs: list[Signal], data: HistoryData, variant: Variant, res: RunRe
         if isinstance(plan, Skip):
             if not overlap:
                 res.skips.append(plan)
+            if plan.stage in WATCH_STAGES and sig.symbol not in watch_busy_until(res, sig.day):
+                near = plan_entry(sig, data, variant, rules, watch=True)
+                if not isinstance(near, Skip):  # separate book, same rules; never in main P&L
+                    res.watchlist.append(simulate(near, data, variant, rules))
             continue
         trade = simulate(plan, data, variant, rules)
         if overlap:  # counterfactual: what the skipped signal would have done (not in P&L)

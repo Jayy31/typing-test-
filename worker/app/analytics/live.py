@@ -195,9 +195,9 @@ def _band(score: float) -> str:
 
 
 def closed_trades(
-    s: Session, start: datetime | None = None, end: datetime | None = None
+    s: Session, start: datetime | None = None, end: datetime | None = None, book: str = "main"
 ) -> list[PaperTrade]:
-    q = select(PaperTrade).where(PaperTrade.status == "CLOSED")
+    q = select(PaperTrade).where(PaperTrade.status == "CLOSED", PaperTrade.book == book)
     out = []
     for t in s.scalars(q):
         x = as_ist(t.exit_ts) if t.exit_ts else None

@@ -37,7 +37,7 @@ from app.signals.filters import load_holidays
 from app.signals.lifecycle import LIVE
 from app.signals.rejections import record_rejection
 from app.timeutil import as_ist
-from app.trading import core_rules, fills
+from app.trading import core_rules, fills, watchlist
 from app.trading.attribution import Attribution, Obs
 from app.trading.costs import trade_costs_inr
 from app.trading.exits import (
@@ -115,7 +115,9 @@ def enter_signals(
     ttl = timedelta(minutes=int(entry_cfg["signal_entry_ttl_minutes"]))
     opened: list[int] = []
     sigs = s.scalars(
-        select(Signal).where(Signal.status.in_(LIVE), Signal.pricing_status == "priced")
+        select(Signal).where(
+            Signal.status.in_((*LIVE, watchlist.STATUS)), Signal.pricing_status == "priced"
+        )
     ).all()
     for sig in sigs:
         assert sig.option_type and sig.strike and sig.expiry
@@ -135,6 +137,7 @@ def enter_signals(
                 PaperTrade.symbol == sig.symbol,
                 PaperTrade.status == OPEN,
                 PaperTrade.signal_id != sig.id,
+                PaperTrade.book == (sig.book or watchlist.MAIN),  # one per stock per book
             )
         ):
             _cancel(
@@ -174,6 +177,12 @@ def enter_signals(
     return opened
 
 
+def _trade_alert(s: Session, book: str | None, *args: Any) -> None:
+    """Trade alerts for the main book only; the watchlist book is reported in the summaries."""
+    if watchlist.is_main(book):
+        enqueue_alert(s, *args)
+
+
 def _cancel(
     s: Session,
     sig: Signal,
@@ -194,6 +203,8 @@ def _cancel(
             ts=now,
         )
     )
+    if not watchlist.is_main(sig.book):
+        return  # a watchlist near-miss was already recorded as a rejection when it was made
     record_rejection(
         s,
         dedupe_key=f"{stage}:{sig.symbol}:signal{sig.id}",
@@ -272,6 +283,7 @@ def open_trade(
     attr = Attribution(spread=-(row.ask - (row.bid or row.ask)) * lot * lots)
     attr.add(_obs(row, chain, now), sig.strike, sig.option_type, get_settings().risk_free_rate, 0)
     trade = PaperTrade(
+        book=sig.book or watchlist.MAIN,
         signal_id=sig.id,
         entry_ts=now,
         entry_premium=row.ask,
@@ -333,8 +345,9 @@ def open_trade(
             note=f"entry at ask; fill check: {entry_fill}",
         )
     )
-    enqueue_alert(
+    _trade_alert(
         s,
+        trade.book,
         "trade",
         templates.trade_entry(trade, sig, state.spot_stop),
         f"trade:{trade.id}:ENTRY",
@@ -421,8 +434,9 @@ def monitor_trades(
                 )
             )
             sig = s.get(Signal, tr.signal_id)
-            enqueue_alert(
+            _trade_alert(
                 s,
+                tr.book,
                 "trade",
                 templates.trade_event(tr, f, n_lots, slip, new),
                 f"trade:{tr.id}:{f.event}:{len(new.fills)}",
@@ -471,8 +485,9 @@ def _opposite_signal(s: Session, tr: PaperTrade, now: datetime, action: str) -> 
         tr.review_flag = (
             f"opposite signal S-{other.id} ({other.option_type}) raised {now:%d-%b %H:%M}"
         )
-        enqueue_alert(
+        _trade_alert(
             s,
+            tr.book,
             "trade",
             templates.trade_review_flag(tr, other.id),
             f"trade:{tr.id}:FLAG:{other.id}",
@@ -521,8 +536,13 @@ def close_trade(
         tr.benchmark_stock_pct = round(bench, 3)
         tr.benchmark_stock_inr = round(bench / 100 * tr.spot_entry * lot * lots, 2)
     sig = s.get(Signal, tr.signal_id)
-    enqueue_alert(
-        s, "trade", templates.trade_closed(tr), f"trade:{tr.id}:CLOSED", sig.id if sig else None
+    _trade_alert(
+        s,
+        tr.book,
+        "trade",
+        templates.trade_closed(tr),
+        f"trade:{tr.id}:CLOSED",
+        sig.id if sig else None,
     )
 
 
@@ -541,7 +561,7 @@ def trading_cycle(
     with session_scope(engine) as s:
         wanted = {
             (g.symbol, g.expiry)
-            for g in s.scalars(select(Signal).where(Signal.status.in_(LIVE)))
+            for g in s.scalars(select(Signal).where(Signal.status.in_((*LIVE, watchlist.STATUS))))
             if g.expiry
         }
         wanted |= {

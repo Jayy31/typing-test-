@@ -349,7 +349,11 @@ def _iv(
     return sigma * 100 if sigma else None
 
 
-def plan_entry(sig: Signal, data: HistoryData, variant: Variant, rules: ExitRules) -> Trade | Skip:
+def plan_entry(
+    sig: Signal, data: HistoryData, variant: Variant, rules: ExitRules, watch: bool = False
+) -> Trade | Skip:
+    """Entry for a signal. `watch` (Phase 12 watchlist book): accept a near-miss that failed
+    exactly one soft gate (edge ratio, P(T1 before SL), min EV %) within config/watchlist.yaml margins."""
     st = get_settings()
     bar = data.prices.get(sig.symbol, {}).get(sig.day)
     if bar is None:
@@ -447,6 +451,7 @@ def plan_entry(sig: Signal, data: HistoryData, variant: Variant, rules: ExitRule
         )
     chosen = cands[0]
     gates = regime_gates.base()
+    margins = {k: float(v) for k, v in load_yaml("watchlist.yaml")["margins"].items()}
     if variant.regime_gates:  # Phase 12 comparison: gate values that depend on the regime
         vol = data.regime_label(_prev_day(data, sig.day)).split("/")[0]
         over = regime_cfg()["backtest_variants"][variant.regime_gates]
@@ -455,7 +460,10 @@ def plan_entry(sig: Signal, data: HistoryData, variant: Variant, rules: ExitRule
         atm_iv = min(cands, key=lambda c: abs(c.row.strike - spot)).iv
         implied = n_day_move_pct(atm_iv, sig.window_days * 7 / 5)
         edge = gating_move / implied if implied else 0.0
-        if edge < gates["edge_ratio_min"]:
+        soft_failed: list[str] = []
+        if edge < gates["edge_ratio_min"] and watch and edge >= margins["edge_ratio_min"]:
+            soft_failed.append("edge_ratio")
+        elif edge < gates["edge_ratio_min"]:
             return Skip(
                 sig.key,
                 sig.symbol,
@@ -505,7 +513,39 @@ def plan_entry(sig: Signal, data: HistoryData, variant: Variant, rules: ExitRule
         chosen = max(cands, key=lambda c: c.result.ev_pct if c.result else -1e9)
         assert chosen.result is not None
         rej = selection_rejection(chosen.result, gates)
-        if rej:
+        if watch:
+            sim = chosen.result
+            if sim.ev_pct <= gates["min_ev_pct"]:
+                return Skip(sig.key, sig.symbol, sig.day, "ev", "EV not positive after costs")
+            for name, value, need, floor in (
+                (
+                    "p_t1_before_sl",
+                    sim.p_t1_before_sl,
+                    gates["min_p_t1_before_sl"],
+                    margins["min_p_t1_before_sl"],
+                ),
+                (
+                    "ev_pct",
+                    sim.ev_pct,
+                    gates["min_ev_pct_of_premium"],
+                    margins["min_ev_pct_of_premium"],
+                ),
+            ):
+                if value < need:
+                    if value < floor:
+                        return Skip(
+                            sig.key, sig.symbol, sig.day, "watchlist", f"{name} beyond the margin"
+                        )
+                    soft_failed.append(name)
+            if len(soft_failed) != 1:
+                return Skip(
+                    sig.key,
+                    sig.symbol,
+                    sig.day,
+                    "watchlist",
+                    f"{len(soft_failed)} soft gates failed",
+                )
+        elif rej:
             return Skip(sig.key, sig.symbol, sig.day, rej[0], rej[1])
     bad = core_rules.violation(
         sig.symbol,

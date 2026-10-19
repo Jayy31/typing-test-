@@ -51,7 +51,9 @@ def capital_used(tr: PaperTrade) -> float:
 def exposure(s: Session) -> dict[str, dict[str, Any]]:
     """Per theme: open trades, premium at risk and delta-equivalent notional."""
     out: dict[str, dict[str, Any]] = {}
-    for tr in s.scalars(select(PaperTrade).where(PaperTrade.status == "OPEN")):
+    for tr in s.scalars(
+        select(PaperTrade).where(PaperTrade.status == "OPEN", PaperTrade.book == "main")
+    ):
         _, risk, dn = open_value(tr)
         e = out.setdefault(
             tr.theme_key or "unknown",
@@ -72,13 +74,15 @@ def snapshot(engine: Engine | None = None, now: datetime | None = None, force: b
     capital = float(load_yaml("portfolio.yaml")["notional_capital_inr"])
     with session_scope(engine) as s:
         closed = select(func.coalesce(func.sum(PaperTrade.pnl), 0.0)).where(
-            PaperTrade.status == "CLOSED"
+            PaperTrade.status == "CLOSED", PaperTrade.book == "main"
         )
         realised = float(s.scalar(closed) or 0.0)
         realised_fillable = float(
             s.scalar(closed.where(PaperTrade.fillability != "unfillable")) or 0.0
         )
-        opens = s.scalars(select(PaperTrade).where(PaperTrade.status == "OPEN")).all()
+        opens = s.scalars(
+            select(PaperTrade).where(PaperTrade.status == "OPEN", PaperTrade.book == "main")
+        ).all()
         vals = [open_value(t) for t in opens]
         unreal = sum(v[0] for v in vals)
         equity = capital + realised + unreal
