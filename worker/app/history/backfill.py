@@ -91,7 +91,8 @@ def load_futures(con: duckdb.DuckDBPyConnection, dl: Downloader, d: date) -> int
     if raw is None:
         return -1
     rows = parse_fo(raw, d).futures
-    con.executemany("INSERT OR REPLACE INTO hist_futures VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows)
+    if rows:  # DuckDB rejects an empty batch
+        con.executemany("INSERT OR REPLACE INTO hist_futures VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows)
     return len(rows)
 
 

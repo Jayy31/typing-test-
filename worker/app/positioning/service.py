@@ -9,7 +9,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any, Protocol
 
-from sqlalchemy import Engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import PositioningSnapshot
@@ -23,6 +23,13 @@ class FuturesQuoteSource(Protocol):
     """Implemented by a broker data source once connected (data only)."""
 
     def future(self, symbol: str, expiry: date) -> dict[str, float] | None: ...
+
+
+def source_label(source: str, as_of: str | date) -> str:
+    """How fresh positioning data is. Previous-session closing data must never read as live."""
+    if source == "eod":
+        return f"EOD, previous session ({as_of})"
+    return f"live intraday ({as_of})"
 
 
 def eod_states(
@@ -105,18 +112,6 @@ def for_signal(
 
 def evidence_from(js: dict[str, Any] | None) -> list[Evidence]:
     return [Evidence(**e) for e in (js or {}).get("evidence", [])]
-
-
-def nightly_job(engine: Engine | None = None) -> int:
-    from app import flags
-    from app.db.session import session_scope
-
-    with session_scope(engine) as s:
-        if not flags.active(s, "feat.positioning"):
-            return 0
-    from app.positioning.history import nightly
-
-    return nightly()
 
 
 def latest(s: Session, symbol: str) -> PositioningSnapshot | None:

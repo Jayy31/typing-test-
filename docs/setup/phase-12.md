@@ -16,15 +16,19 @@ them you will see stage `core_rule` on the dashboard's Rejected page.
 
 ## PR 2: option-market positioning (`feat.positioning`)
 1. The deploy applies migration 0016 (`positioning_snapshots`) and upgrades the history store to v6 itself.
-2. Once, on the VM after the history backfill: parse stock futures from the F&O files already downloaded
-   (served from the cache, no new downloads), then build the states and base rates:
+2. Nothing to run. The nightly positioning job (23:40) waits until the 5-year history backfill is
+   complete (same check as the automatic backtests). Then, once, it parses stock futures from the F&O
+   files already in the download cache, builds the positioning states and base rates, and reports
+   "POSITIONING HISTORY READY" on Telegram and on the dashboard Go-live page. After that it adds each
+   new day automatically.
+   Optional re-run (only if you change `config/positioning.yaml` thresholds or repair history):
    ```
    docker exec desk-worker uv run --no-dev python -m app.history.backfill futures --years 5
    docker exec desk-worker uv run --no-dev python -c "from app.positioning.history import nightly; print(nightly())"
    ```
-   After that a nightly job (23:40) adds each new day.
-3. Until a broker data source is connected, signals use the previous session's end-of-day states
-   ("end of day" on the dashboard). Live intraday states switch on automatically with a broker.
+3. Until a broker data source is connected, signals use the previous session's closing states. They are
+   always labelled "EOD, previous session (<date>)" in /why, on the signal and Stock pages and in the
+   evening summary, never as live data. Live intraday states switch on automatically with a broker.
 4. Thresholds: `worker/config/positioning.yaml`. Switch: dashboard Settings `feat.positioning`.
 
 ## PR 3: watchlist paper book (`feat.watchlist_book`)

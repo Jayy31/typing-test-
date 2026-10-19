@@ -29,6 +29,12 @@ const LABEL: Record<string, string> = {
 };
 export const featureLabel = (f: string) => LABEL[f] ?? f;
 
+/** Freshness label: previous-session closing data must never read as live intraday data. */
+export const freshnessLabel = (source: string, asOf: string) =>
+  source === "eod"
+    ? `EOD, previous session (${asOf})`
+    : `live intraday (${asOf})`;
+
 /** Positioning evidence for a signal: support-only states change nothing; base-rate states tilt the prediction. */
 export function PositioningCard({
   p,
@@ -44,7 +50,7 @@ export function PositioningCard({
       action={
         p ? (
           <span className="text-xs text-muted">
-            as of {p.as_of} · {p.source === "eod" ? "end of day" : "live"}
+            {freshnessLabel(p.source, p.as_of)}
           </span>
         ) : undefined
       }

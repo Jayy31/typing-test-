@@ -187,10 +187,11 @@ def build_why(s: Session, signal_id: int) -> str | None:
     pos = js.get("positioning")
     if pos:
         from app.positioning.service import evidence_from
+        from app.positioning.service import source_label as freshness
 
         out += [
             "",
-            f"OPTION-MARKET POSITIONING (evidence only, as of {pos['as_of']}, {pos['source']})",
+            f"OPTION-MARKET POSITIONING (evidence only; {freshness(pos['source'], pos['as_of'])})",
             *[f"  - {e.line()}" for e in evidence_from(pos)],
             "  Support-only states change nothing; base-rate states tilt the predicted move.",
         ]

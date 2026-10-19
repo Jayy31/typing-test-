@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AsOfBar } from "@/components/asof";
-import { featureLabel } from "@/components/positioning";
+import { featureLabel, freshnessLabel } from "@/components/positioning";
 import {
   Badge,
   Card,
@@ -109,7 +109,7 @@ export default async function StockPage({
         action={
           latest ? (
             <span className="text-xs text-muted">
-              {latest.day} · {latest.source === "eod" ? "end of day" : "live"}
+              {freshnessLabel(latest.source, latest.day)}
             </span>
           ) : undefined
         }
