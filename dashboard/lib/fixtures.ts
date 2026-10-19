@@ -102,7 +102,8 @@ const signals: Row[] = [
     calibrator_id: null,
     calibration_method: "shrink",
     impact_order: 2,
-    prediction_source: "single",
+    prediction_source: "agent",
+    ai_preset: "budget",
     enter_after: null,
     created_at: T(35),
     updated_at: T(35),
@@ -326,7 +327,11 @@ const analyses: Row[] = [
     direction: "bullish",
     window_days: 3,
     confidence: "medium",
-    prediction_source: "single",
+    prediction_source: "agent",
+    research_run_id: 501,
+    ai_preset: "budget",
+    ai_models_json: { research_live: "claude-sonnet-5-5" },
+    ai_cost_inr: 23.4,
     impact_order: 2,
     created_at: T(35),
     model: "analyst-model",
@@ -1137,7 +1142,8 @@ const prediction_scores: Row[] = Array.from({ length: 40 }, (_, i) => {
     created_at: D(40 - i),
     status: "scored",
     direction_hit: (i * 7) % 10 < p * 10,
-    prediction_source: i % 3 ? "single" : "panel",
+    prediction_source: i % 5 === 4 ? "agent" : i % 3 ? "single" : "panel",
+    ai_preset: i % 5 === 4 ? "budget" : null,
   };
 });
 
@@ -1728,6 +1734,90 @@ const ai_vs_rules: Row[] = Array.from({ length: 30 }, (_, i) => {
   };
 });
 
+// ---- Phase 13 research agent ----------------------------------------------------------------
+const research_runs: Row[] = [
+  { id: 501, kind: "live", role: "research_live", preset: "budget", provider: "anthropic", model: "claude-sonnet-5-5", effort: "medium",
+    symbol: "TCS", subject: "stock:TCS", analysis_id: 502, research_file_id: 72, status: "ok", limited_reason: null,
+    tool_calls: 6, web_searches: 2, web_fetches: 1, input_tokens: 61_200, output_tokens: 7_900, cache_read_tokens: 48_000, cost_inr: 23.4,
+    estimate_inr: 26, duration_s: 74, created_at: T(95),
+    bear_case: "The deal's value is spread over 8 years and BFSI clients are still cutting discretionary spend; a beat on the deal may not lift the quarter.",
+    sources_json: [{ url: "https://www.nseindia.com/companies-listing/corporate-filings-announcements", title: "NSE announcement", kind: "fetch" }],
+    lessons_json: [{ id: 4, text: "IT results beats moved less than the base rate when the rupee strengthened in the same week.", applied: true }],
+    output_json: { base_rate: "order_win (IT, 3d): avg +1.8%, hit 62%, n=27", adjustments: ["Official filing with deal size: +0.4%", "Rupee firmer this week: -0.5%"],
+      cited_urls: ["https://www.nseindia.com/companies-listing/corporate-filings-announcements"] } },
+  { id: 502, kind: "live", role: "research_live", preset: "budget", provider: "anthropic", model: "claude-sonnet-5-5", effort: "medium",
+    symbol: "INFY", subject: "stock:INFY", analysis_id: null, research_file_id: null, status: "limited", limited_reason: "tool_calls",
+    tool_calls: 16, web_searches: 4, web_fetches: 2, input_tokens: 152_000, output_tokens: 14_100, cache_read_tokens: 120_000, cost_inr: 31.8,
+    estimate_inr: 26, duration_s: 182, created_at: T(240), bear_case: "Guidance cut risk outweighs the deal.", sources_json: [], lessons_json: [], output_json: {} },
+  { id: 503, kind: "live", role: "research_live", preset: "budget", provider: "anthropic", model: "claude-sonnet-5-5", effort: "medium",
+    symbol: "SBIN", subject: "stock:SBIN", analysis_id: null, research_file_id: null, status: "failed", limited_reason: null,
+    tool_calls: 3, web_searches: 0, web_fetches: 0, input_tokens: 18_000, output_tokens: 2_100, cache_read_tokens: 9_000, cost_inr: 6.2,
+    estimate_inr: 26, duration_s: 31, created_at: D(1), error: "invalid answer after retry: analysis cites unknown news ids [77]", sources_json: [], lessons_json: [], output_json: {} },
+  { id: 504, kind: "files", role: "research_files", preset: "budget", provider: "anthropic", model: "claude-haiku-5-5", effort: "low",
+    symbol: "BHARTIARTL", subject: "stock:BHARTIARTL", status: "ok", tool_calls: 0, web_searches: 0, web_fetches: 0, input_tokens: 21_000,
+    output_tokens: 2_600, cache_read_tokens: 0, cost_inr: 0.16, estimate_inr: 0.5, duration_s: null, created_at: D(1), batch_id: "msgbatch_01", research_file_id: 71 },
+  { id: 505, kind: "files", role: "research_files", preset: "budget", provider: "anthropic", model: "claude-haiku-5-5", effort: "low",
+    symbol: "TCS", subject: "stock:TCS", status: "ok", tool_calls: 0, web_searches: 0, web_fetches: 0, input_tokens: 24_000,
+    output_tokens: 2_900, cache_read_tokens: 0, cost_inr: 0.19, estimate_inr: 0.5, duration_s: null, created_at: D(1), batch_id: "msgbatch_01", research_file_id: 72 },
+  { id: 506, kind: "review", role: "research_review", preset: "budget", provider: "anthropic", model: "claude-sonnet-5-5", effort: "medium",
+    subject: "week:2026-10-05", status: "ok", tool_calls: 0, web_searches: 0, web_fetches: 0, input_tokens: 34_000, output_tokens: 2_200,
+    cache_read_tokens: 0, cost_inr: 8.1, estimate_inr: 25, duration_s: 40, created_at: D(4) },
+];
+const research_tool_calls: Row[] = [
+  ["get_analogues", { symbol: "TCS", event_type: "order_win" }, 3],
+  ["get_news", { symbol: "TCS", days: 7 }, 5],
+  ["get_positioning", { symbol: "TCS" }, null],
+  ["web_search", { query: "TCS deal win NSE filing" }, null],
+  ["web_fetch", { url: "https://www.nseindia.com/companies-listing/corporate-filings-announcements" }, null],
+  ["get_kg_neighbours", { symbol: "TCS" }, 4],
+  ["run_simulator", { symbol: "TCS", direction: "bullish" }, null],
+].map(([tool, args_json, rows], i) => ({ id: 900 + i, run_id: 501, seq: i + 1, tool, args_json, rows, is_error: false, summary: "", duration_ms: 40 + i * 9, created_at: T(96) }));
+const research_files: Row[] = [
+  { id: 71, subject_kind: "stock", subject: "BHARTIARTL", version: 4, provider: "anthropic", model: "claude-haiku-5-5", preset: "budget", run_id: 504, cost_inr: 0.16, created_at: D(1),
+    sources_json: [],
+    content_json: {
+      summary: "Tariff cycle is the main driver; ARPU and capex intensity decide the re-rating.",
+      thesis: "Second tariff round in 18 months; ARPU path to Rs 245 if peers follow within weeks.",
+      catalysts: [{ date: dateOnly(6), event: "Q2 results", why_it_matters: "First quarter with the new tariffs", sources: ["news:3101"] }],
+      key_numbers: [{ name: "ARPU (Q1)", value: "Rs 211", source: "news:3088" }],
+      sensitivities: [{ driver: "Tariff hike matched by Jio", stock_move_pct: "+3 to +6", basis: "tariff_change base rate, n=19" },
+        { driver: "Peers hold prices", stock_move_pct: "-1 to -3", basis: "2021 episode" }],
+      sector_and_graph_links: [{ symbol: "INDUSTOWER", relation: "tower tenant" }, { symbol: "IDEA", relation: "competitor" }],
+      risks: ["Regulatory pushback on tariffs", "Subscriber churn to Jio"],
+      sources: [{ ref: "news:3101", note: "results date" }, { ref: "news:3088", note: "Q1 ARPU" }],
+      changes_since_last: "Added the tariff filing; dropped the spectrum auction catalyst (done).",
+    } },
+  { id: 70, subject_kind: "stock", subject: "BHARTIARTL", version: 3, provider: "anthropic", model: "claude-haiku-5-5", preset: "budget", run_id: null, cost_inr: 0.15, created_at: D(5),
+    sources_json: [], content_json: { summary: "Older version.", thesis: "", catalysts: [], key_numbers: [], sensitivities: [], sector_and_graph_links: [], risks: [], sources: [] } },
+  { id: 72, subject_kind: "stock", subject: "TCS", version: 2, provider: "anthropic", model: "claude-haiku-5-5", preset: "budget", run_id: 505, cost_inr: 0.19, created_at: D(1),
+    sources_json: [], content_json: { summary: "Deal wins vs discretionary spend; results in 3 sessions.", thesis: "Large deal ramp offsets BFSI softness.",
+      catalysts: [{ date: dateOnly(3), event: "Q2 results", why_it_matters: "Deal TCV and margin guide", sources: ["news:3120"] }], key_numbers: [],
+      sensitivities: [{ driver: "Results beat", stock_move_pct: "+2 to +4", basis: "results_beat base rate (IT), n=42" }], sector_and_graph_links: [], risks: ["Rupee strength"], sources: [] } },
+  { id: 73, subject_kind: "theme", subject: "rbi_policy", version: 1, provider: "anthropic", model: "claude-haiku-5-5", preset: "budget", run_id: null, cost_inr: 0.12, created_at: D(2),
+    sources_json: [], content_json: { summary: "RBI policy in 5 sessions: banks and NBFCs most sensitive.", thesis: "Hold expected.", catalysts: [], key_numbers: [],
+      sensitivities: [{ driver: "Surprise cut", stock_move_pct: "+2 to +3 (PSU banks)", basis: "rbi_policy base rate" }], sector_and_graph_links: [], risks: [], sources: [] } },
+];
+const research_lessons: Row[] = [
+  { id: 3, scope_kind: "sector", scope: "Telecom", text: "Telecom tariff hikes: the first mover's move fades when peers wait more than a week.",
+    evidence_json: { prediction_ids: [11, 14] }, run_id: 506, week: dateOnly(-10), deleted: false, deleted_at: null, deleted_by: null, created_at: D(4) },
+  { id: 4, scope_kind: "event_type", scope: "results_beat", text: "IT results beats moved less than the base rate when the rupee strengthened in the same week.",
+    evidence_json: { prediction_ids: [12, 15, 19] }, run_id: 506, week: dateOnly(-10), deleted: false, deleted_at: null, deleted_by: null, created_at: D(4) },
+  { id: 5, scope_kind: "stock", scope: "SBIN", text: "Single striking case: a PSU bank rally ignored a weak credit-cost print.",
+    evidence_json: { prediction_ids: [17] }, run_id: 506, week: dateOnly(-10), deleted: false, deleted_at: null, deleted_by: null, created_at: D(4) },
+];
+
+// minimal analyses behind the scorecard / AI-vs-rules rows (prediction source + preset only)
+for (let i = 0; i < 40; i++)
+  analyses.push({
+    id: 400 + i,
+    symbol: "X",
+    direction: "bullish",
+    thesis: "",
+    created_at: D(40 - i),
+    prediction_source: i % 5 === 4 ? "agent" : i % 3 ? "single" : "panel",
+    ai_preset: i % 5 === 4 ? "budget" : null,
+  });
+
 export const TABLES: Record<string, Row[]> = {
   instruments,
   signals,
@@ -1768,6 +1858,10 @@ export const TABLES: Record<string, Row[]> = {
   golive_checks,
   market_regime,
   positioning_snapshots,
+  research_runs,
+  research_tool_calls,
+  research_files,
+  research_lessons,
 };
 
 export { premiumPath };
@@ -1809,6 +1903,20 @@ export class FixtureDb implements Db {
         decided_at: new Date().toISOString(),
         decided_by: "owner@example.com",
       });
+  }
+
+  async deleteLesson(id: number): Promise<void> {
+    const row = research_lessons.find((r) => r.id === id && !r.deleted);
+    if (!row) return;
+    Object.assign(row, { deleted: true, deleted_at: new Date().toISOString(), deleted_by: "owner@example.com" });
+    config_audit.push({
+      id: config_audit.length + 1,
+      ts: new Date().toISOString(),
+      key: `research.lesson.${id}`,
+      old_value: { scope: `${row.scope_kind}:${row.scope}`, text: row.text },
+      new_value: "deleted",
+      changed_by: "owner@example.com",
+    });
   }
 
   async userEmail(): Promise<string | null> {

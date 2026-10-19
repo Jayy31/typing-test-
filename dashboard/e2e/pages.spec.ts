@@ -43,6 +43,11 @@ const PAGES: [string, string, string[]][] = [
     [
       "graph · event-study base rate",
       "INFY › competitor_of › TCS",
+      "Research agent · budget",
+      "Bear case:",
+      "order_win (IT, 3d): avg +1.8%",
+      "TCS v2",
+      "get_analogues ×1",
       "sign unknown · support only",
     ],
   ],
@@ -130,6 +135,23 @@ const PAGES: [string, string, string[]][] = [
     ],
   ],
   [
+    "/research",
+    "31-research",
+    [
+      "Live runs today",
+      "Research files (latest version)",
+      "theme: rbi_policy",
+      "Lessons from the weekly self-review",
+      "limited (tool_calls)",
+      "claude-haiku-5-5",
+    ],
+  ],
+  [
+    "/research?file=71",
+    "32-research-file",
+    ["Research file: BHARTIARTL v4", "Tariff hike matched by Jio", "+3 to +6", "v3"],
+  ],
+  [
     "/golive",
     "28-golive",
     [
@@ -180,6 +202,16 @@ test("owner switch change is logged", async ({ page }) => {
   await expect(page.getByText("brief.evening_enabled").nth(1)).toBeVisible();
   await expect(page.getByText("true → false").first()).toBeVisible();
   await page.locator('button[data-key="brief.evening_enabled"]').click(); // restore for other runs
+});
+
+test("lesson delete is recorded and logged", async ({ page }) => {
+  await page.goto("/research");
+  await expect(page.locator('[data-lesson="5"]')).toBeVisible();
+  await page.locator('button[data-delete-lesson="5"]').click();
+  await expect(page.locator('[data-lesson="5"]')).toHaveCount(0);
+  await expect(page.getByText("#5 by owner@example.com").first()).toBeVisible();
+  await page.goto("/settings");
+  await expect(page.getByText("research.lesson.5").first()).toBeVisible();
 });
 
 test("suggestion decision is recorded", async ({ page }) => {

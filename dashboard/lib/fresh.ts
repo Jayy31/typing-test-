@@ -57,6 +57,7 @@ export const PAGE_JOBS: Record<string, JobSpec[]> = {
   health: [{ job: "heartbeat", everyMin: 5 }],
   reports: [{ job: "monthly_report", everyMin: 44640 }],
   suggestions: [{ job: "learning_suggest", everyMin: 44640 }],
+  research: [{ job: "signal_cycle", everyMin: 5 }],
   aivsrules: [{ job: "ai_vs_rules", everyMin: 1440 }],
   quality: [{ job: "data_quality", everyMin: 1440 }],
 };

@@ -73,6 +73,7 @@ def build(s: Session, week_start: date) -> tuple[str, dict[str, Any]]:
         "slippage_inr": round(sum(t.slippage_inr or 0.0 for t in trades), 0),
         "gap_trades": sum(1 for t in trades if (t.slippage_inr or 0) < 0),
         "scorecard": scorecard_summary(s, week_start),
+        "lessons": _lessons(s, week_start),
         "scorecard_all_time": scorecard_summary(s),
         "calibration": {t: calibration.report(s, t) for t in calibration.TARGETS},
         "calibrators": [
@@ -186,6 +187,12 @@ def suggestions(d: dict[str, Any]) -> list[str]:
     return out or ["No suggestions this week."]
 
 
+def _lessons(s: Session, week_start: date) -> list[str]:
+    from app.research.review import lessons_for_digest
+
+    return lessons_for_digest(s, week_start)
+
+
 def _fmt(st: dict[str, Any]) -> str:
     if not st.get("n"):
         return "none"
@@ -257,6 +264,8 @@ def render(d: dict[str, Any]) -> str:
         f"{', '.join(x['guesses'])}"
         for x in d.get("regulator_review", [])
     ] or ["  none"]
+    lines += ["", "RESEARCH AGENT LESSONS (weekly self-review; delete any on the dashboard)"]
+    lines += [f"  - {x}" for x in d.get("lessons") or []] or ["  none this week"]
     lines += ["", "POST-MORTEM CAUSES"]
     lines += [f"  {k}: {v}" for k, v in d["post_mortem_causes"].items()] or ["  none"]
     lines += [

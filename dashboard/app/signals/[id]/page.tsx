@@ -12,10 +12,12 @@ import {
   when,
   ORDER_LABEL,
   SOURCE_LABEL,
+  predictor,
 } from "@/lib/format";
 import { asOf, evidenceFor, evidenceSource, kgPathsFor } from "@/lib/queries";
 import type { Signal, Trade } from "@/lib/types";
 import { PositioningCard, type PositioningJs } from "@/components/positioning";
+import { ResearchCard } from "@/components/research";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +28,9 @@ interface Analysis {
   counter_args: string[] | null;
   window_days: number | null;
   prediction_source: string | null;
+  research_run_id?: number | null;
+  ai_preset?: string | null;
+  ai_cost_inr?: number | null;
   analogues:
     | {
         level: string;
@@ -133,7 +138,8 @@ export default async function SignalPage({
           <Badge tone="info">Score {Math.round(sig.score)}</Badge>
           <Badge>{ORDER_LABEL[sig.impact_order ?? 1]}</Badge>
           <Badge>
-            {sig.prediction_source === "panel" ? "Panel" : "Single analyst"}
+            {predictor(sig.prediction_source)}
+            {an?.ai_preset ? ` · ${an.ai_preset}` : ""}
           </Badge>
           {sig.enter_after && (
             <Badge tone="warn">
@@ -268,6 +274,10 @@ export default async function SignalPage({
             </p>
           )}
         </Card>
+      )}
+
+      {an?.research_run_id && (
+        <ResearchCard db={db} runId={an.research_run_id} used={an.prediction_source === "agent"} />
       )}
 
       <Card title="Evidence" className="mt-3">

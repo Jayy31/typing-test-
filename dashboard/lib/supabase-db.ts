@@ -57,6 +57,12 @@ export class SupabaseDb implements Db {
     if (error) throw new Error(`could not record the decision: ${error.message}`);
   }
 
+  async deleteLesson(id: number): Promise<void> {
+    const sb = await supabaseServer();
+    const { error } = await sb.from("research_lessons").update({ deleted: true }).eq("id", id).eq("deleted", false);
+    if (error) throw new Error(`could not delete the lesson: ${error.message}`);
+  }
+
   async userEmail(): Promise<string | null> {
     const sb = await supabaseServer();
     const { data } = await sb.auth.getUser();

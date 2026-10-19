@@ -2,12 +2,12 @@ import { AsOfBar } from "@/components/asof";
 import { Reliability } from "@/components/charts";
 import { Badge, Card, PageTitle, Stat, Table } from "@/components/ui";
 import { getDb } from "@/lib/data";
-import { when } from "@/lib/format";
+import { predictor, when } from "@/lib/format";
 import { asOf } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-interface Score { p_move: number | null; direction_hit: boolean | null; prediction_source: string | null; status: string }
+interface Score { p_move: number | null; direction_hit: boolean | null; prediction_source: string | null; ai_preset?: string | null; status: string }
 interface Calibrator { id: number; target: string; source: string; method: string; version: number; n_samples: number; n_events: number | null; brier: number | null; fitted_at: string; active: boolean }
 
 export default async function Calibration() {
@@ -33,9 +33,14 @@ export default async function Calibration() {
         </div>
       )}
       <div className="grid grid-cols-2 gap-3">
-        <Stat label="Scored predictions" value={pts.length} sub={`${pts.filter((s) => s.prediction_source === "panel").length} panel · ${pts.filter((s) => s.prediction_source !== "panel").length} single`} />
+        <Stat label="Scored predictions" value={pts.length} sub={`${pts.filter((s) => s.prediction_source === "agent").length} agent · ${pts.filter((s) => s.prediction_source === "panel").length} panel · ${pts.filter((s) => !["agent", "panel"].includes(s.prediction_source ?? "")).length} single`} />
         <Stat label="Brier score (raw p_move)" value={brier?.toFixed(3) ?? "n/a"} sub="lower is better; 0.25 = coin flip" />
       </div>
+      <Card title="By prediction source and preset" className="mt-3">
+        <Table head={["Source", "Preset", "Scored", "Direction hit", "Brier"]} rows={bySource(pts).map((g) => [
+          predictor(g.source), g.preset ?? "-", g.n, `${Math.round(g.hit * 100)}%`, g.brier.toFixed(3),
+        ])} />
+      </Card>
       <Card title="Reliability (raw p_move vs direction hit)" className="mt-3">
         <Reliability data={bins} />
         <Table className="mt-2" head={["Predicted", "Observed", "n"]} rows={bins.map((b) => [`${Math.round(b.p * 100)}%`, `${Math.round(b.obs * 100)}%`, b.n])} />
@@ -49,4 +54,20 @@ export default async function Calibration() {
       </Card>
     </>
   );
+}
+
+function bySource(pts: Score[]) {
+  const m = new Map<string, Score[]>();
+  pts.forEach((p) => {
+    const k = `${p.prediction_source ?? "single"}|${p.ai_preset ?? ""}`;
+    m.set(k, [...(m.get(k) ?? []), p]);
+  });
+  return [...m].map(([k, v]) => {
+    const [source, preset] = k.split("|");
+    return {
+      source, preset: preset || null, n: v.length,
+      hit: v.filter((s) => s.direction_hit).length / v.length,
+      brier: v.reduce((a, s) => a + ((s.p_move as number) - (s.direction_hit ? 1 : 0)) ** 2, 0) / v.length,
+    };
+  }).sort((a, b) => b.n - a.n);
 }
