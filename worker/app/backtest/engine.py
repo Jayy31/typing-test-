@@ -23,6 +23,10 @@ from app.history.event_study import bootstrap_mean_ci, regime
 from app.history.universe import value_report
 from app.market.implied import n_day_move_pct
 from app.pricing.bs import implied_vol
+from app.regime import gates as regime_gates
+from app.regime.analogues import blend as blend_regime
+from app.regime.analogues import key as regime_key
+from app.regime.classifier import cfg as regime_cfg
 from app.signals.options_stage import selection_rejection
 from app.signals.prediction import analogue_scenarios, from_scenarios
 from app.sim.simulator import CandidateInput, SimResult, evaluate, seed_for, simulate_stock
@@ -52,6 +56,8 @@ class Variant:
     threshold: str = "strict"  # rules mode direction rule (config rules_mode.thresholds)
     selection: str = "ev"  # ev (live gates) | atm (benchmark: ATM, nearest expiry, no gates)
     kg_depth: int = 0  # Phase 8: 0 = no graph; 2 = live default; 3 = comparison variant
+    regime_aware: bool = False  # Phase 12: analogues conditioned on the market regime
+    regime_gates: str | None = None  # Phase 12: regime.yaml backtest_variants key (gate overrides)
 
     def rules(self) -> ExitRules:
         over = dict(_cfg()["rule_sets"][self.rule_set])
@@ -143,6 +149,12 @@ class Trade:
         return {"primary": r.primary, "text": r.text(), "note": r.note}
 
 
+def _prev_day(data: HistoryData, day: date) -> date:
+    """The regime known before the reaction day's close: the previous trading day's."""
+    i = data.idx(day)
+    return data.calendar[i - 1] if i and i > 0 else day
+
+
 # ---- signals ------------------------------------------------------------------------------
 def lookup_analogue(
     stats: dict[tuple[Any, ...], tuple[Any, ...]],
@@ -152,8 +164,13 @@ def lookup_analogue(
     symbol: str,
     day: date,
     window: int,
+    regime_label: str | None = None,
 ) -> tuple[AnalogueResult, tuple[Any, ...]] | None:
-    """Most specific usable analogue group (stock -> sector -> event type; regime -> all) and its key."""
+    """Most specific usable analogue group (stock -> sector -> event type; regime -> all) and its key.
+    With `regime_label` (Phase 12, regime-aware variant) the all-regime stats are mixed toward that
+    regime's stats at n/(n+k) instead of the VIX-regime lookup."""
+    if regime_label is not None:
+        return _regime_lookup(stats, etype, sector, symbol, window, regime_label)
     reg = regime(data.vix, data.calendar[data.idx(day) - 1]) if data.idx(day) > 0 else "unknown"
     best = None
     for level, sec, sym in (
@@ -182,6 +199,40 @@ def lookup_analogue(
             if res.usable:
                 return res, key
             best = best or (res, key)
+    return best
+
+
+def _res(level: str, reg: str, window: int, v: tuple[Any, ...]) -> AnalogueResult:
+    f = [float(x) for x in v[1:8]]
+    return AnalogueResult(level, reg, window, int(v[0]), f[0], f[1], f[2], f[3], f[4], f[5], f[6])
+
+
+def _regime_lookup(
+    stats: dict[tuple[Any, ...], tuple[Any, ...]],
+    etype: str | None,
+    sector: str | None,
+    symbol: str,
+    window: int,
+    label: str,
+) -> tuple[AnalogueResult, tuple[Any, ...]] | None:
+    rk = regime_key(label)
+    best = None
+    for level, sec, sym in (
+        ("stock", sector, symbol),
+        ("sector", sector, None),
+        ("event_type", None, None),
+    ):
+        v = stats.get((etype, sec, sym, "all", window))
+        if v is None:
+            continue
+        rv = stats.get((etype, sec, sym, rk, window)) if rk else None
+        res = blend_regime(
+            _res(level, "all", window, v), _res(level, rk or "", window, rv) if rv else None, label
+        )
+        key = (etype, sec, sym, "all", window)  # direction test uses the all-regime events
+        if res.usable:
+            return res, key
+        best = best or (res, key)
     return best
 
 
@@ -216,7 +267,8 @@ def rules_signal(
     w = int(cfg["analogue_window"])
     if not data.in_fno(ev.symbol, ev.day):
         return Skip(ev.key, ev.symbol, ev.day, "universe", "not in F&O on the reaction day")
-    found = lookup_analogue(stats, data, ev.event_type, ev.sector, ev.symbol, ev.day, w)
+    label = data.regime_label(_prev_day(data, ev.day)) if variant.regime_aware else None
+    found = lookup_analogue(stats, data, ev.event_type, ev.sector, ev.symbol, ev.day, w, label)
     an, key = found if found else (None, None)
     if an is None or not an.usable:
         return Skip(
@@ -386,17 +438,22 @@ def plan_entry(sig: Signal, data: HistoryData, variant: Variant, rules: ExitRule
             "no tradable option price (zero volume and no settlement)",
         )
     chosen = cands[0]
+    gates = regime_gates.base()
+    if variant.regime_gates:  # Phase 12 comparison: gate values that depend on the regime
+        vol = data.regime_label(_prev_day(data, sig.day)).split("/")[0]
+        over = regime_cfg()["backtest_variants"][variant.regime_gates]
+        gates = regime_gates.for_regime(vol, over)
     if sig.contract is None and variant.selection == "ev":
         atm_iv = min(cands, key=lambda c: abs(c.row.strike - spot)).iv
         implied = n_day_move_pct(atm_iv, sig.window_days * 7 / 5)
         edge = gating_move / implied if implied else 0.0
-        if edge < st.edge_ratio_min:
+        if edge < gates["edge_ratio_min"]:
             return Skip(
                 sig.key,
                 sig.symbol,
                 sig.day,
                 "edge",
-                f"edge ratio {edge:.2f} below {st.edge_ratio_min} (predicted {gating_move:.2f}% vs implied {implied:.2f}%)",
+                f"edge ratio {edge:.2f} below {gates['edge_ratio_min']:g} (predicted {gating_move:.2f}% vs implied {implied:.2f}%)",
             )
         horizon = max(
             1,
@@ -439,7 +496,7 @@ def plan_entry(sig: Signal, data: HistoryData, variant: Variant, rules: ExitRule
             )
         chosen = max(cands, key=lambda c: c.result.ev_pct if c.result else -1e9)
         assert chosen.result is not None
-        rej = selection_rejection(chosen.result)
+        rej = selection_rejection(chosen.result, gates)
         if rej:
             return Skip(sig.key, sig.symbol, sig.day, rej[0], rej[1])
     bad = core_rules.violation(

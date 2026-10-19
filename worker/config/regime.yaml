@@ -1,0 +1,34 @@
+# Market regime (Phase 12, feat.regime). Deterministic, no AI. A daily label
+# <volatility>/<direction>: volatility calm | normal | stressed, direction risk_on | risk_off.
+# Inputs: India VIX level and percentile, Nifty 20-day return, FII net flow over 10 days.
+# History has no FII series: those days are classified from VIX + Nifty and labelled so.
+volatility:
+  calm_vix_below: 13            # calm: VIX below this AND percentile below calm_pct_below
+  calm_pct_below: 40
+  stressed_vix_above: 20        # stressed: VIX above this OR percentile above stressed_pct_above
+  stressed_pct_above: 85
+  pct_lookback_days: 252        # VIX percentile window (trading days)
+  pct_min_days: 60              # fewer -> percentile unknown, level only
+direction:
+  nifty_window_days: 20
+  nifty_up_pct: 1.5             # Nifty 20-day return above this votes risk-on, below -this risk-off
+  fii_window_days: 10
+  fii_up_cr: 3000               # FII net over 10 days (Rs crore) above this votes risk-on, below -this risk-off
+  # votes are summed; a negative total is risk_off, otherwise risk_on
+nifty_index: "Nifty 50"
+vix_index: "India VIX"
+# Analogue conditioning: regime stats mixed with all-regime stats at n/(n + prior_n)
+# (prior_n defaults to ANALOGUE_PRIOR_N); only with at least ANALOGUE_MIN_N regime events.
+analogues:
+  prior_n: null
+# Regime-specific gate values. Shipped equal for every regime (no behaviour change); a key here
+# overrides options.yaml (edge_ratio_min, selection.min_p_t1_before_sl, min_ev_pct_of_premium).
+gates:
+  calm: {}
+  normal: {}
+  stressed: {}
+# Backtest-only comparison variant (can become a learning-loop suggestion if it wins)
+backtest_variants:
+  stressed_strict:
+    stressed: {edge_ratio_min: 1.4, min_p_t1_before_sl: 0.58}
+schedule: {time: "08:35"}       # daily, before the morning brief (08:45)

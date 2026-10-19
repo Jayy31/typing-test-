@@ -488,13 +488,22 @@ def reaction_rows(
 
 
 def grouped_values(
-    rows: list[tuple[Any, ...]], vix: dict[date, float]
+    rows: list[tuple[Any, ...]],
+    vix: dict[date, float],
+    labels: dict[date, str] | None = None,
 ) -> dict[tuple[Any, ...], list[tuple[float, float]]]:
-    """(direction-adjusted abnormal %, weight) per (event_type, sector, symbol, regime, window)."""
+    """(direction-adjusted abnormal %, weight) per (event_type, sector, symbol, regime, window).
+    `labels` (Phase 12 market regime per day) adds groups keyed "R:<label>"."""
+    from app.regime.analogues import key as regime_key
+
     groups: dict[tuple[Any, ...], list[tuple[float, float]]] = defaultdict(list)
     for etype, sector, sym, w, direction, d, wt, abn in rows:
         signed = abn if direction == "bullish" else -abn
-        for reg in dict.fromkeys((regime(vix, d), "all")):
+        regs = [regime(vix, d), "all"]
+        rk = regime_key(labels.get(d)) if labels else None
+        if rk:
+            regs.append(rk)
+        for reg in dict.fromkeys(regs):
             for key in (
                 (etype, sector, sym, reg, w),
                 (etype, sector, None, reg, w),
@@ -527,10 +536,27 @@ def summarize(
 
 
 def aggregate(
-    rows: list[tuple[Any, ...]], vix: dict[date, float]
+    rows: list[tuple[Any, ...]], vix: dict[date, float], labels: dict[date, str] | None = None
 ) -> dict[tuple[Any, ...], tuple[Any, ...]]:
     """Weighted, direction-adjusted stats per (event_type, sector, symbol, regime, window)."""
-    return summarize(grouped_values(rows, vix))
+    return summarize(grouped_values(rows, vix, labels))
+
+
+def regime_labels(con: duckdb.DuckDBPyConnection) -> dict[date, str]:
+    """Phase 12 regime label per history day (VIX + Nifty; each day uses data up to that day)."""
+    from app.regime.classifier import cfg, series
+
+    def idx(name: str) -> dict[date, float]:
+        return {
+            d: float(c)
+            for d, c in con.execute(
+                "SELECT date, close FROM hist_index WHERE lower(index_name) = lower(?)", [name]
+            ).fetchall()
+            if c is not None
+        }
+
+    c = cfg()
+    return {d: r.label for d, r in series(idx(c["nifty_index"]), idx(c["vix_index"])).items()}
 
 
 def bootstrap_mean_ci(
@@ -557,7 +583,9 @@ def vix_series(con: duckdb.DuckDBPyConnection) -> dict[date, float]:
 
 def compute_stats(con: duckdb.DuckDBPyConnection) -> int:
     """Direction-adjusted, weighted abnormal-return statistics for analogue lookup."""
-    stats = aggregate(reaction_rows(con) + kg_reaction_rows(con), vix_series(con))
+    stats = aggregate(
+        reaction_rows(con) + kg_reaction_rows(con), vix_series(con), regime_labels(con)
+    )
     con.execute("DELETE FROM analogue_stats")
     now = datetime.now().replace(microsecond=0)
     out = [(*key, *vals, now) for key, vals in stats.items()]

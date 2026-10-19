@@ -75,7 +75,10 @@ def lookup(
     direction: str,
     today: date,
     window: int | None = None,
+    regime_label: str | None = None,
 ) -> AnalogueResult | None:
+    """`regime_label` (feat.regime): mix all-regime stats toward that market regime's stats at
+    n/(n+k) instead of the VIX-regime lookup."""
     cfg = load_yaml("history.yaml")
     w = int(window if window is not None else cfg["blend"]["analogue_window"])
     regime = current_regime(today)
@@ -88,6 +91,8 @@ def lookup(
     try:
         tries = [("stock", sector, symbol), ("sector", sector, None), ("event_type", None, None)]
         best: AnalogueResult | None = None
+        if regime_label is not None:
+            return _regime_lookup(con, event_types, tries, w, regime_label)
         for etype in event_types:
             for level, sec, sym in tries:
                 for reg in dict.fromkeys([regime, "all"]):
@@ -113,6 +118,42 @@ def lookup(
         return None
     finally:
         con_cm.__exit__(None, None, None)
+
+
+def _row(con: Any, etype: str, sec: str | None, sym: str | None, reg: str, w: int) -> Any:
+    return con.execute(
+        """
+        SELECT n, n_eff, mean_abn_ret, median, hit_rate, std, p25, p75 FROM analogue_stats
+        WHERE event_type = ? AND sector IS NOT DISTINCT FROM ? AND symbol IS NOT DISTINCT FROM ?
+          AND regime = ? AND "window" = ?""",
+        [etype, sec, sym, reg, w],
+    ).fetchone()
+
+
+def _regime_lookup(
+    con: Any, event_types: list[str], tries: list[Any], w: int, label: str
+) -> AnalogueResult | None:
+    from app.regime.analogues import blend, key
+
+    rk = key(label)
+    best: tuple[AnalogueResult, str, Any, Any] | None = None
+    for etype in event_types:
+        for level, sec, sym in tries:
+            row = _row(con, etype, sec, sym, "all", w)
+            if row is None:
+                continue
+            v = [float(x) for x in row[1:]]
+            res = AnalogueResult(level, "all", w, int(row[0]), *v)  # type: ignore[arg-type]
+            rrow = _row(con, etype, sec, sym, rk, w) if rk else None
+            reg = None
+            if rrow is not None:
+                rv = [float(x) for x in rrow[1:]]
+                reg = AnalogueResult(level, rk or "", w, int(rrow[0]), *rv)  # type: ignore[arg-type]
+            res = blend(res, reg, label)
+            if res.usable:
+                return _with_examples(con, res, etype, sec, sym, w)
+            best = best or (res, etype, sec, sym)
+    return _with_examples(con, best[0], best[1], best[2], None, w) if best else None
 
 
 def _with_examples(

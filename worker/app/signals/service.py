@@ -25,6 +25,7 @@ from app.kg.propagate import propagate
 from app.market.live import UpstoxOptionData
 from app.notify import templates
 from app.notify.outbox import enqueue_alert
+from app.regime.service import current_in as current_regime_in
 from app.rules.engine import RuleContext, RuleHit, evaluate, fired_macro_rules
 from app.rules.macro_changes import compute_changes
 from app.signals import deferred
@@ -83,6 +84,7 @@ def plan_work(
     changes = compute_changes(s, now)
     macro = fired_macro_rules(changes)
     insts = {i.symbol: i for i in s.scalars(select(Instrument))}
+    regime_now = current_regime_in(s, now.date())  # Phase 12 market regime (feat.regime)
     work: list[WorkItem] = []
     weak: list[tuple[Candidate, str]] = []
     accepted = build_candidates(s, now, weak)
@@ -124,10 +126,18 @@ def plan_work(
         )
         hits = evaluate(ctx, macro)
         analogue = None
+        reg = regime_now if flags.active(s, "feat.regime") else None
         if flags.active(s, "feat.event_study"):
             etypes = sorted(cand.event_types) or ["other"]
-            analogue = lookup(etypes, inst.sector, cand.symbol, cand.direction, now.date())
-        message, ids = analyst.build_user_message(s, cand, hits, changes, now, analogue)
+            analogue = lookup(
+                etypes,
+                inst.sector,
+                cand.symbol,
+                cand.direction,
+                now.date(),
+                regime_label=reg.label if reg else None,
+            )
+        message, ids = analyst.build_user_message(s, cand, hits, changes, now, analogue, reg)
         work.append(
             WorkItem(
                 cand,

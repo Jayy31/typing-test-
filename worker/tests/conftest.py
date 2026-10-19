@@ -32,7 +32,7 @@ def no_selection_gates(monkeypatch):
     """For tests about pricing/trading mechanics, not the owner's selection gates."""
     from app.signals import options_stage
 
-    monkeypatch.setattr(options_stage, "selection_rejection", lambda r: None)
+    monkeypatch.setattr(options_stage, "selection_rejection", lambda r, gates=None: None)
 
 
 @pytest.fixture(autouse=True)

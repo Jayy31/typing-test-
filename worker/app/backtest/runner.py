@@ -23,6 +23,7 @@ from app.history.event_study import (
     kg_reaction_rows,
     reaction_day,
     reaction_rows,
+    regime_labels,
     summarize,
     vix_series,
 )
@@ -102,10 +103,12 @@ def run_rules(
     data = data or HistoryData(con)
     res = RunResult(variant, start, end, folds=folds(start, end))
     vix = vix_series(con)
+    labels = regime_labels(con) if variant.regime_aware else None
     for f in res.folds:
         groups = grouped_values(  # nothing from the fold on
             reaction_rows(con, before=f.test_start) + kg_reaction_rows(con, before=f.test_start),
             vix,
+            labels,
         )
         stats = summarize(groups)
         sigs: list[Signal] = []

@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
+from app import flags
 from app.config import IST, get_settings
 from app.db.config_store import get_config
 from app.db.models import (
@@ -128,6 +129,11 @@ def morning_brief_text(s: Session, now: datetime) -> str | None:
         return None
     fno = {i.symbol for i in s.scalars(select(Instrument)) if i.is_fno}
     lines = [f"MORNING BRIEF  {today:%a %d-%b-%Y}", "", "GLOBAL CUES", *_macro_lines(s, now)]
+    if flags.active(s, "feat.regime"):
+        from app.regime.service import current_in
+
+        reg = current_in(s, today)
+        lines += ["", "MARKET REGIME", f"  {reg.text() if reg else 'not computed yet'}"]
     flows = _fii_dii(s, prev)
     lines += [
         "",

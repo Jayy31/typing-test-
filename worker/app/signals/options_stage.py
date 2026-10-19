@@ -206,6 +206,7 @@ def plan_options(
     if not expiries or quote is None:
         return OptionPlan(status="pending", notes=["no live option data (pricing pending)"])
     plan.spot, plan.prev_close, plan.quote_ts = quote.last_price, quote.prev_close, quote.ts
+    gates = live_gates(engine, today)
 
     # (A4 b) priced-in / pre-move check
     plan.pre_news_spot = pre_news_reference(symbol, news_time, quote.prev_close, today, engine)
@@ -255,12 +256,12 @@ def plan_options(
         plan.edge_ratio = round(er, 3) if er is not None else None
         with session_scope(engine) as s:
             gate = flags.active(s, "feat.implied_move_gate")
-        if gate and plan.rejection is None and (plan.edge_ratio or 0) < settings.edge_ratio_min:
+        if gate and plan.rejection is None and (plan.edge_ratio or 0) < gates["edge_ratio_min"]:
             plan.status, plan.rejection = (
                 "rejected",
                 (
                     "edge",
-                    f"edge ratio {plan.edge_ratio} below {settings.edge_ratio_min}: predicted "
+                    f"edge ratio {plan.edge_ratio} below {gates['edge_ratio_min']:g}: predicted "
                     f"{predicted_move_pct:.2f}% vs implied {plan.implied_move_pct:.2f}% "
                     f"over {window_days}d",
                 ),
@@ -353,7 +354,7 @@ def plan_options(
             ),
         )
     if plan.rejection is None and best.result is not None:
-        plan.rejection = selection_rejection(best.result)
+        plan.rejection = selection_rejection(best.result, gates)
         if plan.rejection:
             plan.status = "rejected"
     if plan.rejection is None:
@@ -368,22 +369,41 @@ def plan_options(
     return plan
 
 
-def selection_rejection(r: SimResult) -> tuple[str, str] | None:
-    """Owner selection gates (config/options.yaml `selection`)."""
+def live_gates(engine: Engine | None, today: date) -> dict[str, float]:
+    """Gate values for today's market regime (feat.regime); the base values otherwise."""
+    from app.regime import gates as regime_gates
+    from app.regime.service import current
+
+    with session_scope(engine) as s:
+        on = flags.active(s, "feat.regime")
+    reg = current(engine, today) if on else None
+    return regime_gates.for_regime(reg.vol if reg else None)
+
+
+def selection_rejection(
+    r: SimResult, gates: dict[str, float] | None = None
+) -> tuple[str, str] | None:
+    """Owner selection gates (config/options.yaml `selection`); `gates` = regime-specific values
+    (app/regime/gates.py), same as options.yaml unless config/regime.yaml overrides them."""
     c = load_yaml("options.yaml").get("selection") or {}
     if not c.get("enabled", True):
         return None
-    if r.ev_pct <= float(c["min_ev_pct"]):
-        return ("ev", f"EV {r.ev_pct:+.1f}% after costs is not above {c['min_ev_pct']}%")
-    if r.ev_pct < float(c["min_ev_pct_of_premium"]):
+    g = {
+        "min_ev_pct": float(c["min_ev_pct"]),
+        "min_ev_pct_of_premium": float(c["min_ev_pct_of_premium"]),
+        "min_p_t1_before_sl": float(c["min_p_t1_before_sl"]),
+    } | {k: v for k, v in (gates or {}).items() if k != "edge_ratio_min"}
+    if r.ev_pct <= g["min_ev_pct"]:
+        return ("ev", f"EV {r.ev_pct:+.1f}% after costs is not above {g['min_ev_pct']:g}%")
+    if r.ev_pct < g["min_ev_pct_of_premium"]:
         return (
             "ev",
-            f"EV {r.ev_pct:+.1f}% is below the minimum {c['min_ev_pct_of_premium']}% of premium",
+            f"EV {r.ev_pct:+.1f}% is below the minimum {g['min_ev_pct_of_premium']:g}% of premium",
         )
-    if r.p_t1_before_sl < float(c["min_p_t1_before_sl"]):
+    if r.p_t1_before_sl < g["min_p_t1_before_sl"]:
         return (
             "probability",
-            f"P(T1 before SL) {r.p_t1_before_sl:.0%} below {float(c['min_p_t1_before_sl']):.0%}",
+            f"P(T1 before SL) {r.p_t1_before_sl:.0%} below {g['min_p_t1_before_sl']:.0%}",
         )
     return None
 
