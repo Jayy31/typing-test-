@@ -292,6 +292,9 @@ class AnthropicProvider:
         )
         return str(batch.id)
 
+    def cancel_batch(self, batch_id: str) -> None:
+        self.client().messages.batches.cancel(batch_id)
+
     def batch_done(self, batch_id: str) -> bool:
         return bool(self.client().messages.batches.retrieve(batch_id).processing_status == "ended")
 

@@ -354,6 +354,15 @@ def build_scheduler() -> BlockingScheduler:
     _job(sched, "post_mortems", run_post_mortems, IntervalTrigger(minutes=30))
     # Phase 6: automatic backtests (after the history is complete; replay once enough live signals)
     _job(sched, "backtest_auto", backtest_auto, CronTrigger(hour=22, minute=40, timezone=IST))
+    # Phase 13 research agent (feat.research_agent): overnight research files + cost check
+    _job(sched, "research_files", research_files, CronTrigger(hour=22, minute=10, timezone=IST))
+    _job(
+        sched,
+        "research_files_collect",
+        research_files_collect,
+        CronTrigger(hour="22-23,0-8", minute="5,35", timezone=IST),
+    )
+    _job(sched, "research_overrun", research_overrun, CronTrigger(hour=21, minute=5, timezone=IST))
     _job(
         sched,
         "weekly_digest",
@@ -361,6 +370,33 @@ def build_scheduler() -> BlockingScheduler:
         CronTrigger(day_of_week="sun", hour=8, minute=50, timezone=IST),
     )
     return sched
+
+
+def _research_on() -> bool:
+    from app import flags
+    from app.db.session import session_scope
+
+    with session_scope() as s:
+        return flags.active(s, "feat.research_agent")
+
+
+def research_files() -> int:
+    """Phase 13: queue tonight's research files (Batch API)."""
+    from app.research.files import nightly_job
+
+    return nightly_job() if _research_on() else 0
+
+
+def research_files_collect() -> int:
+    from app.research.files import collect_job
+
+    return collect_job() if _research_on() else 0
+
+
+def research_overrun() -> int:
+    from app.research.runs import overrun_check
+
+    return overrun_check()
 
 
 def positioning_nightly() -> int:
