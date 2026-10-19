@@ -14,7 +14,13 @@ from app.market.options import OptionChain, OptionQuoteRow
 from app.market.upstox import Quote
 from app.pricing.bs import price
 from app.signals.service import run_signal_cycle
-from tests.helpers import FakeMessages, analyst_output, seed_instruments, seed_news
+from tests.helpers import (
+    FakeMessages,
+    analyst_output,
+    monthly_expiry_after,
+    seed_instruments,
+    seed_news,
+)
 from tests.test_notify import Recorder, bot
 
 
@@ -33,7 +39,9 @@ class FakeSource:
         self.qty = qty
         self.iv, self.spot, self.prev, self.oi, self.spread = iv, spot, prev_close, oi, spread
         today = datetime.now(IST).date()
-        self.exp = [today + timedelta(days=24), today + timedelta(days=52)]
+        # real monthly expiries (core rules): this month's (or next, once passed) and the next
+        cur = monthly_expiry_after(today)
+        self.exp = [cur, monthly_expiry_after(cur + timedelta(days=1))]
         self.available = True
 
     def expiries(self, symbol: str, as_of: date | None = None) -> list[date]:
@@ -120,7 +128,8 @@ def test_priced_signal_with_strike_ev_and_candidates(engine: Engine) -> None:
         assert sig.premove_pct == pytest.approx((4000 / 3990 - 1) * 100, abs=0.01)
         assert sig.news_to_signal_s is not None and "quote_s" in (sig.data_age_json or {})
         cands = s.scalars(select(SignalCandidate).where(SignalCandidate.signal_id == sig.id)).all()
-        assert len(cands) == 12 and sum(c.chosen for c in cands) == 1  # 6 strikes x 2 expiries
+        n_exp = len({c.expiry for c in cands})  # 1 or 2 allowed monthly expiries (core rules)
+        assert n_exp in (1, 2) and len(cands) == 6 * n_exp and sum(c.chosen for c in cands) == 1
         chosen = next(c for c in cands if c.chosen)
         assert chosen.ev_pct == max(c.ev_pct for c in cands if c.ev_pct is not None)
         an = s.scalars(select(Analysis)).one()

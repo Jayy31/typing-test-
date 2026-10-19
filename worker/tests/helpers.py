@@ -1,7 +1,7 @@
 """Shared test helpers: fake Anthropic messages API and DB seeding."""
 
 import hashlib
-from datetime import datetime
+from datetime import date, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -196,3 +196,19 @@ def panel_outputs(news_id: int = 1, **judge: Any) -> dict[type, Any]:
         CaseOutput: [case("bull"), case("bear")],
         JudgeOutput: JudgeOutput(**base),
     }
+
+
+def monthly_expiry_after(d: date) -> date:
+    """Last Tuesday of d's month, or of the next month when it has passed (core rules)."""
+    import calendar
+    from datetime import timedelta
+
+    y, m = d.year, d.month
+    for _ in range(2):
+        last = date(y, m, calendar.monthrange(y, m)[1])
+        while last.weekday() != 1:
+            last -= timedelta(days=1)
+        if last >= d:
+            return last
+        y, m = (y + (m == 12), m % 12 + 1)
+    return last

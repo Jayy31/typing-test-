@@ -37,7 +37,7 @@ from app.signals.filters import load_holidays
 from app.signals.lifecycle import LIVE
 from app.signals.rejections import record_rejection
 from app.timeutil import as_ist
-from app.trading import fills
+from app.trading import core_rules, fills
 from app.trading.attribution import Attribution, Obs
 from app.trading.costs import trade_costs_inr
 from app.trading.exits import (
@@ -164,6 +164,12 @@ def enter_signals(
                     f"the predicted {pred:.2f}% (limit {limit:.0%})",
                 )
                 continue
+        bad = core_rules.violation(
+            sig.symbol, sig.direction, sig.option_type, sig.expiry, now.date()
+        )
+        if bad:
+            _cancel(s, sig, now, core_rules.STAGE, bad)
+            continue
         opened.append(open_trade(s, sig, chain, depth(row), now, pre_news).id)
     return opened
 
@@ -231,6 +237,9 @@ def open_trade(
     pre_news_spot: float | None,
 ) -> PaperTrade:
     assert row.ask and sig.option_type and sig.strike and sig.expiry
+    bad = core_rules.violation(sig.symbol, sig.direction, sig.option_type, sig.expiry, now.date())
+    if bad:  # never reached for signals made by the options stage; a last line of defence
+        raise core_rules.CoreRuleViolation(f"signal {sig.id}: {bad}")
     rules = ExitRules.from_config()
     inst = s.get(Instrument, sig.symbol)
     lot = int(inst.lot_size or 0) if inst else 0

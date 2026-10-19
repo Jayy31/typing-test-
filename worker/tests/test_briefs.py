@@ -19,7 +19,7 @@ from app.db.models import (
 from app.db.session import session_scope
 from app.notify import briefs
 from app.notify.outbox import deep_link, enqueue_alert
-from tests.helpers import seed_instruments
+from tests.helpers import monthly_expiry_after, seed_instruments
 from tests.test_history_integrity import hist  # noqa: F401 - fixture
 
 THU = datetime(2026, 10, 15, 8, 45, tzinfo=IST)  # Thursday
@@ -130,6 +130,7 @@ def test_evening_summary_pnl_and_provisional_flows(engine: Engine) -> None:
                 symbol="INFY",
                 option_type="CE",
                 strike=1500,
+                expiry=monthly_expiry_after(now.date() + timedelta(days=10)),
                 lot_size=400,
                 last_premium=60,
                 state_json={"fills": [{"fraction": 1 / 3, "price": 62.5}]},

@@ -29,7 +29,7 @@ from app.db.models import (
 from app.db.session import session_scope
 from app.health import quality, watchdog
 from app.history.analogues import AnalogueResult
-from tests.helpers import FakeMessages, seed_instruments
+from tests.helpers import FakeMessages, monthly_expiry_after, seed_instruments
 
 NOW = datetime(2026, 11, 1, 8, 0, tzinfo=IST)
 
@@ -82,6 +82,7 @@ def _trade(
             lot_size=100,
             option_type="CE",
             strike=100,
+            expiry=monthly_expiry_after((when - timedelta(days=2)).date() + timedelta(days=10)),
         )
     )
 

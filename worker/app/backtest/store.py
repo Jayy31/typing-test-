@@ -51,6 +51,7 @@ def config_hash(snapshot: dict[str, Any]) -> str:
 def trade_row(t: Trade) -> dict[str, Any]:
     return {
         "signal": t.signal.key,
+        "option_type": t.option_type,
         "source": t.signal.source,
         "event_type": t.signal.event_type,
         "sector": t.signal.sector,

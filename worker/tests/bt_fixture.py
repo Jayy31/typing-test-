@@ -29,7 +29,11 @@ def build(
     con = duckdb.connect()
     init_schema(con)
     cal = calendar()
-    expiries = [cal[i] for i in range(19, len(cal), 21)] + [cal[-1] + timedelta(days=30)]
+    # monthly expiries only (core rules): the last trading day of each month in the calendar
+    last: dict[tuple[int, int], date] = {}
+    for d in cal:
+        last[(d.year, d.month)] = d
+    expiries = sorted(last.values())[:-1] + [date(2024, 7, 25), date(2024, 8, 29)]
     idx: list[tuple] = []
     prices: list[tuple] = []
     uni: list[tuple] = []
