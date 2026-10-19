@@ -1026,3 +1026,21 @@ class GoliveCheck(Base):
     status: Mapped[str] = mapped_column(String(8))  # ok / warn / fail (worst check)
     results_json: Mapped[dict[str, Any]] = mapped_column(Json)
     text: Mapped[str] = mapped_column(Text)
+
+
+class MarketRegime(Base):
+    """Phase 12 (feat.regime): one deterministic market-regime label per trading day."""
+
+    __tablename__ = "market_regime"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    vol: Mapped[str] = mapped_column(String(12))  # calm / normal / stressed / unknown
+    direction: Mapped[str] = mapped_column(String(12))  # risk_on / risk_off / unknown
+    label: Mapped[str] = mapped_column(String(32))
+    inputs: Mapped[str] = mapped_column(String(32))  # e.g. "VIX+Nifty; FII unknown"
+    vix: Mapped[float | None] = mapped_column(Float)
+    vix_pct: Mapped[float | None] = mapped_column(Float)
+    nifty_ret_pct: Mapped[float | None] = mapped_column(Float)
+    fii_net_cr: Mapped[float | None] = mapped_column(Float)
+    source: Mapped[str] = mapped_column(String(8))  # live / history
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())

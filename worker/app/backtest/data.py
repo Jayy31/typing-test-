@@ -73,6 +73,7 @@ class HistoryData:
                 "SELECT date, close FROM hist_index WHERE lower(index_name) = 'india vix'"
             ).fetchall()
         )
+        self._regimes: dict[date, str] | None = None
         self.prices: dict[str, dict[date, PriceBar]] = defaultdict(dict)
         for sym, d, o, h, lo, c, v in con.execute(
             "SELECT symbol, date, coalesce(open, close), coalesce(high, close), coalesce(low, close), close, volume FROM hist_prices"
@@ -253,6 +254,14 @@ class HistoryData:
                         )
                 frontier = nxt
         return out
+
+    def regime_label(self, day: date) -> str:
+        """Phase 12 market regime of a history day (VIX + Nifty up to that day)."""
+        if self._regimes is None:
+            from app.history.event_study import regime_labels
+
+            self._regimes = regime_labels(self.con)
+        return self._regimes.get(day, "unknown/unknown")
 
 
 def at_close(d: date) -> datetime:

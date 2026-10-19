@@ -47,6 +47,14 @@ def standard_variants(mode: str) -> list[Variant]:
             Variant(f"rules: + knowledge graph ({depth} hops)", mode, kg_depth=depth),
             Variant(f"rules: + knowledge graph ({depth + 1} hops)", mode, kg_depth=depth + 1),
         ]
+    if mode == "rules":  # Phase 12: market regime
+        out += [
+            Variant("rules: + regime-aware analogues", mode, regime_aware=True),
+            *[
+                Variant(f"rules: regime gates ({name})", mode, regime_gates=name)
+                for name in load_yaml("regime.yaml")["backtest_variants"]
+            ],
+        ]
     if mode == "rules":
         out += [
             Variant("benchmark: random direction", mode, direction_mode="random"),

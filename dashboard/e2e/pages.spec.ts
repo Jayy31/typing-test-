@@ -8,6 +8,8 @@ const PAGES: [string, string, string[]][] = [
     "01-today",
     [
       "Live signals",
+      "Market regime",
+      "Inputs: VIX+Nifty+FII",
       "Open trades",
       "Today's events and results",
       "Needs review",

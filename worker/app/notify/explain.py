@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import flags
 from app.db.models import (
     AgentRun,
     Analysis,
@@ -178,6 +179,11 @@ def build_why(s: Session, signal_id: int) -> str | None:
             or "no notable moves"
         ),
     ]
+    if flags.active(s, "feat.regime"):
+        from app.regime.service import current_in
+
+        reg = current_in(s, as_ist(sig.created_at).date())
+        out += ["", "MARKET REGIME (rule-based)", f"  {reg.text() if reg else 'not computed yet'}"]
 
     events = s.scalars(
         select(EventCalendar)

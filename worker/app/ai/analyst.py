@@ -17,6 +17,7 @@ from app.yaml_config import load_yaml
 
 if TYPE_CHECKING:
     from app.history.analogues import AnalogueResult
+    from app.regime.classifier import Regime
 
 log = logging.getLogger(__name__)
 PROMPT_VERSION = "analyst_v2"
@@ -111,6 +112,7 @@ def build_user_message(
     changes: dict[str, float],
     now: datetime,
     analogue: "AnalogueResult | None" = None,
+    regime: "Regime | None" = None,
 ) -> tuple[str, set[int]]:
     """Assemble the full context. Returns (message, ids of provided news items)."""
     cfg = load_yaml("signals.yaml")["candidates"]
@@ -134,7 +136,8 @@ def build_user_message(
         f"{len(cand.sources)} source(s), official filing present: {cand.has_official}\n\n"
         f"SECTOR CONTEXT:\n{sector_context(s, sector, cand.symbol, now)}\n\n"
         f"MACRO:\n{macro_text(s, changes)}\n\n"
-        f"UPCOMING EVENTS:\n{calendar_text(s, cand.symbol, now.date())}\n\n"
+        + (f"MARKET REGIME (rule-based, no AI):\n- {regime.text()}\n\n" if regime else "")
+        + f"UPCOMING EVENTS:\n{calendar_text(s, cand.symbol, now.date())}\n\n"
         f"RULES ENGINE (for your information):\n{rules}\n\n"
         f"HISTORICAL ANALOGUES (event study, actual prices):\n{analogue_text(analogue)}"
     )

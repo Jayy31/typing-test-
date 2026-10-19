@@ -300,6 +300,17 @@ def build_scheduler() -> BlockingScheduler:
     from app.notify.briefs import evening_summary_job, morning_brief_job
 
     _job(sched, "morning_brief", morning_brief_job, CronTrigger(hour=8, minute=45, timezone=IST))
+    from app.regime.service import backfill as regime_backfill
+    from app.regime.service import daily_job as regime_daily
+
+    # Phase 12: market regime before the brief, and history backfill after the nightly history load
+    _job(sched, "market_regime", regime_daily, CronTrigger(hour=8, minute=35, timezone=IST))
+    _job(
+        sched,
+        "market_regime_backfill",
+        regime_backfill,
+        CronTrigger(hour=23, minute=50, timezone=IST),
+    )
     _job(
         sched, "evening_summary", evening_summary_job, CronTrigger(hour=16, minute=0, timezone=IST)
     )
