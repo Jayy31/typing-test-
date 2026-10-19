@@ -156,32 +156,23 @@ def test_owner_can_delete_lessons_and_it_is_logged(db, monkeypatch: pytest.Monke
     get_settings.cache_clear()
     sync_owner(db)
     with db.begin() as c:
-        c.execute(
-            text(
-                "INSERT INTO research_lessons (id, scope_kind, scope, text) VALUES "
-                "(1, 'stock', 'TCS', 'lesson one'), (2, 'sector', 'IT', 'lesson two')"
-            )
-        )
+        c.execute(text("INSERT INTO research_lessons (id, scope_kind, scope, text) VALUES "
+                       "(1, 'stock', 'TCS', 'lesson one'), (2, 'sector', 'IT', 'lesson two')"))
     with db.begin() as c:
         _as(c, "intruder@example.com")
-        c.execute(
-            text("UPDATE research_lessons SET deleted = true WHERE id = 2")
-        )  # no rows visible
+        c.execute(text("UPDATE research_lessons SET deleted = true WHERE id = 2"))  # no rows visible
         c.execute(text("RESET ROLE"))
     with db.begin() as c:
         _as(c, "owner@example.com")
         assert _try(c, "UPDATE research_lessons SET deleted = true WHERE id = 1")
-        assert not _try(
-            c, "UPDATE research_lessons SET text = 'edited' WHERE id = 2"
-        )  # delete only
+        assert not _try(c, "UPDATE research_lessons SET text = 'edited' WHERE id = 2")  # delete only
         assert not _try(c, "DELETE FROM research_lessons WHERE id = 2")
         c.execute(text("UPDATE research_lessons SET deleted = false WHERE id = 1"))  # no undelete
         c.execute(text("RESET ROLE"))
     with db.connect() as c:
         rows = dict(c.execute(text("SELECT id, deleted FROM research_lessons")).all())
         who = c.execute(text("SELECT deleted_by FROM research_lessons WHERE id = 1")).scalar()
-        audit = c.execute(
-            text("SELECT key, changed_by FROM config_audit WHERE key LIKE 'research.lesson.%'")
-        ).all()
+        audit = c.execute(text("SELECT key, changed_by FROM config_audit "
+                               "WHERE key LIKE 'research.lesson.%'")).all()
     assert rows == {1: True, 2: False} and who == "owner@example.com"
     assert [tuple(a) for a in audit] == [("research.lesson.1", "owner@example.com")]

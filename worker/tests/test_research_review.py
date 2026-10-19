@@ -31,31 +31,15 @@ def _seed(engine: Engine, made: datetime, n: int = 3) -> list[int]:
         if s.get(Instrument, "TCS") is None:
             s.add(Instrument(symbol="TCS", name="TCS", sector="IT", is_fno=True, lot_size=175))
         for i in range(n):
-            an = Analysis(
-                symbol="TCS",
-                thesis=f"t{i}",
-                direction="bullish",
-                created_at=made,
-                prediction_source="agent",
-                scores_json={"event_types": ["results"]},
-            )
+            an = Analysis(symbol="TCS", thesis=f"t{i}", direction="bullish", created_at=made,
+                          prediction_source="agent", scores_json={"event_types": ["results"]})
             s.add(an)
             s.flush()
-            ps = PredictionScore(
-                analysis_id=an.id,
-                symbol="TCS",
-                direction="bullish",
-                predicted_move_pct=3,
-                predicted_move_raw_pct=4,
-                prediction_source="agent",
-                window_days=3,
-                spot_start=100,
-                created_at=made,
-                status="scored",
-                realised_move_pct=-1.0,
-                direction_hit=False,
-                scored_at=NOW - timedelta(days=2),
-            )
+            ps = PredictionScore(analysis_id=an.id, symbol="TCS", direction="bullish",
+                                 predicted_move_pct=3, predicted_move_raw_pct=4,
+                                 prediction_source="agent", window_days=3, spot_start=100,
+                                 created_at=made, status="scored", realised_move_pct=-1.0,
+                                 direction_hit=False, scored_at=NOW - timedelta(days=2))
             s.add(ps)
             s.flush()
             ids.append(ps.id)
@@ -80,29 +64,14 @@ def _ai(engine: Engine) -> AiClient:
 
 def test_review_stores_valid_lessons_only(engine: Engine, cutoff) -> None:
     ids = _seed(engine, NOW - timedelta(days=5))
-    prov = FakeProvider(
-        [
-            {
-                "scope_kind": "stock",
-                "scope": "TCS",
-                "text": "Results beats faded within 3 days.",
-                "evidence_ids": ids[:2],
-            },
-            {"scope_kind": "stock", "scope": "INFY", "text": "not in data", "evidence_ids": ids},
-            {
-                "scope_kind": "event_type",
-                "scope": "results",
-                "text": "invented",
-                "evidence_ids": [999],
-            },
-            {
-                "scope_kind": "sector",
-                "scope": "IT",
-                "text": "IT moves smaller than base rate.",
-                "evidence_ids": ids,
-            },
-        ]
-    )
+    prov = FakeProvider([
+        {"scope_kind": "stock", "scope": "TCS", "text": "Results beats faded within 3 days.",
+         "evidence_ids": ids[:2]},
+        {"scope_kind": "stock", "scope": "INFY", "text": "not in data", "evidence_ids": ids},
+        {"scope_kind": "event_type", "scope": "results", "text": "invented", "evidence_ids": [999]},
+        {"scope_kind": "sector", "scope": "IT", "text": "IT moves smaller than base rate.",
+         "evidence_ids": ids},
+    ])
     assert review.weekly_review(engine, _ai(engine), prov, NOW) == 2
     req = prov.reqs[0]
     assert req.model == "claude-sonnet-5-5" and "untrusted content" in req.user
