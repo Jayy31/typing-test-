@@ -23,15 +23,21 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_service_role_key: str = ""
 
-    # AI (Anthropic); model ids come from env, never hard-coded
+    # AI (Anthropic); model ids come from env with these defaults (owner decision 2026-10-19:
+    # Haiku 5.5 and Sonnet 5.5 only), so a missing VM value never skips a role silently
     anthropic_api_key: str = ""
-    ai_model_tagger: str = ""
-    ai_model_analyst: str = ""
-    ai_model_researcher: str = ""  # cheap
-    ai_model_novelty: str = ""  # cheap
-    ai_model_bull: str = ""  # mid
-    ai_model_bear: str = ""  # mid
-    ai_model_judge: str = ""  # strongest
+    ai_model_tagger: str = "claude-haiku-5-5"
+    ai_model_analyst: str = "claude-sonnet-5-5"  # single analyst (and the research-agent fallback)
+    ai_model_researcher: str = "claude-haiku-5-5"
+    ai_model_novelty: str = "claude-haiku-5-5"
+    ai_model_bull: str = "claude-haiku-5-5"
+    ai_model_bear: str = "claude-haiku-5-5"
+    ai_model_judge: str = "claude-sonnet-5-5"
+    ai_model_postmortem: str = "claude-haiku-5-5"
+    ai_model_results_fallback: str = "claude-haiku-5-5"  # when the cheap results extract fails
+    # Comma-separated model ids any role or research preset may resolve to; anything else fails
+    # the startup check (health alert) and preflight. Add claude-opus-5-5 to allow Opus.
+    ai_allowed_models: str = "claude-haiku-5-5,claude-sonnet-5-5"
     # Phase 5 daily caps: full panels (researcher, novelty, bull, bear, judge) for the top
     # candidates, then the single analyst for overflow, then 'skipped for budget'
     ai_multi_agent_max_per_day: int = 4
@@ -42,8 +48,8 @@ class Settings(BaseSettings):
     # calls pause first when a cap is near
     ai_tagger_reserve_inr: float = 15
     # Latest training cutoff of any AI model used (YYYY-MM-DD). Before it, AI gives labels only
-    # (DESIGN_V2 "Research integrity" R1); empty = treat all history as contaminated.
-    ai_model_knowledge_cutoff: str = ""
+    # (DESIGN_V2 "Research integrity" R1); set blank in env = this default.
+    ai_model_knowledge_cutoff: str = "2026-06-30"
     ai_daily_budget_inr: float = 150
     ai_monthly_budget_inr: float = 2500
     # Phase 13 research agent: budget | balanced | full (config/research_agent.yaml); per-role

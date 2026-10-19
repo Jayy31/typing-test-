@@ -350,7 +350,9 @@ def test_results_ai_fallback_cheap_then_mid(engine: Engine) -> None:
 
     fake = CheapFails(good)
     ai = AiClient(
-        Settings(_env_file=None, ai_model_tagger="cheap", ai_model_analyst="mid"), engine, fake
+        Settings(_env_file=None, ai_model_tagger="cheap", ai_model_results_fallback="mid"),
+        engine,
+        fake,
     )  # type: ignore[call-arg]
     fig = results.ai_extract(ai, "BHARTIARTL", "filing text")
     assert [c["model"] for c in fake.calls] == ["cheap", "mid"]

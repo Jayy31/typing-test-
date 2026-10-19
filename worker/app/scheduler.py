@@ -446,8 +446,10 @@ def main() -> None:
     from app.db.owner import sync_owner
 
     run_job("dashboard_owner", sync_owner)  # who may open the dashboard (DASHBOARD_ALLOWED_EMAIL)
+    from app.ai.models import startup_check as ai_models_check
     from app.golive.checks import mark_first_start
 
+    run_job("ai_models_check", ai_models_check)  # every role's model in AI_ALLOWED_MODELS
     mark_first_start()  # go-live: quick check after 2 h, first-run report after 24 h (once)
     sched = build_scheduler()
     # Live AI smoke test once, shortly after startup, until it has passed (results to Telegram)

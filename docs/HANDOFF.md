@@ -25,7 +25,11 @@ doesn't show.
   - Monthly expiries only (current month, or next when the current one is under 8 trading days).
   - Guarded by `app/trading/core_rules.py` plus a session-wide test guard.
 - **AI models:**
-  - all `AI_MODEL_*` are set to `claude-haiku-5-5` for now;
+  - Haiku 5.5 and Sonnet 5.5 only; defaults in code and `.env.example` (blank VM value = default):
+    - Haiku: tagger (also results/auto-sales extraction, company links, monthly summary), panel researcher, novelty, bull, bear, `AI_MODEL_POSTMORTEM`, `AI_MODEL_RESULTS_FALLBACK`;
+    - Sonnet: `AI_MODEL_ANALYST` (single analyst, also the research-agent fallback), `AI_MODEL_JUDGE`;
+    - research agent (budget preset): files Haiku, live + review Sonnet, top = live (Sonnet);
+  - `AI_ALLOWED_MODELS` (default Haiku + Sonnet): any role or preset outside it fails `make preflight` (which lists the model per role) and raises a startup health alert. balanced/full presets need Opus added there;
   - `AI_MODEL_KNOWLEDGE_CUTOFF=2026-06-30`: before it, the AI gives labels only (R1).
 - **Research agent:**
   - `feat.research_agent` defaults to **off**; the owner switches it on in Settings.

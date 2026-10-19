@@ -43,9 +43,15 @@ def test_no_secrets_in_tracked_files() -> None:
     assert not hits, f"possible secrets committed: {hits}"
 
 
+# Owner decision 2026-10-19: model ids, allowed models and the cutoff carry their defaults.
+NON_SECRET_DEFAULTS = ("AI_MODEL_", "AI_ALLOWED_MODELS=")
+
+
 def test_env_example_has_blank_values() -> None:
     for line in (ROOT / ".env.example").read_text().splitlines():
         if line and not line.startswith("#") and "=" in line:
+            if line.startswith(NON_SECRET_DEFAULTS):
+                continue
             assert line.split("=", 1)[1] == "", (
                 f".env.example must be keys only: {line.split('=')[0]}"
             )

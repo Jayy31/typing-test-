@@ -17,12 +17,12 @@ presets:
     research_live:   {model: claude-sonnet-5-5}
     research_top:    {model: ""}
     research_review: {model: claude-sonnet-5-5}
-  balanced:
+  balanced:   # requires claude-opus-5-5 in AI_ALLOWED_MODELS (startup check fails otherwise)
     research_files:  {model: claude-sonnet-5-5, web: true}
     research_live:   {model: claude-sonnet-5-5}
     research_top:    {model: claude-opus-5-5}
     research_review: {model: claude-opus-5-5}
-  full:
+  full:       # requires claude-opus-5-5 in AI_ALLOWED_MODELS (startup check fails otherwise)
     research_files:  {model: claude-opus-5-5, web: true}
     research_live:   {model: claude-opus-5-5}
     research_top:    {model: claude-opus-5-5}

@@ -42,6 +42,7 @@ from tests.helpers import (
 
 PANEL = dict(
     ai_model_analyst="mid-m",
+    ai_model_postmortem="mid-m",
     ai_model_researcher="cheap-m",
     ai_model_novelty="cheap-m",
     ai_model_bull="mid-m",
@@ -77,7 +78,7 @@ def test_prices_come_from_config_per_model() -> None:
     assert small == pytest.approx(0.05e-0 * 88 * 0.1) and big == pytest.approx(0.15 * 0.5 * 88)
     # unknown model id -> the role's tier
     assert compute_cost_inr("judge", 1_000_000, 0, 0, 0, model="some-new-model") == pytest.approx(
-        4 * 88
+        2 * 88
     )
 
 

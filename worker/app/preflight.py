@@ -38,6 +38,12 @@ def main(argv: list[str]) -> int:
     problems: list[str] = []
     if miss := missing_env():
         problems.append("env values missing: " + ", ".join(miss))
+    from app.ai import models as ai_models
+
+    print("AI models (resolved per role):")
+    for role, model in ai_models.resolved(st).items():
+        print(f"  {role}: {model}")
+    problems += ["AI model: " + p for p in ai_models.problems(st)]
     db = db_check(None)
     print(f"database: {db.status} - {db.summary}")
     if db.status != "ok":

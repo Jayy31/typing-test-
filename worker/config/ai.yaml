@@ -22,20 +22,22 @@ prices:
   cheap:  {input: 0.10, output: 0.50, cache_read: 0.01, cache_write: 0.125}   # Haiku 5.5
   mid:    {input: 2.00, output: 10.00, cache_read: 0.10, cache_write: 2.50}   # Sonnet 5.5
   strong: {input: 4.00, output: 20.00, cache_read: 0.20, cache_write: 5.00}   # Opus 5.5
-# Which price tier each role's model belongs to. Keep in sync with the AI_MODEL_* values you choose.
+# Price tier of each role's DEFAULT model (cheap = Haiku 5.5, mid = Sonnet 5.5, strong = Opus 5.5).
+# Only used when the configured model id has no row under `models`; keep in sync if you change
+# an AI_MODEL_* value.
 roles:
-  tagger: cheap
-  researcher: cheap
-  novelty: cheap
-  analyst: mid          # single-call analyst: overflow candidates beyond the daily panel cap
-  bull: mid
-  bear: mid
-  judge: strong
-  postmortem: mid     # AI post-mortems use AI_MODEL_ANALYST (mid)
-  extractor: cheap    # Phase 7 results / auto-sales extraction (AI_MODEL_TAGGER)
-  extractor_fallback: mid   # when the cheap extract fails validation (AI_MODEL_ANALYST)
-  kg_extractor: cheap # Phase 8 company links (AI_MODEL_TAGGER)
-  report_writer: cheap  # Phase 10 monthly summary paragraph (AI_MODEL_TAGGER)
+  tagger: cheap         # AI_MODEL_TAGGER (Haiku)
+  researcher: cheap     # AI_MODEL_RESEARCHER (Haiku)
+  novelty: cheap        # AI_MODEL_NOVELTY (Haiku)
+  analyst: mid          # AI_MODEL_ANALYST (Sonnet): single analyst, also the research-agent fallback
+  bull: cheap           # AI_MODEL_BULL (Haiku)
+  bear: cheap           # AI_MODEL_BEAR (Haiku)
+  judge: mid            # AI_MODEL_JUDGE (Sonnet)
+  postmortem: cheap     # AI_MODEL_POSTMORTEM (Haiku)
+  extractor: cheap      # Phase 7 results / auto-sales extraction (AI_MODEL_TAGGER, Haiku)
+  extractor_fallback: cheap  # when the first extract fails validation (AI_MODEL_RESULTS_FALLBACK, Haiku)
+  kg_extractor: cheap   # Phase 8 company links (AI_MODEL_TAGGER, Haiku)
+  report_writer: cheap  # Phase 10 monthly summary paragraph (AI_MODEL_TAGGER, Haiku)
   # Phase 13 research agent: models come from config/research_agent.yaml (preset per role);
   # these tiers are only the fallback when that model id is not listed under `models`.
   research_files: cheap
