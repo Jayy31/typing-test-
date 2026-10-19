@@ -25,6 +25,9 @@ from app.kg.propagate import propagate
 from app.market.live import UpstoxOptionData
 from app.notify import templates
 from app.notify.outbox import enqueue_alert
+from app.positioning.evidence import tilt as positioning_tilt
+from app.positioning.service import evidence_from as positioning_evidence
+from app.positioning.service import for_signal as positioning_for
 from app.regime.service import current_in as current_regime_in
 from app.rules.engine import RuleContext, RuleHit, evaluate, fired_macro_rules
 from app.rules.macro_changes import compute_changes
@@ -60,13 +63,22 @@ class WorkItem:
     steps: list[AgentStep] | None = None  # agent outputs, stored in agent_runs
     policy: calibration.Policy | None = None  # how the prediction is tempered (shrink/calibrated)
     deferred: dict[str, Any] | None = None  # off-hours: priced at the next open (Phase 7)
+    positioning: dict[str, Any] | None = None  # Phase 12: option-market positioning evidence
 
 
 def predict(item: WorkItem, out: AnalystOutput) -> tuple[Prediction | None, list[Scenario]]:
     """Predicted move in our direction (+ the distribution the simulator samples):
     scenario tree alone, or blended with historical analogues once there are enough."""
     agree = out.direction == item.cand.direction  # analyst agrees with the news' direction
-    return combine(out.scenarios, out.direction, item.analogue, agree)
+    pred, dist = combine(out.scenarios, out.direction, item.analogue, agree)
+    ev = positioning_evidence(item.positioning)
+    if pred is None or not any(e.basis == "base_rate" and e.weight > 0 for e in ev):
+        return pred, dist
+    window = max(1, int(item.analogue.window if item.analogue else out.window_days or 3))
+    mixed = positioning_tilt(dist, ev, window)  # learned base rates only; support-only states never
+    tilted = from_scenarios(mixed, out.direction)
+    assert tilted is not None
+    return Prediction(tilted.move_pct, f"{pred.source}+positioning", tilted.p_move), mixed
 
 
 def _last_analysis(s: Session, symbol: str) -> Analysis | None:
@@ -138,6 +150,13 @@ def plan_work(
                 regime_label=reg.label if reg else None,
             )
         message, ids = analyst.build_user_message(s, cand, hits, changes, now, analogue, reg)
+        pos = positioning_for(s, cand.symbol, now) if flags.active(s, "feat.positioning") else None
+        if pos:
+            lines = "\n".join(f"- {e.line()}" for e in positioning_evidence(pos))
+            message += (
+                f"\n\nOPTION-MARKET POSITIONING (data only, as of {pos['as_of']}, {pos['source']}):\n"
+                f"{lines}"
+            )
         work.append(
             WorkItem(
                 cand,
@@ -148,6 +167,7 @@ def plan_work(
                 inst.sub_sector,
                 analogue,
                 prescreen(cand, hits),
+                positioning=pos,
             )
         )
     work.sort(key=lambda w: -w.prescreen)  # strongest candidates get the panel first
@@ -296,6 +316,8 @@ def store_result(
             "prediction_source": item.source,
             "calibration": _policy_json(item.policy),
             "panel": _panel_json(out),
+            "positioning": item.positioning,
+            "regime": getattr(current_regime_in(s, now.date()), "label", None),
         },
         confidence=out.confidence,
         model=model,

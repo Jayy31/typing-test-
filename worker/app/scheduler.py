@@ -305,6 +305,14 @@ def build_scheduler() -> BlockingScheduler:
 
     # Phase 12: market regime before the brief, and history backfill after the nightly history load
     _job(sched, "market_regime", regime_daily, CronTrigger(hour=8, minute=35, timezone=IST))
+    from app.positioning.service import nightly_job as positioning_nightly
+
+    _job(
+        sched,
+        "positioning_history",
+        positioning_nightly,
+        CronTrigger(hour=23, minute=40, timezone=IST),
+    )
     _job(
         sched,
         "market_regime_backfill",

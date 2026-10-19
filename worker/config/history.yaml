@@ -17,6 +17,7 @@ sources:
     until: "2024-07-05"
     url: "https://archives.nseindia.com/content/historical/DERIVATIVES/{yyyy}/{mmm}/fo{ddMMMyyyy}bhav.csv.zip"
     instrument: OPTSTK
+    futures_instrument: FUTSTK      # Phase 12: stock futures rows (data only, never traded)
     expiry_format: "%d-%b-%Y"
     columns: {instrument: INSTRUMENT, symbol: SYMBOL, expiry: EXPIRY_DT, strike: STRIKE_PR,
               type: OPTION_TYP, open: OPEN, high: HIGH, low: LOW, close: CLOSE, settle: SETTLE_PR,
@@ -25,6 +26,7 @@ sources:
     from: "2024-07-08"
     url: "https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{yyyymmdd}_F_0000.csv.zip"
     instrument: STO
+    futures_instrument: STF
     expiry_format: "%Y-%m-%d"
     columns: {instrument: FinInstrmTp, symbol: TckrSymb, expiry: XpryDt, strike: StrkPric,
               type: OptnTp, open: OpnPric, high: HghPric, low: LwPric, close: ClsPric,

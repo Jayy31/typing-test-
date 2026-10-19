@@ -28,6 +28,8 @@ const PAGES: [string, string, string[]][] = [
     [
       "not yet calibrated",
       "blended (scenario tree + analogues)",
+      "Option-market positioning",
+      "support only",
       "Panel debate",
       "filing · hand-set rule (low weight)",
       "Candidate strikes",
@@ -110,6 +112,11 @@ const PAGES: [string, string, string[]][] = [
   ],
   ["/ai-vs-rules", "26-ai-vs-rules", ["AI signals", "Rules (analogues only)"]],
   ["/quality", "27-quality", ["bid above ask", "Database", "Cache hits"]],
+  [
+    "/stocks/BHARTIARTL",
+    "29-stock",
+    ["Option-market positioning", "long buildup", "S-1042", "Paper trades"],
+  ],
   [
     "/golive",
     "28-golive",

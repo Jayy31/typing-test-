@@ -31,7 +31,7 @@ from app.history.store import connect
 from app.yaml_config import load_yaml
 
 log = logging.getLogger(__name__)
-KINDS = ("prices", "options", "index")
+KINDS = ("prices", "options", "futures", "index")
 
 
 def weekdays(start: date, end: date) -> list[date]:
@@ -85,6 +85,16 @@ def load_options(con: duckdb.DuckDBPyConnection, dl: Downloader, d: date) -> int
     return len(parsed.options)
 
 
+def load_futures(con: duckdb.DuckDBPyConnection, dl: Downloader, d: date) -> int:
+    """Stock futures from the same F&O file (served from the download cache when already fetched)."""
+    raw = dl.get(fo_kind(d), d)
+    if raw is None:
+        return -1
+    rows = parse_fo(raw, d).futures
+    con.executemany("INSERT OR REPLACE INTO hist_futures VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows)
+    return len(rows)
+
+
 def load_index(con: duckdb.DuckDBPyConnection, dl: Downloader, d: date) -> int:
     raw = dl.get("index", d)
     if raw is None:
@@ -97,6 +107,7 @@ def load_index(con: duckdb.DuckDBPyConnection, dl: Downloader, d: date) -> int:
 LOADERS: dict[str, Callable[[duckdb.DuckDBPyConnection, Downloader, date], int]] = {
     "prices": load_prices,
     "options": load_options,
+    "futures": load_futures,
     "index": load_index,
 }
 

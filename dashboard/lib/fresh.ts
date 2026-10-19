@@ -52,6 +52,7 @@ export const PAGE_JOBS: Record<string, JobSpec[]> = {
   events: [{ job: "history_weekly", everyMin: 10080 }],
   digest: [{ job: "weekly_digest", everyMin: 10080 }],
   golive: [{ job: "golive_checks", everyMin: 10 }],
+  stocks: [{ job: "positioning_history", everyMin: 1440 }],
   health: [{ job: "heartbeat", everyMin: 5 }],
   reports: [{ job: "monthly_report", everyMin: 44640 }],
   suggestions: [{ job: "learning_suggest", everyMin: 44640 }],

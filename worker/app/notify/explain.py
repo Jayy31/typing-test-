@@ -184,6 +184,16 @@ def build_why(s: Session, signal_id: int) -> str | None:
 
         reg = current_in(s, as_ist(sig.created_at).date())
         out += ["", "MARKET REGIME (rule-based)", f"  {reg.text() if reg else 'not computed yet'}"]
+    pos = js.get("positioning")
+    if pos:
+        from app.positioning.service import evidence_from
+
+        out += [
+            "",
+            f"OPTION-MARKET POSITIONING (evidence only, as of {pos['as_of']}, {pos['source']})",
+            *[f"  - {e.line()}" for e in evidence_from(pos)],
+            "  Support-only states change nothing; base-rate states tilt the predicted move.",
+        ]
 
     events = s.scalars(
         select(EventCalendar)

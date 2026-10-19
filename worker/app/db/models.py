@@ -1044,3 +1044,15 @@ class MarketRegime(Base):
     fii_net_cr: Mapped[float | None] = mapped_column(Float)
     source: Mapped[str] = mapped_column(String(8))  # live / history
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class PositioningSnapshot(Base):
+    """Phase 12 (feat.positioning): option-market positioning states per stock per day."""
+
+    __tablename__ = "positioning_snapshots"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+    states_json: Mapped[dict[str, Any]] = mapped_column(Json)  # feature -> [state, value]
+    source: Mapped[str] = mapped_column(String(8))  # live / eod
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())

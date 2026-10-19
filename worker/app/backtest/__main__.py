@@ -50,6 +50,7 @@ def standard_variants(mode: str) -> list[Variant]:
     if mode == "rules":  # Phase 12: market regime
         out += [
             Variant("rules: + regime-aware analogues", mode, regime_aware=True),
+            Variant("rules: + positioning evidence", mode, positioning=True),
             *[
                 Variant(f"rules: regime gates ({name})", mode, regime_gates=name)
                 for name in load_yaml("regime.yaml")["backtest_variants"]
