@@ -124,8 +124,7 @@ unverified:
   36: {check: nse_probe}
 
 # make preflight: env keys that must have a value before the first start (others are optional)
+# (AI_MODEL_* and AI_MODEL_KNOWLEDGE_CUTOFF have code defaults; preflight lists the resolved models)
 required_env: [DATABASE_URL, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY,
-               AI_MODEL_TAGGER, AI_MODEL_ANALYST, AI_MODEL_RESEARCHER, AI_MODEL_NOVELTY,
-               AI_MODEL_BULL, AI_MODEL_BEAR, AI_MODEL_JUDGE, AI_MODEL_KNOWLEDGE_CUTOFF,
                BROKER_ACCESS_TOKEN, BROKER_TOKEN_ISSUED_ON, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                DASHBOARD_ALLOWED_EMAIL, DASHBOARD_BASE_URL]

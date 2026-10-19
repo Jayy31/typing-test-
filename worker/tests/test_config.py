@@ -28,10 +28,16 @@ def test_blank_env_values_use_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.news_poll_min == 5
 
 
+# Owner decision 2026-10-19: model ids, allowed models and the cutoff carry their defaults.
+NON_SECRET_DEFAULTS = ("AI_MODEL_", "AI_ALLOWED_MODELS=")
+
+
 def test_env_example_has_keys_only() -> None:
     from pathlib import Path
 
     text = (Path(__file__).resolve().parents[2] / ".env.example").read_text()
     for line in text.splitlines():
         if "=" in line and not line.startswith("#"):
+            if line.startswith(NON_SECRET_DEFAULTS):
+                continue
             assert line.split("=", 1)[1] == "", f"value present: {line}"

@@ -16,6 +16,7 @@ from tests.helpers import FakeByType, analyst_output, panel_outputs
 
 PANEL = dict(
     ai_model_analyst="mid-m",
+    ai_model_postmortem="mid-m",
     ai_model_researcher="cheap-m",
     ai_model_novelty="cheap-m",
     ai_model_bull="mid-m",

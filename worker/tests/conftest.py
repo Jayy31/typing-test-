@@ -35,6 +35,39 @@ def no_selection_gates(monkeypatch):
     monkeypatch.setattr(options_stage, "selection_rejection", lambda r, gates=None: None)
 
 
+BLANK_AI_DEFAULTS = (
+    "ai_model_tagger",
+    "ai_model_analyst",
+    "ai_model_researcher",
+    "ai_model_novelty",
+    "ai_model_bull",
+    "ai_model_bear",
+    "ai_model_judge",
+    "ai_model_postmortem",
+    "ai_model_results_fallback",
+    "ai_model_knowledge_cutoff",
+)
+
+
+@pytest.fixture(autouse=True)
+def _no_default_ai_models(request):
+    """Tests configure the AI roles (and the R1 cutoff) they use; the shipped defaults in
+    app.config are checked by tests marked `real_ai_defaults`."""
+    if request.node.get_closest_marker("real_ai_defaults"):
+        yield
+        return
+    from app.config import Settings
+
+    saved = {f: Settings.model_fields[f].default for f in BLANK_AI_DEFAULTS}
+    for f in BLANK_AI_DEFAULTS:
+        Settings.model_fields[f].default = ""
+    Settings.model_rebuild(force=True)
+    yield
+    for f, v in saved.items():
+        Settings.model_fields[f].default = v
+    Settings.model_rebuild(force=True)
+
+
 @pytest.fixture(autouse=True)
 def _market_hours(monkeypatch):
     """Signal cycles run on the wall clock: treat tests as within market hours unless a test

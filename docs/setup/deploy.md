@@ -104,18 +104,21 @@ at any time.
 | `SUPABASE_URL` | yes | VM .env | Supabase > Project Settings > API > Project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | VM .env | Supabase > Project Settings > API > service_role key (worker only, never Vercel) |
 | `ANTHROPIC_API_KEY` | yes | VM .env | console.anthropic.com > API keys |
-| `AI_MODEL_TAGGER` | yes | VM .env | AI (Anthropic) |
-| `AI_MODEL_ANALYST` | yes | VM .env | AI (Anthropic) |
-| `AI_MODEL_RESEARCHER` | yes | VM .env | AI (Anthropic) |
-| `AI_MODEL_NOVELTY` | yes | VM .env | AI (Anthropic) |
-| `AI_MODEL_BULL` | yes | VM .env | AI (Anthropic) |
-| `AI_MODEL_BEAR` | yes | VM .env | AI (Anthropic) |
-| `AI_MODEL_JUDGE` | yes | VM .env | AI (Anthropic) |
+| `AI_MODEL_TAGGER` | no | VM .env | AI (Anthropic); default `claude-haiku-5-5` |
+| `AI_MODEL_ANALYST` | no | VM .env | AI (Anthropic); default `claude-sonnet-5-5` |
+| `AI_MODEL_RESEARCHER` | no | VM .env | AI (Anthropic); default `claude-haiku-5-5` |
+| `AI_MODEL_NOVELTY` | no | VM .env | AI (Anthropic); default `claude-haiku-5-5` |
+| `AI_MODEL_BULL` | no | VM .env | AI (Anthropic); default `claude-haiku-5-5` |
+| `AI_MODEL_BEAR` | no | VM .env | AI (Anthropic); default `claude-haiku-5-5` |
+| `AI_MODEL_JUDGE` | no | VM .env | AI (Anthropic); default `claude-sonnet-5-5` |
+| `AI_MODEL_POSTMORTEM` | no | VM .env | AI (Anthropic); default `claude-haiku-5-5` |
+| `AI_MODEL_RESULTS_FALLBACK` | no | VM .env | AI (Anthropic); default `claude-haiku-5-5` |
+| `AI_ALLOWED_MODELS` | no | VM .env | comma list; default `claude-haiku-5-5,claude-sonnet-5-5`; any role outside it fails preflight + a startup health alert |
 | `AI_MULTI_AGENT_MAX_PER_DAY` | no | VM .env | AI (Anthropic) |
 | `AI_SINGLE_ANALYST_MAX_PER_DAY` | no | VM .env | AI (Anthropic) |
 | `KG_MAX_PANEL_SLOTS` | no | VM .env | AI (Anthropic) |
 | `AI_TAGGER_RESERVE_INR` | no | VM .env | AI (Anthropic) |
-| `AI_MODEL_KNOWLEDGE_CUTOFF` | yes | VM .env | training cutoff date of the models you set (R1 look-ahead protection) |
+| `AI_MODEL_KNOWLEDGE_CUTOFF` | no | VM .env | default `2026-06-30`; training cutoff date of the models you set (R1 look-ahead protection) |
 | `AI_DAILY_BUDGET_INR` | no | VM .env | AI (Anthropic) |
 | `AI_MONTHLY_BUDGET_INR` | no | VM .env | AI (Anthropic) |
 | `RESEARCH_AGENT_PRESET` | no | VM .env | AI research agent (budget / balanced / full; blank = budget) |

@@ -37,11 +37,10 @@ ROLES = (
     "report_writer",
 )
 # roles that reuse another role's model id. Phase 7 extraction (results, auto sales): the cheap
-# model first, the mid model as the fallback.
+# model first, then AI_MODEL_RESULTS_FALLBACK. Post-mortems use AI_MODEL_POSTMORTEM.
 MODEL_ROLE = {
-    "postmortem": "analyst",
     "extractor": "tagger",
-    "extractor_fallback": "analyst",
+    "extractor_fallback": "results_fallback",  # AI_MODEL_RESULTS_FALLBACK
     "kg_extractor": "tagger",  # Phase 8 company-link extraction (cheap)
     "report_writer": "tagger",  # Phase 10 monthly report summary paragraph (cheap)
 }

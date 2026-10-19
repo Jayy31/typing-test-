@@ -36,6 +36,7 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["real_ai_defaults: use the shipped AI model / cutoff defaults instead of blanks"]
 
 [tool.ruff]
 line-length = 100
