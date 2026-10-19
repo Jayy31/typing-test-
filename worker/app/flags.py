@@ -24,6 +24,7 @@ DEFAULTS: dict[str, bool] = {
     "feat.regime": True,
     "feat.positioning": True,
     "feat.watchlist_book": True,
+    "feat.research_agent": False,  # Phase 13: off until the owner switches it on
 }
 
 # Flip to True in the phase that ships each stage.
@@ -38,6 +39,7 @@ BUILT: dict[str, bool] = {
     "feat.regime": True,  # Phase 12 PR 1
     "feat.positioning": True,  # Phase 12 PR 2
     "feat.watchlist_book": True,  # Phase 12 PR 3
+    "feat.research_agent": True,  # Phase 13
 }
 
 
