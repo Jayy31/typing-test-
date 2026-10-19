@@ -44,8 +44,11 @@ class Settings(BaseSettings):
     # Latest training cutoff of any AI model used (YYYY-MM-DD). Before it, AI gives labels only
     # (DESIGN_V2 "Research integrity" R1); empty = treat all history as contaminated.
     ai_model_knowledge_cutoff: str = ""
-    ai_daily_budget_inr: float = 100
-    ai_monthly_budget_inr: float = 2000
+    ai_daily_budget_inr: float = 150
+    ai_monthly_budget_inr: float = 2500
+    # Phase 13 research agent: budget | balanced | full (config/research_agent.yaml); per-role
+    # overrides via RESEARCH_<ROLE>_<FIELD> env keys (read by app.research.config)
+    research_agent_preset: str = "budget"
 
     # Broker (market data only; no order placement)
     broker: str = "upstox"

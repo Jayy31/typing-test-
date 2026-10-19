@@ -1,0 +1,131 @@
+# Research agent (Phase 13). Tool-using investigation that replaces the fixed panel when the owner
+# switch feat.research_agent is on. Every trade decision stays in deterministic code: the agent only
+# produces the scenario tree that the gates, simulator and paper engine already consume.
+#
+# Settings resolve in this order (last wins):
+#   preset (RESEARCH_AGENT_PRESET, default budget) -> roles.<role> below -> env RESEARCH_<ROLE>_<FIELD>
+#   e.g. RESEARCH_LIVE_MODEL=claude-sonnet-5-5, RESEARCH_FILES_MAX_INR=4
+# Fields: provider, model, effort, max_tool_calls, max_web_searches, max_web_fetches,
+#         max_input_tokens, max_output_tokens, max_inr, timeout_s, web
+# Prices per model live in ai.yaml. Blank model on research_top = use research_live.
+
+preset_default: budget
+
+presets:
+  budget:
+    research_files:  {model: claude-haiku-5-5, web: false}
+    research_live:   {model: claude-sonnet-5-5}
+    research_top:    {model: ""}
+    research_review: {model: claude-sonnet-5-5}
+  balanced:
+    research_files:  {model: claude-sonnet-5-5, web: true}
+    research_live:   {model: claude-sonnet-5-5}
+    research_top:    {model: claude-opus-5-5}
+    research_review: {model: claude-opus-5-5}
+  full:
+    research_files:  {model: claude-opus-5-5, web: true}
+    research_live:   {model: claude-opus-5-5}
+    research_top:    {model: claude-opus-5-5}
+    research_review: {model: claude-opus-5-5}
+
+# Defaults per role (the preset fills `model` and `web`; anything set here wins over the preset).
+role_defaults:
+  research_files:
+    provider: anthropic
+    effort: low
+    max_tool_calls: 0          # files are one structured call over pre-gathered data (Batch API)
+    max_web_searches: 3        # only when web is on (balanced / full)
+    max_web_fetches: 3
+    max_input_tokens: 60000
+    max_output_tokens: 6000
+    max_inr: 3
+    timeout_s: 180
+  research_live:
+    provider: anthropic
+    effort: medium
+    web: true
+    max_tool_calls: 16
+    max_web_searches: 4
+    max_web_fetches: 4
+    max_input_tokens: 200000   # summed over all turns of one run
+    max_output_tokens: 16000   # summed, includes thinking
+    max_inr: 35
+    timeout_s: 300
+  research_top:
+    provider: anthropic
+    effort: medium
+    web: true
+    max_tool_calls: 20
+    max_web_searches: 5
+    max_web_fetches: 5
+    max_input_tokens: 250000
+    max_output_tokens: 20000
+    max_inr: 60
+    timeout_s: 420
+  research_review:
+    provider: anthropic
+    effort: medium
+    web: false
+    max_tool_calls: 0
+    max_web_searches: 0
+    max_web_fetches: 0
+    max_input_tokens: 120000
+    max_output_tokens: 10000
+    max_inr: 30
+    timeout_s: 300
+
+roles: {}   # owner overrides per role, e.g. research_live: {effort: high}
+
+# Haiku is billed at a higher rate when one request's prompt is over 100k tokens (ai.yaml
+# long_context). Runs on such a model keep each request under this many prompt tokens: older
+# tool results are summarised before the next turn.
+long_context_guard_tokens: 95000
+
+# Expected cost per run, for the budget checks and the +30% health alert (Rs).
+estimates_inr:
+  research_files: 0.5
+  research_live: 26
+  research_top: 26
+  research_review: 25
+overrun_alert:
+  pct: 30                   # alert when a role's average actual cost is this much above its estimate
+  min_runs: 5               # ... over at least this many runs in the last `days`
+  days: 14
+
+# How many runs and how much Rs. All inside the overall AI_DAILY/MONTHLY_BUDGET_INR; the tagger
+# reserve still applies.
+live:
+  max_per_day: 2            # top-ranked candidates; the rest go to the single analyst (its own cap)
+  fallback: single          # an invalid or failed run falls back to the single analyst, never the panel
+files:
+  max_per_night: 5
+  horizon_trading_days: 10
+  batch: true               # Message Batches API (half price)
+  batch_deadline: "07:30"   # results not back by then: run the rest directly within the cap
+budgets:
+  files:  {daily_inr: 20, monthly_inr: 400}
+  live:   {daily_inr: 60, monthly_inr: 1300}   # research_live + research_top
+  review: {daily_inr: 40, monthly_inr: 200}
+
+# Server tool versions per model family (newer versions do dynamic filtering with built-in code
+# execution; Haiku uses the basic versions). No separate code-execution tool is declared.
+server_tools:
+  default:  {web_search: web_search_20250305, web_fetch: web_fetch_20250910}
+  claude-sonnet-5-5: {web_search: web_search_20260209, web_fetch: web_fetch_20260209}
+  claude-opus-5-5:   {web_search: web_search_20260209, web_fetch: web_fetch_20260209}
+  web_fetch_max_content_tokens: 12000
+
+# Web domains the agent may search and fetch. Company IR domains are added from the symbol
+# master (instruments.website) with data/ir_domains.yaml as the manual override.
+web_allowlist:
+  - nseindia.com
+  - bseindia.com
+  - sebi.gov.in
+  - rbi.org.in
+  - pib.gov.in
+  - economictimes.indiatimes.com
+  - livemint.com
+  - business-standard.com
+  - moneycontrol.com
+  - reuters.com
+  - bloomberg.com
