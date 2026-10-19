@@ -59,7 +59,7 @@ class Usage:
     def prompt_tokens(self) -> int:
         return self.input_tokens + self.cache_read + self.cache_write
 
-    def add(self, other: "Usage") -> None:
+    def accumulate(self, other: "Usage") -> None:
         for k in self.__dataclass_fields__:
             setattr(self, k, getattr(self, k) + getattr(other, k))
 

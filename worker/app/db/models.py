@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -163,6 +164,11 @@ class Analysis(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
     prediction_source: Mapped[str | None] = mapped_column(String(8))  # panel / single (Phase 5)
     impact_order: Mapped[int | None] = mapped_column(Integer)  # 1 direct, 2-3 via graph (Phase 8)
+    # Phase 13: prediction tags (source 'agent' adds a research run)
+    research_run_id: Mapped[int | None] = mapped_column(BigId)
+    ai_preset: Mapped[str | None] = mapped_column(String(16))
+    ai_models_json: Mapped[dict[str, Any] | None] = mapped_column(Json)  # role -> model
+    ai_cost_inr: Mapped[float | None] = mapped_column(Float)
 
 
 class Signal(Base):
@@ -177,6 +183,7 @@ class Signal(Base):
     score: Mapped[float] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(24), index=True)
     book: Mapped[str] = mapped_column(String(12), default="main", server_default="main")  # Phase 12
+    ai_preset: Mapped[str | None] = mapped_column(String(16))  # Phase 13
     analysis_id: Mapped[int | None] = mapped_column(ForeignKey("analyses.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
@@ -659,6 +666,7 @@ class PredictionScore(Base):
     predicted_move_raw_pct: Mapped[float | None] = mapped_column(Float)  # AI scenario tree alone
     predicted_source: Mapped[str | None] = mapped_column(String(16))
     prediction_source: Mapped[str | None] = mapped_column(String(8))  # panel / single
+    ai_preset: Mapped[str | None] = mapped_column(String(16))  # Phase 13
     p_move: Mapped[float | None] = mapped_column(Float)
     window_days: Mapped[int] = mapped_column(Integer)
     spot_start: Mapped[float] = mapped_column(Float)
@@ -1059,3 +1067,99 @@ class PositioningSnapshot(Base):
     states_json: Mapped[dict[str, Any]] = mapped_column(Json)  # feature -> [state, value]
     source: Mapped[str] = mapped_column(String(8))  # live / eod
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class ResearchRun(Base):
+    """Phase 13: one research-agent run (overnight file, live investigation, weekly review)."""
+
+    __tablename__ = "research_runs"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(12), index=True)  # files | live | review | smoke
+    role: Mapped[str] = mapped_column(String(24))
+    preset: Mapped[str] = mapped_column(String(16))
+    provider: Mapped[str] = mapped_column(String(16))
+    model: Mapped[str] = mapped_column(String(128))
+    effort: Mapped[str | None] = mapped_column(String(12))
+    symbol: Mapped[str | None] = mapped_column(String(32), index=True)
+    subject: Mapped[str | None] = mapped_column(String(96))
+    analysis_id: Mapped[int | None] = mapped_column(ForeignKey("analyses.id"))
+    research_file_id: Mapped[int | None] = mapped_column(BigId)
+    status: Mapped[str] = mapped_column(String(12), index=True)  # ok|limited|failed|pending|...
+    limited_reason: Mapped[str | None] = mapped_column(String(64))
+    batch_id: Mapped[str | None] = mapped_column(String(96))
+    tool_calls: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    web_searches: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    web_fetches: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    cost_inr: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
+    estimate_inr: Mapped[float | None] = mapped_column(Float)
+    duration_s: Mapped[float | None] = mapped_column(Float)
+    bear_case: Mapped[str | None] = mapped_column(Text)
+    sources_json: Mapped[list[Any] | None] = mapped_column(Json)
+    lessons_json: Mapped[list[Any] | None] = mapped_column(Json)
+    output_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=_now(), index=True
+    )
+
+
+class ResearchToolCall(Base):
+    """Phase 13: every tool the agent called (our read-only data tools and web tools)."""
+
+    __tablename__ = "research_tool_calls"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("research_runs.id"), index=True)
+    seq: Mapped[int] = mapped_column(Integer)
+    tool: Mapped[str] = mapped_column(String(48))
+    args_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    rows: Mapped[int | None] = mapped_column(Integer)
+    is_error: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    summary: Mapped[str | None] = mapped_column(Text)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class ResearchFile(Base):
+    """Phase 13: versioned research file per stock or theme (the agent's long-term memory)."""
+
+    __tablename__ = "research_files"
+    __table_args__ = (
+        UniqueConstraint("subject_kind", "subject", "version", name="uq_research_files"),
+    )
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    subject_kind: Mapped[str] = mapped_column(String(8))  # stock | theme
+    subject: Mapped[str] = mapped_column(String(96))
+    version: Mapped[int] = mapped_column(Integer)
+    content_json: Mapped[dict[str, Any]] = mapped_column(Json)
+    sources_json: Mapped[list[Any] | None] = mapped_column(Json)
+    provider: Mapped[str | None] = mapped_column(String(16))
+    model: Mapped[str | None] = mapped_column(String(128))
+    preset: Mapped[str | None] = mapped_column(String(16))
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("research_runs.id"))
+    cost_inr: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class ResearchLesson(Base):
+    """Phase 13: short lesson from the weekly self-review. The owner may delete (soft) from the
+    dashboard; a trigger stamps who/when and logs it to config_audit."""
+
+    __tablename__ = "research_lessons"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    scope_kind: Mapped[str] = mapped_column(String(12))  # stock | sector | event_type
+    scope: Mapped[str] = mapped_column(String(96), index=True)
+    text: Mapped[str] = mapped_column(Text)
+    evidence_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("research_runs.id"))
+    week: Mapped[date | None] = mapped_column(Date)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_by: Mapped[str | None] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())

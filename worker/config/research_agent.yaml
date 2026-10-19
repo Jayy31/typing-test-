@@ -129,3 +129,8 @@ web_allowlist:
   - moneycontrol.com
   - reuters.com
   - bloomberg.com
+
+# Read-only data tools: limits per call
+tools:
+  max_rows: 20
+  max_result_chars: 8000

@@ -1,0 +1,8 @@
+# Company IR / website domains for the research agent's web allowlist (Phase 13).
+# Default: the `website` column of data/symbol_master.csv. Entries here win: set a corrected
+# domain, add extra domains as a list, or null to allow no company domain for that stock.
+# Example:
+#   TCS: tcs.com
+#   ZOMATO: [eternal.com, zomato.com]
+#   SOMESTOCK: null
+overrides: {}
