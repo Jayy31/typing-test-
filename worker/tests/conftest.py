@@ -42,3 +42,43 @@ def _market_hours(monkeypatch):
     from app.signals import deferred
 
     monkeypatch.setattr(deferred, "off_hours", lambda now, holidays: False)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _core_rules_everywhere():
+    """CORE RULES: every signal, paper trade and backtest trade any test stores must pass the
+    core-rules guard (stock only, single long leg, CE for bullish / PE for bearish, monthly
+    expiry no later than next month). A violation fails the test that wrote it."""
+    from datetime import datetime
+
+    from sqlalchemy import event
+
+    from app.db.models import BacktestTrade, PaperTrade, Signal
+    from app.trading.core_rules import violation
+
+    def day(x):
+        return (x.date() if isinstance(x, datetime) else x) or datetime.now().date()
+
+    def check(kind, symbol, direction, opt, expiry, when):
+        bad = violation(symbol, direction, opt, expiry, day(when))
+        assert bad is None, f"core rule broken by a stored {kind}: {bad}"
+
+    def sig(_m, _c, t):
+        if t.option_type and (t.expiry or t.pricing_status == "priced"):  # priced: has a contract
+            check("signal", t.symbol, t.direction, t.option_type, t.expiry, t.created_at)
+
+    def paper(_m, _c, t):
+        direction = "bullish" if t.option_type == "CE" else "bearish"
+        if t.symbol and t.option_type:
+            check("paper trade", t.symbol, direction, t.option_type, t.expiry, t.entry_ts)
+
+    def bt(_m, _c, t):
+        opt = (t.details_json or {}).get("option_type")
+        check("backtest trade", t.symbol, t.direction, opt, t.expiry, t.entry_date)
+
+    listeners = [(Signal, sig), (PaperTrade, paper), (BacktestTrade, bt)]
+    for model, fn in listeners:
+        event.listen(model, "before_insert", fn)
+    yield
+    for model, fn in listeners:
+        event.remove(model, "before_insert", fn)

@@ -33,6 +33,7 @@ from app.sim.simulator import (
     simulate_stock,
 )
 from app.timeutil import as_ist
+from app.trading import core_rules
 from app.trading.exits import ExitRules
 from app.yaml_config import load_yaml
 
@@ -190,7 +191,17 @@ def plan_options(
         predicted_move=round(predicted_move_pct, 3),
     )
 
-    expiries = source.expiries(symbol)[: int(load_yaml("options.yaml")["candidates"]["expiries"])]
+    # Core rule: current monthly expiry, or next month's when the current one is too close
+    # (signals.yaml expiry.min_trading_days); never later than next month.
+    listed = source.expiries(symbol)
+    with session_scope(engine) as s:
+        hol = load_holidays(s)
+    min_td = int(load_yaml("signals.yaml")["expiry"]["min_trading_days"])
+    allowed = core_rules.monthly_expiries(listed)[
+        : int(load_yaml("core_rules.yaml")["max_months_ahead"]) + 1
+    ]
+    expiries = [e for e in allowed if e >= today and trading_days_between(today, e, hol) >= min_td]
+    expiries = expiries[: int(load_yaml("options.yaml")["candidates"]["expiries"])]
     quote = source.quote(symbol)
     if not expiries or quote is None:
         return OptionPlan(status="pending", notes=["no live option data (pricing pending)"])
@@ -345,6 +356,12 @@ def plan_options(
         plan.rejection = selection_rejection(best.result)
         if plan.rejection:
             plan.status = "rejected"
+    if plan.rejection is None:
+        bad = core_rules.violation(
+            symbol, direction, opt_type, best.row.expiry, today, known_expiries=listed
+        )
+        if bad:
+            plan.status, plan.rejection = "rejected", (core_rules.STAGE, bad)
     if plan.rejection is None:
         plan.chosen = best
     plan.raw_result = best.raw  # what the AI alone would have implied

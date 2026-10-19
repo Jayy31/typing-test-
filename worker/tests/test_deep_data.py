@@ -383,7 +383,7 @@ def test_next_open_and_entry_start() -> None:
 
 
 def test_after_hours_signal_is_repriced_and_entered_at_next_open(
-    engine: Engine, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    engine: Engine, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, no_selection_gates: None
 ) -> None:
     from tests.test_options_stage import FakeSource
 

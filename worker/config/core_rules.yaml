@@ -1,0 +1,11 @@
+# Core rules (CLAUDE.md "Hard rules"). These are NOT tunables: the learning loop never touches this
+# file. Every signal, paper trade and backtest trade passes app/trading/core_rules.py.
+# Index underlyings: never traded (index data is an input only: regime, benchmarks).
+index_symbols: [NIFTY, NIFTY50, "NIFTY 50", BANKNIFTY, FINNIFTY, MIDCPNIFTY, NIFTYNXT50,
+                SENSEX, BANKEX, SENSEX50, INDIAVIX, "INDIA VIX"]
+# A monthly stock expiry falls in the last days of its month (last Tuesday, or the trading day
+# before it on a holiday). Used only when the real contract list is not at hand.
+monthly_window_days: 9
+# Expiry choice: current month; next month if the current one is too close (signals.yaml
+# expiry.min_trading_days, default 8) or the event falls after it; never later than next month.
+max_months_ahead: 1

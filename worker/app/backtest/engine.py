@@ -26,6 +26,7 @@ from app.pricing.bs import implied_vol
 from app.signals.options_stage import selection_rejection
 from app.signals.prediction import analogue_scenarios, from_scenarios
 from app.sim.simulator import CandidateInput, SimResult, evaluate, seed_for, simulate_stock
+from app.trading import core_rules
 from app.trading.costs import trade_costs_inr
 from app.trading.exits import Bar, ExitRules, PositionState, step
 from app.trading.targets import targets_for
@@ -441,6 +442,16 @@ def plan_entry(sig: Signal, data: HistoryData, variant: Variant, rules: ExitRule
         rej = selection_rejection(chosen.result)
         if rej:
             return Skip(sig.key, sig.symbol, sig.day, rej[0], rej[1])
+    bad = core_rules.violation(
+        sig.symbol,
+        sig.direction,
+        chosen.row.type,
+        chosen.row.expiry,
+        sig.day,
+        known_expiries={r.expiry for r in data.chain(sig.symbol, sig.day)},
+    )
+    if bad:
+        return Skip(sig.key, sig.symbol, sig.day, core_rules.STAGE, bad)
     vol_lots = data.to_lots(chosen.row.volume, sig.day, lot, "volume")
     return Trade(
         sig,
