@@ -49,6 +49,17 @@ export const SOURCE_LABEL: Record<string, string> = {
   blended: "blended (scenario tree + analogues)",
 };
 
+/** Who made the prediction (Phase 13 adds the research agent). */
+export const PREDICTOR_LABEL: Record<string, string> = {
+  agent: "Research agent",
+  panel: "Panel",
+  single: "Single analyst",
+};
+
+export function predictor(src: string | null | undefined): string {
+  return PREDICTOR_LABEL[src ?? ""] ?? "Single analyst";
+}
+
 export const ORDER_LABEL: Record<number, string> = {
   1: "direct",
   2: "via graph, 1 hop",

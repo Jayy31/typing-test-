@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AsOfBar } from "@/components/asof";
 import { Badge, Card, Direction, Empty, PageTitle } from "@/components/ui";
 import { getDb } from "@/lib/data";
-import { calibrationLabel, pct, prob, when, ORDER_LABEL } from "@/lib/format";
+import { calibrationLabel, pct, predictor, prob, when, ORDER_LABEL } from "@/lib/format";
 import { asOf } from "@/lib/queries";
 import type { Signal } from "@/lib/types";
 
@@ -78,7 +78,7 @@ export default async function Signals() {
                 </Badge>
                 <Badge>{ORDER_LABEL[s.impact_order ?? 1]}</Badge>
                 <Badge>
-                  {s.prediction_source === "panel" ? "Panel" : "Single analyst"}
+                  {predictor(s.prediction_source)}
                 </Badge>
               </div>
             </Card>

@@ -362,6 +362,12 @@ def build_scheduler() -> BlockingScheduler:
         research_files_collect,
         CronTrigger(hour="22-23,0-8", minute="5,35", timezone=IST),
     )
+    _job(
+        sched,
+        "research_review",
+        research_review,
+        CronTrigger(day_of_week="sun", hour=8, minute=20, timezone=IST),
+    )
     _job(sched, "research_overrun", research_overrun, CronTrigger(hour=21, minute=5, timezone=IST))
     _job(
         sched,
@@ -391,6 +397,13 @@ def research_files_collect() -> int:
     from app.research.files import collect_job
 
     return collect_job() if _research_on() else 0
+
+
+def research_review() -> int:
+    """Phase 13: Sunday self-review -> lessons (before the 08:50 digest)."""
+    from app.research.review import weekly_review
+
+    return weekly_review() if _research_on() else 0
 
 
 def research_overrun() -> int:

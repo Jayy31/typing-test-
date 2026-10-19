@@ -2,7 +2,7 @@ import { AsOfBar } from "@/components/asof";
 import { Bars } from "@/components/charts";
 import { Card, PageTitle, Stat, Table } from "@/components/ui";
 import { getDb } from "@/lib/data";
-import { inr, pct, ORDER_LABEL } from "@/lib/format";
+import { inr, pct, predictor, ORDER_LABEL } from "@/lib/format";
 import { asOf, trades } from "@/lib/queries";
 import type { Signal, Trade } from "@/lib/types";
 
@@ -72,10 +72,13 @@ export default async function Performance({
   const groups: [string, (t: Trade) => string][] = [
     [
       "Prediction",
+      (t) => predictor(sig.get(t.signal_id)?.prediction_source),
+    ],
+    [
+      "AI preset",
       (t) =>
-        sig.get(t.signal_id)?.prediction_source === "panel"
-          ? "panel"
-          : "single analyst",
+        (sig.get(t.signal_id) as { ai_preset?: string | null } | undefined)
+          ?.ai_preset ?? "n/a (panel / single)",
     ],
     [
       "Impact order",

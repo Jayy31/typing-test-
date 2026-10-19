@@ -23,6 +23,8 @@ export interface Db {
   setSwitch(key: string, value: boolean): Promise<void>;
   /** Learning-loop decision (RLS: owner only, pending -> accepted / rejected, status only). */
   decideSuggestion(id: number, status: "accepted" | "rejected"): Promise<void>;
+  /** Research-agent lesson delete (RLS: owner only, deleted false -> true; logged to config_audit). */
+  deleteLesson(id: number): Promise<void>;
   userEmail(): Promise<string | null>;
 }
 

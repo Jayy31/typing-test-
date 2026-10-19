@@ -138,3 +138,11 @@ tools:
 # Lessons from the weekly self-review shown to the live agent (newest first, non-deleted)
 lessons:
   max_in_prompt: 8
+
+# Weekly self-review (Sunday 08:20, before the digest): resolved predictions after the AI
+# knowledge cutoff only (R1)
+review:
+  lookback_days: 7
+  min_predictions: 3        # fewer resolved predictions: no review that week
+  max_predictions: 60
+  max_lessons: 6

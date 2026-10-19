@@ -118,6 +118,7 @@ at any time.
 | `AI_MODEL_KNOWLEDGE_CUTOFF` | yes | VM .env | training cutoff date of the models you set (R1 look-ahead protection) |
 | `AI_DAILY_BUDGET_INR` | no | VM .env | AI (Anthropic) |
 | `AI_MONTHLY_BUDGET_INR` | no | VM .env | AI (Anthropic) |
+| `RESEARCH_AGENT_PRESET` | no | VM .env | AI research agent (budget / balanced / full; blank = budget) |
 | `BROKER` | no | VM .env | Broker (market data only; no order placement) |
 | `BROKER_API_KEY` | no | VM .env | Broker (market data only; no order placement) |
 | `BROKER_API_SECRET` | no | VM .env | Broker (market data only; no order placement) |

@@ -247,6 +247,7 @@ def store_result(
         "agg_sentiment": round(cand.agg_sentiment, 3),
         "sources": sorted(cand.sources),
         "has_official": cand.has_official,
+        "event_types": sorted(cand.event_types),
         "macro_changes": changes,
         "rule_hits": [h.__dict__ for h in item.hits],
     }
