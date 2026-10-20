@@ -104,3 +104,17 @@ evidence:                            # system_evidence detectors (thresholds)
   rejected_winners: 6                # rejected candidates whose counterfactual won, per stage
   watchlist_gate_edge: 8             # watchlist trades beating the main book on one gate
   lookback_days: 60
+
+# ---- strategy paper books (app/lab/books.py) ---------------------------------------------------
+# Without a broker data source, Stage 2 runs as "EOD incubation": end-of-day bhavcopy prices with
+# the backtester's spread model and fill checks, labelled everywhere. Real fills come from the paper
+# engine (book lab:<spec id>) once a broker data source exists; both are reported separately.
+books:
+  news_core_book: true               # main-engine signals as strategy news_core, on equal terms
+  incubation_min_trades: 40          # EOD incubation trades before promotion
+  real_fill_min_trades: 15           # real-fill confirmation required for Validated
+  retire_min_trades: 20
+  retire_below_backtest_ci: true     # live expectancy below the Stage-0 90% interval -> retire
+  cusum: {k: 0.5, h: 5.0}            # decay detector on per-trade % vs the backtest mean (in std units)
+  capital_inr: 1000000               # notional capital of the combined portfolio view
+  promotion_slots: 3                 # config/promoted_strategies.yaml slots for learning-loop PRs

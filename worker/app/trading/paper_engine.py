@@ -116,7 +116,8 @@ def enter_signals(
     opened: list[int] = []
     sigs = s.scalars(
         select(Signal).where(
-            Signal.status.in_((*LIVE, watchlist.STATUS)), Signal.pricing_status == "priced"
+            Signal.status.in_((*LIVE, watchlist.STATUS, watchlist.LAB_STATUS)),
+            Signal.pricing_status == "priced",
         )
     ).all()
     for sig in sigs:
@@ -251,7 +252,10 @@ def open_trade(
     bad = core_rules.violation(sig.symbol, sig.direction, sig.option_type, sig.expiry, now.date())
     if bad:  # never reached for signals made by the options stage; a last line of defence
         raise core_rules.CoreRuleViolation(f"signal {sig.id}: {bad}")
-    rules = ExitRules.from_config()
+    lab = (sig.flags_json or {}).get("lab")
+    rules = ExitRules.from_config(lab.get("rules")) if lab else ExitRules.from_config()
+    if lab:  # Phase 14: the strategy's own exits; entry IV kept for its IV-spike exit
+        sig.flags_json = {**(sig.flags_json or {}), "lab": {**lab, "entry_iv": row.iv}}
     inst = s.get(Instrument, sig.symbol)
     lot = int(inst.lot_size or 0) if inst else 0
     lots = rules.lots  # whole lots (LOTS_PER_SIGNAL); booking plan is inside the rules
@@ -394,7 +398,16 @@ def monitor_trades(
                 as_ist(tr.entry_ts).date(), now.date(), holidays
             ),
         )
-        new = step(state, bar, rules)
+        forced = _lab_exit(s, tr, row, now, holidays)
+        if forced:  # Phase 14 strategy exits (max hold, IV spike) at the current bid
+            new = replace(
+                state,
+                remaining=0.0,
+                closed=True,
+                fills=(*state.fills, Fill(forced, state.remaining, row.bid)),
+            )
+        else:
+            new = step(state, bar, rules)
         units = (tr.lot_size or 0) * tr.lots * state.remaining
         attr = Attribution.from_json(tr.attribution_json)
         attr.add(
@@ -447,6 +460,22 @@ def monitor_trades(
         tr.state_json = state_to_json(new)
         changed += int(new != state)
     return changed
+
+
+def _lab_exit(
+    s: Session, tr: PaperTrade, row: OptionQuoteRow, now: datetime, holidays: set[date]
+) -> str | None:
+    sig = s.get(Signal, tr.signal_id)
+    lab = ((sig.flags_json if sig else None) or {}).get("lab")
+    if not lab:
+        return None
+    held = trading_days_between(as_ist(tr.entry_ts).date(), now.date(), holidays)
+    if lab.get("max_hold_days") and held >= int(lab["max_hold_days"]):
+        return "TIME"
+    if lab.get("iv_spike_pts") and lab.get("entry_iv") and row.iv:
+        if float(row.iv) - float(lab["entry_iv"]) >= float(lab["iv_spike_pts"]):
+            return "IV_SPIKE"
+    return None
 
 
 def _sessions_since_event(
@@ -559,9 +588,20 @@ def trading_cycle(
         return 0
     reprice_due(engine, source, now)  # after-hours signals get live prices at the open
     with session_scope(engine) as s:
+        from app import flags
+
+        if flags.active(s, "feat.strategy_lab"):  # Phase 14: real-fill signals of strategy books
+            from app.trading.lab_signals import make_signals
+
+            make_signals(s, source, now)
+    with session_scope(engine) as s:
         wanted = {
             (g.symbol, g.expiry)
-            for g in s.scalars(select(Signal).where(Signal.status.in_((*LIVE, watchlist.STATUS))))
+            for g in s.scalars(
+                select(Signal).where(
+                    Signal.status.in_((*LIVE, watchlist.STATUS, watchlist.LAB_STATUS))
+                )
+            )
             if g.expiry
         }
         wanted |= {
