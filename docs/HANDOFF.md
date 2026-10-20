@@ -5,8 +5,8 @@ Read `CLAUDE.md` first (hard rules, owner decisions, progress log), then `docs/D
 doesn't show.
 
 ## State
-- **Phases 0-14: all built and merged to `main`.** Last: Phase 14 Strategy Lab (PRs #34-#38).
-- **Open PRs: none.** `ENGINE_VERSION` 10.0.0, latest migration `0020`.
+- **Phases 0-14: all built and merged to `main`.** Last: Phase 14 Strategy Lab (PRs #34-#38) and its follow-ups (#39).
+- **Open PRs: none.** `ENGINE_VERSION` 10.0.0, latest migration `0020`, DuckDB history schema v8.
 - **Not deployed yet.** The owner is doing the external setup step by step in chat:
   - done: Supabase, Vercel dashboard (`https://option-desk-tan.vercel.app`), Telegram bot, Anthropic key, healthchecks.io;
   - next: Oracle Always Free VM (`docs/setup/deploy.md`, `deploy/bootstrap.sh`).
@@ -46,6 +46,8 @@ doesn't show.
   - Pre-event entries skip events intimated fewer than N trading days before entry.
   - "Validated" needs EOD incubation plus 15 real-fill trades; EOD and real-fill results are always shown separately.
   - Portfolio: same-direction overlaps count once; opposite-direction requests are blocked and logged.
+  - Lab budget: the monthly cap keeps the cost of the AI proposals still due that month free; refinements and write-ups pause first.
+  - Index inclusion/exclusion dates (`data/index_events.yaml`, from general knowledge) are used only once verified against an NSE Indices press release (`app/golive/index_events.py`, nightly 22:55; mismatches on the Go-live page and Telegram, never auto-corrected).
   - The lab has no code execution and never writes live config; promotion goes through Suggestion → PR (`config/promoted_strategies.yaml` slots).
 - **No manual steps:** jobs build themselves once their inputs exist (backtests, positioning history). Manual commands are kept only as optional re-runs.
 - **Labels:** previous-session data is labelled "EOD, previous session (<date>)".
