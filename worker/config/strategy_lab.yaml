@@ -14,3 +14,38 @@ spec:
   scheduled_event_types: [results]   # event types with a known date in advance (hist_scheduled)
   adv_window_days: 20                # liquidity / size proxy: average daily traded value (Rs crore)
   iv_percentile_lookback_days: 252
+
+# ---- validation ladder (app/lab/validate.py) -------------------------------------------------
+# Stage 0 screening: 5-year walk-forward on PRE-cutoff data only (AI_MODEL_KNOWLEDGE_CUTOFF).
+# Stage 1 holdout: post-cutoff data, evaluated exactly once when it has enough trades/events.
+stage0:
+  min_trades: 60
+  min_events: 40                     # independent events (same day + event type = one)
+  require_ci_lower_above: 0.0        # 90% bootstrap CI of expectancy (% of premium) must exclude 0
+  deflated_sharpe_min: 0.95          # probability that the Sharpe beats the best of N null trials
+  min_sharpe_variance: 0.01          # floor for the variance of Sharpe ratios across trials
+holdout:
+  min_trades: 20
+  min_events: 15
+  require_expectancy_above: 0.0
+  require_cost_stress: true          # also positive at the stress spread
+luck:
+  plateau:
+    min_share_profitable: 0.7        # neighbouring settings that must also be profitable
+    threshold_step: 0.10             # thresholds +-10%
+    day_steps: [1, 2]                # entry/exit days +-1, +-2
+  placebo:
+    runs: 100                        # random date shifts per spec (seeded)
+    max_shift_days: 20
+    min_shift_days: 3                # never land on (or next to) the real date
+    real_must_beat_percentile: 95
+  max_profit_share_per_stock: 0.25
+  max_profit_share_per_month: 0.25
+  cost_stress_spread_mult: 2.0
+  regime:
+    min_trades_per_regime: 10
+    min_share_regimes_positive: 0.5  # of regimes with enough trades
+
+registry:
+  max_variants_per_hypothesis: 10
+  history_start: "2021-01-01"        # screening starts here (or the first day of the store)
