@@ -16,6 +16,7 @@ const PAGES: [string, string, string][] = [
   ["/digest", "Weekly digest", "Sunday review and suggestions"],
   ["/reports", "Monthly reports", "What worked, what didn't, PDF on Telegram"],
   ["/research", "Research agent", "Research files, lessons, runs and cost"],
+  ["/lab", "Strategy Lab", "Hypotheses, trials, luck tests, strategy books"],
   ["/suggestions", "Suggestions", "Learning-loop changes to accept or reject"],
   ["/ai-vs-rules", "AI vs rules", "AI decisions vs the rules-only path"],
   ["/quality", "Data quality", "Checks, database size, AI cost"],

@@ -236,6 +236,10 @@ class TelegramBot:
                 return _portfolio(s)
             if cmd == "/exposure":
                 return _exposure(s)
+            if cmd == "/lab":
+                from app.notify.lab import status_text
+
+                return status_text(s)
             if cmd in ("/mute", "/unmute"):
                 set_config(s, "alerts_muted", cmd == "/mute")
                 return (
@@ -251,6 +255,7 @@ HELP = (
     "/open  open paper trades\n/closed  recent closed trades\n/stats  performance (with/without unfillable, panel vs single)\n"
     "/calibration  calibration by source (records and independent events)\n"
     "/portfolio  equity and drawdown\n/exposure  open risk per theme\n"
+    "/lab  Strategy Lab status (hypotheses, stages, strategy books)\n"
     "/mute  /unmute  pause or resume signal alerts (health alerts always arrive)"
 )
 

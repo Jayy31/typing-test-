@@ -133,6 +133,7 @@ def build(s: Session, month: date) -> dict[str, Any]:
         "ai_spend_inr": round(spend, 0),
         "ai_budget_inr": float(get_settings().ai_monthly_budget_inr),
         "uptime": {j: round(sum(v) / len(v), 3) for j, v in sorted(by_job.items()) if len(v) >= 5},
+        "lab": _lab(s, start, end),
         "suggestions": [
             {
                 "param": g.param,
@@ -145,6 +146,12 @@ def build(s: Session, month: date) -> dict[str, Any]:
             for g in s.scalars(select(Suggestion).where(Suggestion.month == end.date()))
         ],
     }
+
+
+def _lab(s: Session, start: datetime, end: datetime) -> dict[str, Any]:
+    from app.notify.lab import monthly_data
+
+    return monthly_data(s, start, end)
 
 
 def _pct(x: Any) -> str:
@@ -237,6 +244,9 @@ def render(d: dict[str, Any]) -> str:
         "  Jobs below 95% success: "
         + (", ".join(f"{k} {v:.0%}" for k, v in weak.items()) or "none")
     )
+    from app.notify.lab import monthly_lines
+
+    out += monthly_lines(d.get("lab") or {})
     out += ["", "SUGGESTIONS (open the dashboard to accept or reject)"] + (
         [
             f"  {g['kind']} {g['param']}: {g['current']:g} -> {g['proposed']:g} "

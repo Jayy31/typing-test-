@@ -189,3 +189,27 @@ def test_lab_hypothesis_rationale_is_frozen(db) -> None:  # type: ignore[no-unty
     with db.connect() as c:
         row = c.execute(text("SELECT rationale, status FROM lab_hypotheses WHERE id = 1")).one()
     assert tuple(row) == ("why", "testing")
+
+
+def test_owner_strategy_alert_switch_is_logged(db, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    from app.config import get_settings
+    from app.db.owner import sync_owner
+
+    monkeypatch.setenv("DASHBOARD_ALLOWED_EMAIL", "owner@example.com")
+    get_settings.cache_clear()
+    sync_owner(db)
+    with db.begin() as c:
+        c.execute(text("INSERT INTO lab_hypotheses (id, name, source, rationale, expected_effect, status) "
+                       "VALUES (1, 'h', 'known_pattern', 'why', '+3%', 'validated')"))
+        c.execute(text("INSERT INTO lab_specs (id, hypothesis_id, version, name, spec_yaml, spec_hash) "
+                       "VALUES (1, 1, 1, 'h', 'x', 'abc')"))
+        c.execute(text("INSERT INTO lab_books (id, spec_id, book, status) VALUES (1, 1, 'lab:1', 'validated')"))
+    with db.begin() as c:
+        _as(c, "owner@example.com")
+        assert _try(c, "UPDATE lab_books SET alerts_enabled = true WHERE id = 1")
+        assert not _try(c, "UPDATE lab_books SET status = 'retired' WHERE id = 1")  # switch only
+        c.execute(text("RESET ROLE"))
+    with db.connect() as c:
+        on = c.execute(text("SELECT alerts_enabled, status FROM lab_books WHERE id = 1")).one()
+        audit = c.execute(text("SELECT changed_by FROM config_audit WHERE key = 'lab.alerts.lab:1'")).all()
+    assert tuple(on) == (True, "validated") and [a[0] for a in audit] == ["owner@example.com"]

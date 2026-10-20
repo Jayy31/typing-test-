@@ -16,7 +16,7 @@ spec:
   iv_percentile_lookback_days: 252
 
 # ---- validation ladder (app/lab/validate.py) -------------------------------------------------
-# Stage 0 screening: 5-year walk-forward on PRE-cutoff data only (AI_MODEL_KNOWLEDGE_CUTOFF).
+# Stage 0 screening: walk-forward on the PRE-cutoff part of the history only (never the full 5 years) (AI_MODEL_KNOWLEDGE_CUTOFF).
 # Stage 1 holdout: post-cutoff data, evaluated exactly once when it has enough trades/events.
 stage0:
   min_trades: 60

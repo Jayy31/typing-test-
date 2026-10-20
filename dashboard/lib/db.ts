@@ -25,6 +25,8 @@ export interface Db {
   decideSuggestion(id: number, status: "accepted" | "rejected"): Promise<void>;
   /** Research-agent lesson delete (RLS: owner only, deleted false -> true; logged to config_audit). */
   deleteLesson(id: number): Promise<void>;
+  /** Strategy signal alerts for a validated strategy book (RLS: owner only, alerts_enabled only; logged). */
+  setLabAlerts(bookId: number, enabled: boolean): Promise<void>;
   userEmail(): Promise<string | null>;
 }
 

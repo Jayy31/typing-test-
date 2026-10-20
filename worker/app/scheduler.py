@@ -369,6 +369,12 @@ def build_scheduler() -> BlockingScheduler:
         CronTrigger(day_of_week="sun", hour=8, minute=20, timezone=IST),
     )
     _job(sched, "strategy_lab", strategy_lab, CronTrigger(hour=23, minute=10, timezone=IST))
+    _job(
+        sched,
+        "strategy_lab_week",
+        strategy_lab_week,
+        CronTrigger(day_of_week="sun", hour=9, minute=5, timezone=IST),
+    )
     _job(sched, "research_overrun", research_overrun, CronTrigger(hour=21, minute=5, timezone=IST))
     _job(
         sched,
@@ -413,6 +419,18 @@ def strategy_lab() -> int:
 
     log.info("strategy lab: %s", job())
     return 1
+
+
+def strategy_lab_week() -> int:
+    """Phase 14: weekly Strategy Lab summary on Telegram (feat.strategy_lab)."""
+    from app import flags
+    from app.db.session import session_scope
+    from app.notify.lab import weekly_summary
+
+    with session_scope() as s:
+        if not flags.active(s, "feat.strategy_lab"):
+            return 0
+    return weekly_summary()
 
 
 def research_overrun() -> int:
