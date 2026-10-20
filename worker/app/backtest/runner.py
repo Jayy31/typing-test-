@@ -116,9 +116,13 @@ def run_rules(
     start: date,
     end: date,
     data: HistoryData | None = None,
+    fold_list: list[Fold] | None = None,
 ) -> RunResult:
+    """`fold_list`: explicit test windows (Strategy Lab holdout); default walk-forward folds."""
     data = data or HistoryData(con)
-    res = RunResult(variant, start, end, folds=folds(start, end))
+    res = RunResult(
+        variant, start, end, folds=fold_list if fold_list is not None else folds(start, end)
+    )
     vix = vix_series(con)
     labels = regime_labels(con) if variant.regime_aware else None
     for f in res.folds:

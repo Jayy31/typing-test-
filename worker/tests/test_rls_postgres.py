@@ -176,3 +176,16 @@ def test_owner_can_delete_lessons_and_it_is_logged(db, monkeypatch: pytest.Monke
                                "WHERE key LIKE 'research.lesson.%'")).all()
     assert rows == {1: True, 2: False} and who == "owner@example.com"
     assert [tuple(a) for a in audit] == [("research.lesson.1", "owner@example.com")]
+
+
+def test_lab_hypothesis_rationale_is_frozen(db) -> None:  # type: ignore[no-untyped-def]
+    with db.begin() as c:
+        c.execute(text("INSERT INTO lab_hypotheses (id, name, source, rationale, expected_effect, status) "
+                       "VALUES (1, 'h', 'known_pattern', 'why', '+3%', 'registered')"))
+    with db.begin() as c:
+        c.execute(text("UPDATE lab_hypotheses SET status = 'testing' WHERE id = 1"))  # allowed
+        assert not _try(c, "UPDATE lab_hypotheses SET rationale = 'changed' WHERE id = 1")
+        assert not _try(c, "UPDATE lab_hypotheses SET expected_effect = '+9%' WHERE id = 1")
+    with db.connect() as c:
+        row = c.execute(text("SELECT rationale, status FROM lab_hypotheses WHERE id = 1")).one()
+    assert tuple(row) == ("why", "testing")

@@ -18,6 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     false,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -1163,3 +1164,97 @@ class ResearchLesson(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_by: Mapped[str | None] = mapped_column(String(256))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class LabHypothesis(Base):
+    """Phase 14: a pre-registered strategy hypothesis (rationale + expected effect frozen)."""
+
+    __tablename__ = "lab_hypotheses"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    source: Mapped[str] = mapped_column(String(20), index=True)
+    rationale: Mapped[str] = mapped_column(Text)
+    expected_effect: Mapped[str] = mapped_column(Text)
+    expected_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    ai_memory_risk: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    origin_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class LabSpec(Base):
+    __tablename__ = "lab_specs"
+    __table_args__ = (UniqueConstraint("hypothesis_id", "version", name="uq_lab_specs_version"),)
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    hypothesis_id: Mapped[int] = mapped_column(ForeignKey("lab_hypotheses.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String(64))
+    spec_yaml: Mapped[str] = mapped_column(Text)
+    spec_hash: Mapped[str] = mapped_column(String(16), unique=True)
+    parent_spec_id: Mapped[int | None] = mapped_column(BigId)
+    change_note: Mapped[str | None] = mapped_column(Text)
+    stage: Mapped[str] = mapped_column(String(20), default="stage0", server_default="stage0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class LabTrial(Base):
+    """Every test run of a spec, including failures (the trial registry)."""
+
+    __tablename__ = "lab_trials"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    spec_id: Mapped[int] = mapped_column(ForeignKey("lab_specs.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    label: Mapped[str | None] = mapped_column(String(64))
+    period_start: Mapped[date | None] = mapped_column(Date)
+    period_end: Mapped[date | None] = mapped_column(Date)
+    n_trades: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    n_events: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    expectancy_pct: Mapped[float | None] = mapped_column(Float)
+    ci_lo: Mapped[float | None] = mapped_column(Float)
+    ci_hi: Mapped[float | None] = mapped_column(Float)
+    win_rate: Mapped[float | None] = mapped_column(Float)
+    sharpe: Mapped[float | None] = mapped_column(Float)
+    metrics_json: Mapped[dict[str, Any] | None] = mapped_column(Json)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class LabVerdict(Base):
+    __tablename__ = "lab_verdicts"
+    __table_args__ = (
+        Index(
+            "uq_lab_holdout_once",
+            "spec_id",
+            unique=True,
+            postgresql_where=text("stage = 'holdout'"),
+            sqlite_where=text("stage = 'holdout'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    spec_id: Mapped[int] = mapped_column(ForeignKey("lab_specs.id"), index=True)
+    stage: Mapped[str] = mapped_column(String(20))
+    passed: Mapped[bool] = mapped_column(Boolean)
+    checks_json: Mapped[dict[str, Any]] = mapped_column(Json)
+    summary: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class LabBook(Base):
+    """A strategy's own paper book (paper_trades.book = `book`)."""
+
+    __tablename__ = "lab_books"
+
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    spec_id: Mapped[int] = mapped_column(ForeignKey("lab_specs.id"), unique=True)
+    book: Mapped[str] = mapped_column(String(12), unique=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    alerts_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retire_reason: Mapped[str | None] = mapped_column(Text)
+    stats_json: Mapped[dict[str, Any] | None] = mapped_column(Json)

@@ -19,7 +19,7 @@ import duckdb
 from app.backtest import fills
 from app.backtest.data import Event, HistoryData, OptRow
 from app.backtest.engine import Signal, Skip, Trade, Variant, _iv, simulate
-from app.backtest.runner import RunResult, folds, run_rules
+from app.backtest.runner import Fold, RunResult, folds, run_rules
 from app.config import get_settings
 from app.history.analogues import AnalogueResult
 from app.history.event_study import grouped_values, reaction_rows, summarize, vix_series
@@ -50,6 +50,9 @@ class RunOptions:
     spread_mult: float = 1.0
     # placebo: shift each trigger's entry day by this many trading days (key -> offset)
     shift: Callable[[str], int] | None = None
+    # False: one test window [start, end) with statistics from everything before it (holdout and
+    # paper incubation; walk-forward needs 12 training months)
+    walk_forward: bool = True
 
 
 def matches(spec: StrategySpec, etype: str | None) -> bool:
@@ -426,10 +429,13 @@ def run_spec(
     data = data or HistoryData(con)
     opts = opts or RunOptions()
     variant = Variant(f"lab:{spec.name}", spread_mult=opts.spread_mult)
+    fs = folds(start, end) if opts.walk_forward else [Fold(start, start, end)]
     if spec.source == "news_core":
-        return run_rules(con, Variant("news_core", spread_mult=opts.spread_mult), start, end, data)
+        return run_rules(
+            con, Variant("news_core", spread_mult=opts.spread_mult), start, end, data, fs
+        )
     ctx = Context(con, data)
-    res = RunResult(variant, start, end, folds=folds(start, end))
+    res = RunResult(variant, start, end, folds=fs)
     vix = vix_series(con)
     one = bool(load_yaml("backtest.yaml")["entry"]["one_trade_per_symbol"])
     busy: dict[str, date] = {}
