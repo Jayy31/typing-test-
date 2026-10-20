@@ -368,6 +368,7 @@ def build_scheduler() -> BlockingScheduler:
         research_review,
         CronTrigger(day_of_week="sun", hour=8, minute=20, timezone=IST),
     )
+    _job(sched, "strategy_lab", strategy_lab, CronTrigger(hour=23, minute=10, timezone=IST))
     _job(sched, "research_overrun", research_overrun, CronTrigger(hour=21, minute=5, timezone=IST))
     _job(
         sched,
@@ -404,6 +405,14 @@ def research_review() -> int:
     from app.research.review import weekly_review
 
     return weekly_review() if _research_on() else 0
+
+
+def strategy_lab() -> int:
+    """Phase 14: overnight Strategy Lab loop (waits for the history; flag-gated inside)."""
+    from app.lab.nightly import job
+
+    log.info("strategy lab: %s", job())
+    return 1
 
 
 def research_overrun() -> int:

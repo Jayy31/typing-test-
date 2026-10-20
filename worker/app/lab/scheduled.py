@@ -8,6 +8,7 @@ entry may use a row only if `intimated_on` is early enough (app/lab/backtest.py)
 
 import re
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 import duckdb
@@ -77,3 +78,42 @@ def build(con: duckdb.DuckDBPyConnection) -> int:
         return 0
     con.executemany("INSERT OR REPLACE INTO hist_scheduled VALUES (?, ?, ?, ?, ?, ?)", found)
     return len(found)
+
+
+INDEX_EVENTS = Path(__file__).resolve().parents[3] / "data" / "index_events.yaml"
+
+
+def load_index_events(con: duckdb.DuckDBPyConnection, path: Any = None) -> int:
+    """Curated index inclusion / exclusion announcements -> hist_events (structured events)."""
+    import yaml
+
+    from app.history.store import HIST_EVENTS_INSERT
+
+    p = path or INDEX_EVENTS
+    rows = (yaml.safe_load(p.read_text(encoding="utf-8")) or {}).get("events") or []
+    out = []
+    for e in rows:
+        d = date.fromisoformat(str(e["date"]))
+        incl = e["action"] == "inclusion"
+        out.append(
+            (
+                f"index|{e['symbol']}|{e['action']}|{d}",
+                d,
+                None,
+                e["symbol"],
+                None,
+                None,
+                "index_inclusion" if incl else "index_exclusion",
+                "bullish" if incl else "bearish",
+                "curated_index",
+                0.5 if incl else -0.5,
+                None,
+                f"{e['symbol']} {e['action']} in {e['index']}",
+                None,
+                "tx2",
+                "curated",
+            )
+        )
+    if out:
+        con.executemany(HIST_EVENTS_INSERT, out)
+    return len(out)

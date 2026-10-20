@@ -1,0 +1,48 @@
+# Strategy Lab starter hypotheses (source known_pattern). Rationale and expected effect are
+# pre-registered when seeded; specs follow app/lab/spec.py (core rules built in).
+patterns:
+  - name: post_results_drift
+    rationale: Prices under-react to clear earnings surprises and keep drifting for days (post-earnings announcement drift).
+    expected_effect: Positive expectancy over 5 sessions after a clear beat (calls) or miss (puts).
+    spec:
+      trigger: {event_types: [results_beat, results_miss], direction: from_event}
+      entry: {timing: next_open}
+      exits: {max_hold_days: 5}
+  - name: pre_results_iv_runup
+    rationale: Implied volatility tends to rise into scheduled results; a long option bought a week before gains vega before the announcement.
+    expected_effect: Positive expectancy when bought 5-7 trading days before results and sold the day before.
+    spec:
+      trigger: {event_types: [results], direction: base_rate, min_analogue_n: 20}
+      entry: {timing: before_event, days_before: 6}
+      exits: {exit_before_event: true, targets_pct: [40, 80]}
+  - name: insider_buying_drift
+    rationale: Significant promoter / promoter-group buying signals private information and is followed by drift.
+    expected_effect: Calls after significant promoter buys earn a positive expectancy over 10 sessions.
+    spec:
+      trigger: {event_types: [insider_buy_promoter, insider_buy_promoter_group, deal_buy_promoter], direction: bullish}
+      exits: {max_hold_days: 10}
+  - name: rating_change_drift
+    rationale: Credit rating changes are slowly incorporated; prices drift in the direction of the change.
+    expected_effect: Calls after upgrades and puts after downgrades are profitable over 5 sessions.
+    spec:
+      trigger: {event_types: [rating_upgrade, rating_downgrade], direction: from_event}
+      exits: {max_hold_days: 5}
+  - name: sector_sympathy
+    rationale: News about one company moves linked peers (competitors, suppliers, customers) with a lag.
+    expected_effect: 2nd-order graph-linked stocks move in the propagated direction within 3 sessions.
+    spec:
+      trigger: {event_types: [results, order_win], direction: from_event, graph_hops: 2}
+      exits: {max_hold_days: 3}
+  - name: index_inclusion
+    rationale: Stocks announced for Nifty / MSCI inclusion see index-fund demand before the effective date.
+    expected_effect: Calls after the inclusion announcement are profitable until the effective date.
+    spec:
+      trigger: {event_types: [index_inclusion], direction: bullish}
+      exits: {max_hold_days: 10}
+  - name: news_core_calm_regime
+    rationale: The main engine's news signals may work better when volatility is calm (less noise, cheaper options).
+    expected_effect: The same news_core signals restricted to calm regimes have a higher expectancy than all regimes.
+    source: news_core
+    spec:
+      trigger: {event_types: [results]}
+      filters: {regimes: [calm]}

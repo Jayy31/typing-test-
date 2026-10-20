@@ -310,3 +310,29 @@ def holdout_checks(main: RunResult, stress: RunResult) -> tuple[Checks | None, d
         se = stats(stress.trades)["expectancy_pct"]
         ch.add("cost_stress", se is not None and se > 0, expectancy_pct=se)
     return ch, s
+
+
+def diagnose(trades: list[Trade], label_of: Any) -> dict[str, Any]:
+    """Where a spec makes and loses money: by sector, regime, event type, top stocks."""
+
+    def by(key: Any) -> dict[str, dict[str, float]]:
+        g: dict[str, list[float]] = defaultdict(list)
+        for t in trades:
+            g[str(key(t))].append(t.pnl_pct)
+        return {
+            k: {"n": len(v), "avg_pct": round(float(np.mean(v)), 2)}
+            for k, v in sorted(g.items(), key=lambda kv: -len(kv[1]))[:8]
+        }
+
+    return {
+        "sector": by(lambda t: t.signal.sector or "?"),
+        "regime": by(lambda t: label_of(t.entry_day).split("/")[0]),
+        "event_type": by(lambda t: t.signal.event_type or "?"),
+        "exit": by(lambda t: t.exit_reason or "?"),
+        "concentration": concentration(trades) if trades else {},
+        "costs_pct": round(
+            float(np.mean([t.costs_inr / t.outlay * 100 for t in trades if t.outlay])), 2
+        )
+        if trades
+        else None,
+    }

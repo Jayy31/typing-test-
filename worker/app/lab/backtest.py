@@ -431,8 +431,13 @@ def run_spec(
     variant = Variant(f"lab:{spec.name}", spread_mult=opts.spread_mult)
     fs = folds(start, end) if opts.walk_forward else [Fold(start, start, end)]
     if spec.source == "news_core":
+        nc = Context(con, data)
+
+        def keep(sig: Signal) -> bool:
+            return filter_reason(spec, nc, sig.symbol, sig.sector, sig.day) is None
+
         return run_rules(
-            con, Variant("news_core", spread_mult=opts.spread_mult), start, end, data, fs
+            con, Variant("news_core", spread_mult=opts.spread_mult), start, end, data, fs, keep
         )
     ctx = Context(con, data)
     res = RunResult(variant, start, end, folds=fs)

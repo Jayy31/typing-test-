@@ -60,6 +60,8 @@ structured_event_types:
   results_inline: {parent: results, description: "Results in line with trend"}
   auto_sales_strong: {parent: business_update, description: "Monthly auto sales well up year on year"}
   auto_sales_weak: {parent: business_update, description: "Monthly auto sales well down year on year"}
+  index_inclusion: {parent: corporate_action, description: "Stock announced for inclusion in a major index (Nifty 50 / MSCI)"}
+  index_exclusion: {parent: corporate_action, description: "Stock announced for exclusion from a major index"}
 
 # Macro themes: keyword list used by the keyword pass (case-insensitive substring of title+body).
 themes:
