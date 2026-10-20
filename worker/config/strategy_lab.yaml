@@ -49,3 +49,58 @@ luck:
 registry:
   max_variants_per_hypothesis: 10
   history_start: "2021-01-01"        # screening starts here (or the first day of the store)
+
+# ---- lab AI (same provider-neutral layer and AI_ALLOWED_MODELS check as the research agent) ----
+# Override per field with env LAB_<ROLE>_<FIELD>, e.g. LAB_HYPOTHESIS_MAX_INR=8.
+roles:
+  lab_hypothesis:            # proposals and refinement
+    provider: anthropic
+    model: claude-sonnet-5-5
+    effort: medium
+    max_tool_calls: 8
+    max_input_tokens: 80000
+    max_output_tokens: 8000
+    max_inr: 15
+    timeout_s: 240
+  lab_summary:               # trial diagnostics write-ups, weekly summary, monthly section
+    provider: anthropic
+    model: claude-haiku-5-5
+    effort: low
+    max_tool_calls: 0
+    max_input_tokens: 20000
+    max_output_tokens: 1500
+    max_inr: 1
+    timeout_s: 90
+estimates_inr: {lab_hypothesis: 8, lab_summary: 0.2}
+# Lab caps inside the overall AI budget. The lab pauses FIRST: it also stops this far below the
+# overall caps (on top of the tagger reserve), so other AI keeps running.
+budgets: {daily_inr: 30, monthly_inr: 600}
+pause_first_headroom: {daily_inr: 20, monthly_inr: 150}
+
+# ---- idea sources and the overnight loop (app/lab/nightly.py, 23:10 IST) ----------------------
+schedule:
+  ai_proposals_per_week: 3
+  max_new_mined_per_night: 5
+  max_screens_per_night: 6           # specs through Stage 0 per night (placebo runs are the cost)
+  max_ai_refinements_per_night: 2
+  max_summaries_per_night: 10
+  evidence_every_days: 7
+mining:                              # data_mining: pre-cutoff event-study groups, no AI
+  window: 3
+  min_n: 40
+  min_hit_rate: 0.58
+  require_ci_lower_above: 0.0
+  stable_halves: true                # positive mean in both halves of the period
+  splits: [none, sector, regime]
+refine:
+  deterministic_grid:                # variants tried before any AI refinement
+    - {option: {strike: itm1}}
+    - {entry: {timing: next_open}}
+    - {exits: {max_hold_days: 5}}
+    - {exits: {rule_set: fixed}}
+  ai_sources: [ai_proposal, system_evidence]   # AI refinement only for these
+evidence:                            # system_evidence detectors (thresholds)
+  iv_crush_losses: 4                 # post-mortems with cause iv_crush in 60 days
+  rejected_winners: 6                # rejected candidates whose counterfactual won, per stage
+  watchlist_gate_edge: 8             # watchlist trades beating the main book on one gate
+  lookback_days: 60

@@ -127,7 +127,9 @@ def trial_population(s: Session) -> tuple[int, float]:
         if r is not None
     ]
     n = int(s.scalar(select(func.count(LabTrial.id)).where(LabTrial.kind == "stage0")) or 0)
-    return n, float(np.var(rows, ddof=1)) if len(rows) > 1 else 0.0
+    from app.lab.sources import all_scanned  # data-mining groups scanned count as trials too
+
+    return n + all_scanned(s), float(np.var(rows, ddof=1)) if len(rows) > 1 else 0.0
 
 
 def _start(data: HistoryData) -> date:
@@ -161,7 +163,11 @@ def screen(
         e = V.stats(r.trades)["expectancy_pct"]
         placebo.append(e if e is not None else 0.0)
     with session_scope(engine) as s:
-        record(s, spec_id, "stage0", main)
+        t0 = record(s, spec_id, "stage0", main)
+        t0.metrics_json = {
+            **(t0.metrics_json or {}),
+            "diagnostics": V.diagnose(main.trades, data.regime_label),
+        }
         record(s, spec_id, "cost", stress, f"spread x{lk['cost_stress_spread_mult']}")
         for lbl, r in plateau:
             record(s, spec_id, "plateau", r, lbl)

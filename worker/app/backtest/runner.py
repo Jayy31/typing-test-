@@ -7,6 +7,7 @@ AI_MODEL_KNOWLEDGE_CUTOFF (R1); no training needed.
 """
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -117,8 +118,10 @@ def run_rules(
     end: date,
     data: HistoryData | None = None,
     fold_list: list[Fold] | None = None,
+    keep: Callable[[Signal], bool] | None = None,
 ) -> RunResult:
-    """`fold_list`: explicit test windows (Strategy Lab holdout); default walk-forward folds."""
+    """`fold_list`: explicit test windows (Strategy Lab holdout); default walk-forward folds.
+    `keep`: Strategy Lab filters on news_core (a dropped signal is recorded as a 'filter' skip)."""
     data = data or HistoryData(con)
     res = RunResult(
         variant, start, end, folds=fold_list if fold_list is not None else folds(start, end)
@@ -143,6 +146,8 @@ def run_rules(
             evs = evs + data.linked_events(evs, variant.kg_depth)
         for ev in evs:
             out = rules_signal(ev, stats, data, variant, groups, pos_stats)
+            if not isinstance(out, Skip) and keep is not None and not keep(out):
+                out = Skip(out.key, out.symbol, out.day, "filter", "strategy filter")
             (res.skips.append(out) if isinstance(out, Skip) else sigs.append(out))
         _execute(sigs, data, variant, res)
     if not res.folds:

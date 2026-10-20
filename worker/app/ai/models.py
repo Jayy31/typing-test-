@@ -36,6 +36,13 @@ def resolved(settings: Settings | None = None) -> dict[str, str]:
             out[f"{role} ({preset})"] = rcfg.role_config(role, preset).model
         except Exception as exc:  # noqa: BLE001 - reported as a problem, never crashes startup
             out[f"{role} ({preset})"] = f"<error: {exc}>"
+    from app.lab import ai as lab_ai  # Phase 14 Strategy Lab roles
+
+    for role in lab_ai.ROLES:
+        try:
+            out[role] = lab_ai.role_config(role).model
+        except Exception as exc:  # noqa: BLE001
+            out[role] = f"<error: {exc}>"
     return out
 
 

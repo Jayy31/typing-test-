@@ -1,0 +1,19 @@
+# Index inclusion / exclusion announcements (Phase 14 Strategy Lab, known_pattern index_inclusion).
+# Curated history; loaded nightly into the history store as structured events (announcement day =
+# event day). New announcements come from the NSE Indices press-release collector.
+# verified: false = filled from general knowledge, dates to be checked (docs/UNVERIFIED.md).
+events:
+  - {date: 2023-07-07, symbol: LTIM, index: NIFTY 50, action: inclusion, verified: false}
+  - {date: 2023-08-25, symbol: SHRIRAMFIN, index: NIFTY 50, action: inclusion, verified: false}
+  - {date: 2023-08-25, symbol: UPL, index: NIFTY 50, action: exclusion, verified: false}
+  - {date: 2024-08-23, symbol: TRENT, index: NIFTY 50, action: inclusion, verified: false}
+  - {date: 2024-08-23, symbol: BEL, index: NIFTY 50, action: inclusion, verified: false}
+  - {date: 2024-08-23, symbol: DIVISLAB, index: NIFTY 50, action: exclusion, verified: false}
+  - {date: 2024-08-23, symbol: LTIM, index: NIFTY 50, action: exclusion, verified: false}
+  - {date: 2025-02-21, symbol: ZOMATO, index: NIFTY 50, action: inclusion, verified: false}
+  - {date: 2025-02-21, symbol: BPCL, index: NIFTY 50, action: exclusion, verified: false}
+  - {date: 2025-02-21, symbol: BRITANNIA, index: NIFTY 50, action: exclusion, verified: false}
+  - {date: 2025-08-22, symbol: INDIGO, index: NIFTY 50, action: inclusion, verified: false}
+  - {date: 2025-08-22, symbol: MAXHEALTH, index: NIFTY 50, action: inclusion, verified: false}
+  - {date: 2025-08-22, symbol: HEROMOTOCO, index: NIFTY 50, action: exclusion, verified: false}
+  - {date: 2025-08-22, symbol: INDUSINDBK, index: NIFTY 50, action: exclusion, verified: false}

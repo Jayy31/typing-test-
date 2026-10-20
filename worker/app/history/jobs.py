@@ -76,9 +76,9 @@ def _deep_history(con: Any) -> int:
 
 
 def _scheduled(con: Any) -> int:
-    from app.lab.scheduled import build
+    from app.lab.scheduled import build, load_index_events
 
-    return build(con)
+    return build(con) + load_index_events(con)
 
 
 def weekly() -> int:
