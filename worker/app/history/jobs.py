@@ -65,6 +65,7 @@ def _deep_history(con: Any) -> int:
         deep_stats.refresh,
         deep_history.sync_structured,
         deep_history.backfill_structured,
+        _scheduled,  # Phase 14: board-meeting intimations -> hist_scheduled
     ]
     for step in steps:
         try:
@@ -72,6 +73,12 @@ def _deep_history(con: Any) -> int:
         except Exception as exc:  # noqa: BLE001 - one step must not stop the nightly job
             log.warning("deep history step failed: %s", exc)
     return n
+
+
+def _scheduled(con: Any) -> int:
+    from app.lab.scheduled import build
+
+    return build(con)
 
 
 def weekly() -> int:

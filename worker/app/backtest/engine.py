@@ -86,6 +86,11 @@ class Signal:
     contract: tuple[date, float, str] | None = None  # replay: the live signal's contract
     pre_news_spot: float | None = None
     title: str | None = None
+    # Phase 14 Strategy Lab spec exits (None = off): close at that day's bid, after N trading
+    # days, or when the contract's IV rises by this many points over the entry IV
+    exit_by: date | None = None
+    max_hold_days: int | None = None
+    iv_spike_pts: float | None = None
 
 
 @dataclass
@@ -685,6 +690,13 @@ def simulate(trade: Trade, data: HistoryData, variant: Variant, rules: ExitRules
             sbar.low / f,
             i,
         )
+        forced = _spec_exit(sig, data, d, i, trade, f, iv)
+        if forced:  # Phase 14 spec exits, checked at the close before the day's other rules
+            state = _force_close(state, forced, bar.close)
+            trade.spot_exit = sbar.close / f
+            lots_vol = data.to_lots(row.volume if row else None, d, trade.lot_size, "volume")
+            _record(trade, state, d, p.stale, lots_vol, units)
+            break
         before = len(state.fills)
         state = step(state, bar, rules)
         last_bid = bar.close
@@ -710,6 +722,20 @@ def simulate(trade: Trade, data: HistoryData, variant: Variant, rules: ExitRules
     if trade.marks:
         trade.marks[-1] = (trade.marks[-1][0], trade.pnl_inr)
     return trade
+
+
+def _spec_exit(
+    sig: Signal, data: HistoryData, d: date, i: int, trade: Trade, f: float, entry_iv: float
+) -> str | None:
+    if sig.exit_by is not None and d >= sig.exit_by:
+        return "EVENT_EXIT"
+    if sig.max_hold_days is not None and i >= sig.max_hold_days:
+        return "TIME"
+    if sig.iv_spike_pts is not None:
+        now = data.iv(sig.symbol, d, trade.expiry, trade.strike * f, trade.option_type)
+        if now is not None and now - entry_iv >= sig.iv_spike_pts:
+            return "IV_SPIKE"
+    return None
 
 
 def _bid_fn(f: float, tier: fills.Tier, mult: float) -> Any:
