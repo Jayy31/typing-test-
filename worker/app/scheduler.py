@@ -368,6 +368,12 @@ def build_scheduler() -> BlockingScheduler:
         research_review,
         CronTrigger(day_of_week="sun", hour=8, minute=20, timezone=IST),
     )
+    _job(
+        sched,
+        "index_events_check",
+        index_events_check,
+        CronTrigger(hour=22, minute=55, timezone=IST),
+    )
     _job(sched, "strategy_lab", strategy_lab, CronTrigger(hour=23, minute=10, timezone=IST))
     _job(
         sched,
@@ -411,6 +417,20 @@ def research_review() -> int:
     from app.research.review import weekly_review
 
     return weekly_review() if _research_on() else 0
+
+
+def index_events_check() -> int:
+    """Phase 14: verify curated index event dates against NSE Indices press releases (lab on)."""
+    from app import flags
+    from app.db.session import session_scope
+    from app.golive.index_events import run
+
+    with session_scope() as s:
+        if not flags.active(s, "feat.strategy_lab"):
+            return 0
+    res = run()
+    log.info("index events check: %s", {k: v for k, v in res.items() if k != "changed"})
+    return len(res["changed"])
 
 
 def strategy_lab() -> int:

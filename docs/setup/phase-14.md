@@ -9,7 +9,9 @@ Nothing to install or configure. Migrations 0019 and 0020 run automatically on d
    - Nightly at 23:10: seed patterns → mining → evidence → AI proposals (at most 3 a week) → screening → holdout → refinement → paper books.
    - Sunday at 09:05: a weekly Telegram summary. `/lab` in Telegram shows the status at any time.
 4. **Optional env overrides** (names only; blank = default): `LAB_HYPOTHESIS_MODEL`, `LAB_SUMMARY_MODEL` and other `LAB_<ROLE>_<FIELD>` fields. Models must be in `AI_ALLOWED_MODELS`.
-5. **Optional spot-check:** check `data/index_events.yaml` (index inclusion/exclusion dates; UNVERIFIED 46).
+5. **Index event dates are checked automatically.** Each night at 22:55, while the lab is on, every entry in `data/index_events.yaml` is checked against NSE Indices press releases.
+   - Only verified entries are used by Stage 0/1.
+   - Mismatches (other date, other action, not found) show on the Go-live page and on Telegram. Nothing is needed from you unless one appears.
 6. **Telegram alerts for a strategy book:** use the "Telegram alerts" button on the Lab page. It only appears once a book is **Validated**, which needs:
    - EOD incubation;
    - plus 15 real-fill trades, which need a broker.
@@ -19,4 +21,8 @@ Nothing to install or configure. Migrations 0019 and 0020 run automatically on d
 ## Costs
 - Lab AI caps: ₹30/day and ₹600/month, inside the overall budget.
 - The lab pauses first: it stops ₹20/day and ₹150/month below the overall caps, so other AI keeps running.
-- Expected spend: about ₹30–60/month. That is 3 proposals a week at about ₹8 each, plus about ₹0.2 per nightly write-up.
+- Expected spend: about ₹250–450/month.
+  - AI proposals: 3/week at about ₹8 each ≈ ₹105.
+  - AI refinements: up to 2/night at about ₹8, only for AI-proposed and system-evidence ideas after the free deterministic grid ≈ ₹100–250.
+  - Trial write-ups: about ₹0.2 each, up to 10/night ≈ ₹30–60.
+- The ₹600/month cap always keeps room for the AI proposals still due that month. Refinements and write-ups pause first.

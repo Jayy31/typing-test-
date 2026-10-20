@@ -63,15 +63,15 @@ doesn't show.
 | Panel / single caps | `AI_MULTI_AGENT_MAX_PER_DAY` 4, `AI_SINGLE_ANALYST_MAX_PER_DAY` 5 |
 | Selection | EV > 0 and ≥ 10% of premium, `p_t1_before_sl` ≥ 0.55, `EDGE_RATIO_MIN` 1.2; `SCENARIO_SHRINK_WEIGHT` 0.5 until calibrated |
 | Trading | `LOTS_PER_SIGNAL` 3, `per_lot` booking; SL −50%, T1 +25%, T2 +50%, T3 +100% |
-| Strategy Lab AI | ₹30/day, ₹600/month; pauses ₹20/₹150 below the overall caps; ≤3 AI proposals/week; nightly 23:10, weekly summary Sunday 09:05 |
+| Strategy Lab AI | ₹30/day, ₹600/month (expected ₹250–450); pauses ₹20/₹150 below the overall caps; ≤3 AI proposals/week with their cost reserved in the monthly cap; nightly 23:10, weekly summary Sunday 09:05; index-date check 22:55 |
 | Prices | `worker/config/ai.yaml` (checked 2026-10-19; web search $10 per 1,000 searches) |
 
 ## Known gaps / half-done
-- **Everything external is unverified live.** See `docs/UNVERIFIED.md` items 1-49 (NSE endpoints, Upstox fields, real Anthropic tool and web calls, Batch API with `output_config`, company domains).
+- **Everything external is unverified live.** See `docs/UNVERIFIED.md` items 1-50 (NSE endpoints, Upstox fields, real Anthropic tool and web calls, Batch API with `output_config`, company domains).
 - **Broker data source:** not built (see above).
 - **5-year history:** the backfill runs on the VM only; the sandbox can't reach NSE.
 - **Calibration:** none yet. Everything shows "not yet calibrated" until enough post-cutoff events exist.
-- **Lab pre-event strategies** run in EOD incubation only (no live pre-event entry path); index events come from a curated YAML.
+- **Lab pre-event strategies** run in EOD incubation only (no live pre-event entry path); index events come from a curated YAML, used only once each entry is verified against an NSE Indices press release (nightly check, Go-live page).
 - **Research tools on the old panel path:** the panel and single analyst don't use the research tools; only the agent does.
 
 ## Conventions

@@ -70,9 +70,31 @@ def spent(s: Session, since: datetime) -> float:
     )
 
 
-def check_budget(s: Session, ai: AiClient, role: str, now: datetime | None = None) -> None:
+def proposal_reserve(s: Session, now: datetime) -> float:
+    """Rs kept free in the lab's monthly cap for the AI proposals still due this month
+    (`ai_proposals_per_week` per week): refinements and write-ups must leave it unspent."""
+    per_week = int(cfg()["schedule"]["ai_proposals_per_week"])
+    week = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    done = int(
+        s.scalar(
+            select(func.count(LabHypothesis.id)).where(
+                LabHypothesis.source == "ai_proposal", LabHypothesis.registered_at >= week
+            )
+        )
+        or 0
+    )
+    nxt = (now.replace(day=28) + timedelta(days=4)).replace(day=1)
+    later_weeks = (max((nxt.date() - (week + timedelta(days=7)).date()).days, 0) + 6) // 7
+    due = max(per_week - done, 0) + per_week * later_weeks
+    return due * float(cfg()["estimates_inr"]["lab_hypothesis"])
+
+
+def check_budget(
+    s: Session, ai: AiClient, role: str, now: datetime | None = None, reserve_inr: float = 0.0
+) -> None:
     """Lab caps (Rs 30/day, Rs 600/month), and the lab pauses FIRST: it stops `pause_first_headroom`
-    below the overall caps (on top of the tagger reserve)."""
+    below the overall caps (on top of the tagger reserve). `reserve_inr` is kept free in the lab's
+    monthly cap (see `proposal_reserve`)."""
     now = now or datetime.now(IST)
     est = float(cfg()["estimates_inr"][role])
     day = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -105,7 +127,7 @@ def check_budget(s: Session, ai: AiClient, role: str, now: datetime | None = Non
         limit = max(overall - reserve - room, 0.0)
         if total + est > limit:
             raise BudgetExceededError(scope, "strategy lab (paused first)", total, limit, overall)
-        lab = spent(s, since)
+        lab = spent(s, since) + (reserve_inr if scope == "monthly" else 0.0)
         if lab + est > lab_cap:
             raise BudgetExceededError(scope, "strategy lab", lab, lab_cap, lab_cap)
 

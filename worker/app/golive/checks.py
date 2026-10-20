@@ -269,6 +269,12 @@ def table_counts(engine: Engine | None) -> Check:
     )
 
 
+def _index_events_check() -> Check:
+    from app.golive.index_events import check
+
+    return check()
+
+
 def history_check() -> Check:
     try:
         from app.history.store import connect
@@ -367,6 +373,7 @@ def run(
             upstox_fields_check(),
             xbrl_check(engine),
             db_size_check(engine),
+            _index_events_check(),
         ]
         checks.append(unverified_check(checks))
     text = render(kind, checks, now)

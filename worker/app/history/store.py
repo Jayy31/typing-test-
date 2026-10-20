@@ -14,7 +14,7 @@ import duckdb
 
 from app.config import get_settings
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 DDL = [
     """CREATE TABLE IF NOT EXISTS hist_prices (
@@ -85,6 +85,11 @@ DDL = [
     """CREATE TABLE IF NOT EXISTS hist_scheduled (
         symbol VARCHAR, event_type VARCHAR, event_date DATE, intimated_on DATE, source VARCHAR,
         ref VARCHAR, PRIMARY KEY (symbol, event_type, event_date))""",
+    # v8: verification of curated index inclusion/exclusion dates against NSE Indices press
+    # releases (app/golive/index_events.py). Only `verified` rows reach the history events.
+    """CREATE TABLE IF NOT EXISTS index_event_checks (
+        event_key VARCHAR PRIMARY KEY, status VARCHAR, found_date DATE, url VARCHAR,
+        detail VARCHAR, checked_at TIMESTAMP)""",
 ]
 # Positional inserts into hist_events (the v4 event_date column is filled only for structured events)
 HIST_EVENTS_INSERT = (

@@ -10,7 +10,7 @@ import httpx
 
 from app.config import get_settings
 
-NSE_HOSTS = ("nseindia.com",)  # www., archives., nsearchives.
+NSE_HOSTS = ("nseindia.com", "niftyindices.com")  # www., archives., nsearchives.; NSE Indices
 
 
 def is_nse(url: str) -> bool:
