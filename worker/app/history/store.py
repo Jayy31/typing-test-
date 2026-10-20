@@ -14,7 +14,7 @@ import duckdb
 
 from app.config import get_settings
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 DDL = [
     """CREATE TABLE IF NOT EXISTS hist_prices (
@@ -80,6 +80,11 @@ DDL = [
     """CREATE TABLE IF NOT EXISTS positioning_stats (
         feature VARCHAR, state VARCHAR, "window" INTEGER, n INTEGER, mean_ret DOUBLE,
         hit_up DOUBLE, std DOUBLE, computed_at TIMESTAMP, PRIMARY KEY (feature, state, "window"))""",
+    # v7 (Phase 14 Strategy Lab): scheduled events with the day they became public (intimation), so
+    # pre-event entries never use a date that was not known yet
+    """CREATE TABLE IF NOT EXISTS hist_scheduled (
+        symbol VARCHAR, event_type VARCHAR, event_date DATE, intimated_on DATE, source VARCHAR,
+        ref VARCHAR, PRIMARY KEY (symbol, event_type, event_date))""",
 ]
 # Positional inserts into hist_events (the v4 event_date column is filled only for structured events)
 HIST_EVENTS_INSERT = (

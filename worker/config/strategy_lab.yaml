@@ -1,0 +1,16 @@
+# Strategy Lab (Phase 14, feat.strategy_lab). Offline research: specs are tested by the same
+# backtester (fills, costs, fillability, exit engine, walk-forward folds) as live, validated with
+# anti-overfitting controls, and survivors run as separate paper books. The lab never changes live
+# config; a validated strategy reaches the main engine only via a learning-loop suggestion PR.
+
+# ---- spec vocabulary and defaults (app/lab/spec.py) -----------------------------------------
+spec:
+  max_days_before_event: 10          # entry N trading days before a scheduled event: 1..this
+  min_intimation_days: 2             # skip if the event date became public fewer than N trading days before entry
+  max_hold_days: 20
+  strike_modes: [atm, itm1, itm2, otm1, delta]
+  delta_range: [0.25, 0.75]
+  sources: [data_mining, known_pattern, system_evidence, ai_proposal, news_core]
+  scheduled_event_types: [results]   # event types with a known date in advance (hist_scheduled)
+  adv_window_days: 20                # liquidity / size proxy: average daily traded value (Rs crore)
+  iv_percentile_lookback_days: 252
