@@ -362,6 +362,15 @@ def pr_body(g: Suggestion) -> str:
             f"- Reverts #{g.reverts_id}: predicted {e.get('predicted_effect')}, "
             f"actual {e.get('actual_effect')}"
         )
+    if g.kind == "strategy":  # Phase 14: a validated Strategy Lab strategy into the main engine
+        lines += [
+            f"- Strategy Lab spec {g.proposed_value:g} goes into promotion slot `{g.yaml_path}`: "
+            "its live signals then trade in the main book (same core rules and paper engine).",
+            "",
+            "```yaml",
+            str(e.get("spec_yaml") or ""),
+            "```",
+        ]
     lines += ["", "Merged automatically at the start of the next month (one change per month)."]
     return "\n".join(lines)
 

@@ -301,5 +301,7 @@ def test_nightly_end_to_end(engine: Engine, monkeypatch) -> None:
     assert out["seeded"] == 7 and out["proposed"] == 1 and out["screened"] == 3
     with Session(engine) as s:
         stages = [sp.stage for sp in s.scalars(select(LabSpec))]
-        assert stages.count("stage0") == len(stages) - 3  # three screened tonight, rest queued
+        assert stages.count("rejected") == 3  # three screened tonight, the rest stay queued
+        assert stages.count("incubating") == 1  # the news_core comparison book
+    assert out["books_opened"] == 1 and out["eod_books"] == 1
     get_settings.cache_clear()

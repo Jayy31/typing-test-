@@ -1,0 +1,8 @@
+# Strategies promoted into the MAIN engine through the learning-loop suggestion -> GitHub PR flow
+# (Phase 14). Each slot holds a Strategy Lab spec id (0 = empty). Only an accepted, merged PR
+# changes this file; the lab itself never writes it. A promoted strategy's live signals trade in the
+# main book with the same core rules and paper engine.
+slots:
+  s1: 0
+  s2: 0
+  s3: 0

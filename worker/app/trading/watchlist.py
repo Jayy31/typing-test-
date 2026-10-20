@@ -18,6 +18,9 @@ from app.yaml_config import load_yaml
 BOOK = "watchlist"
 MAIN = "main"
 STATUS = "WATCHLIST"
+LAB_STATUS = (
+    "LAB"  # Phase 14 Strategy Lab real-fill signals (book lab:<spec id>, or main if promoted)
+)
 SOFT_STAGES = {"edge", "ev", "probability"}
 
 

@@ -24,7 +24,7 @@ from app.db.models import LabSpec, LabVerdict
 from app.db.session import session_scope
 from app.history.store import connect
 from app.lab import ai as lab_ai
-from app.lab import refine, sources
+from app.lab import books, refine, sources
 from app.lab import registry as R
 from app.lab.spec import cfg
 
@@ -103,9 +103,25 @@ def job(
         out["screened"] = screen_queue(con, data, engine)
         out["holdout"] = holdout_queue(con, data, engine)
         out["refined"] = refine.ai_step(engine, ai, provider, now)
+        out["books_opened"] = books.open_books(engine, now)
+        out["eod_books"] = books.eod_update(con, engine, data)
+        out["books"] = books.review_books(engine, now)
+        store_portfolio(engine)
     out["writeups"] = summaries(engine, ai, provider, now)
     log.info("strategy lab: %s", out)
     return out
+
+
+def store_portfolio(engine: Engine | None = None) -> None:
+    """The combined portfolio view (EOD incubation) is kept on the news_core book for the
+    dashboard and Telegram."""
+    from app.db.models import LabBook
+
+    view = books.portfolio(engine)
+    with session_scope(engine) as s:
+        b = s.scalars(select(LabBook).where(LabBook.book == books.NEWS_CORE)).first()
+        if b is not None:
+            b.stats_json = {**(b.stats_json or {}), "portfolio": view}
 
 
 def screen_queue(con: Any, data: HistoryData, engine: Engine | None) -> int:
