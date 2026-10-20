@@ -103,7 +103,13 @@ def ai_step(
             if grid_left is not None:
                 continue  # free grid variants first
             try:
-                lab_ai.check_budget(s, ai, "lab_hypothesis", now)
+                lab_ai.check_budget(
+                    s,
+                    ai,
+                    "lab_hypothesis",
+                    now,
+                    lab_ai.proposal_reserve(s, now or datetime.now(IST)),
+                )
             except BudgetExceededError as exc:
                 log.info("lab refinement paused: %s", exc)
                 break

@@ -122,9 +122,25 @@ unverified:
   34: {check: db_size}
   35: {manual: "First monthly report: ai_summary_status = ok"}
   36: {check: nse_probe}
+  50: {check: index_events}
 
 # make preflight: env keys that must have a value before the first start (others are optional)
 # (AI_MODEL_* and AI_MODEL_KNOWLEDGE_CUTOFF have code defaults; preflight lists the resolved models)
 required_env: [DATABASE_URL, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY,
                BROKER_ACCESS_TOKEN, BROKER_TOKEN_ISSUED_ON, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                DASHBOARD_ALLOWED_EMAIL, DASHBOARD_BASE_URL]
+
+# Curated index inclusion / exclusion dates (data/index_events.yaml) checked against NSE Indices
+# press releases (app/golive/index_events.py, nightly 22:55). Only verified entries reach the
+# history store, so Stage 0 / Stage 1 never test a date from general knowledge. Mismatches go to
+# the Go-live page and Telegram. URLs are UNVERIFIED (docs/UNVERIFIED.md 50): if the listing is
+# unreachable or changes, entries simply stay unverified (excluded) and the Go-live page says so.
+index_events:
+  listing_urls:
+    - https://www.niftyindices.com/press-release
+    - https://www.niftyindices.com/media-centre/press-release
+  title_patterns: ["change in", "constituent", "replacement", "index maintenance", "rebalanc"]
+  max_releases: 80                 # newest links followed per run
+  date_tolerance_days: 0           # release date must equal the YAML date (announcement day)
+  search_window_days: 60           # a release this close but on another day = date_mismatch
+  timeout_s: 20

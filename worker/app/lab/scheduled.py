@@ -83,16 +83,35 @@ def build(con: duckdb.DuckDBPyConnection) -> int:
 INDEX_EVENTS = Path(__file__).resolve().parents[3] / "data" / "index_events.yaml"
 
 
-def load_index_events(con: duckdb.DuckDBPyConnection, path: Any = None) -> int:
-    """Curated index inclusion / exclusion announcements -> hist_events (structured events)."""
+def event_key(e: dict[str, Any]) -> str:
+    return f"{e['symbol']}|{e['action']}|{e['index']}|{e['date']}"
+
+
+def index_events(path: Any = None) -> list[dict[str, Any]]:
     import yaml
 
+    p = path or INDEX_EVENTS
+    return (yaml.safe_load(p.read_text(encoding="utf-8")) or {}).get("events") or []
+
+
+def verified_keys(con: duckdb.DuckDBPyConnection) -> set[str]:
+    rows = con.execute("SELECT event_key FROM index_event_checks WHERE status = 'verified'")
+    return {r[0] for r in rows.fetchall()}
+
+
+def load_index_events(con: duckdb.DuckDBPyConnection, path: Any = None) -> int:
+    """Curated index inclusion / exclusion announcements -> hist_events (structured events).
+
+    Only VERIFIED entries are loaded: `verified: true` in the YAML, or confirmed against an NSE
+    Indices press release by app/golive/index_events.py. Unverified or mismatched entries are
+    removed, so Stage 0 / Stage 1 never test a date from general knowledge."""
     from app.history.store import HIST_EVENTS_INSERT
 
-    p = path or INDEX_EVENTS
-    rows = (yaml.safe_load(p.read_text(encoding="utf-8")) or {}).get("events") or []
+    ok = verified_keys(con)
     out = []
-    for e in rows:
+    for e in index_events(path):
+        if not (e.get("verified") is True or event_key(e) in ok):
+            continue
         d = date.fromisoformat(str(e["date"]))
         incl = e["action"] == "inclusion"
         out.append(
@@ -114,6 +133,7 @@ def load_index_events(con: duckdb.DuckDBPyConnection, path: Any = None) -> int:
                 "curated",
             )
         )
+    con.execute("DELETE FROM hist_events WHERE source = 'curated_index'")
     if out:
         con.executemany(HIST_EVENTS_INSERT, out)
     return len(out)

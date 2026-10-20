@@ -52,7 +52,9 @@ def summaries(
             if (v.checks_json or {}).get("writeup"):
                 continue
             try:
-                lab_ai.check_budget(s, ai, "lab_summary", now)
+                lab_ai.check_budget(
+                    s, ai, "lab_summary", now, lab_ai.proposal_reserve(s, now or datetime.now(IST))
+                )
             except BudgetExceededError as exc:
                 log.info("lab write-ups paused: %s", exc)
                 break

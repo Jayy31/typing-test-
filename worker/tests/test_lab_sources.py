@@ -305,3 +305,28 @@ def test_nightly_end_to_end(engine: Engine, monkeypatch) -> None:
         assert stages.count("incubating") == 1  # the news_core comparison book
     assert out["books_opened"] == 1 and out["eod_books"] == 1
     get_settings.cache_clear()
+
+
+def test_proposal_reserve_keeps_room_for_weekly_proposals(engine: Engine) -> None:
+    ai = _ai(engine)
+    mid = datetime(2026, 10, 14, 22, 0, tzinfo=IST)  # Wednesday; weeks from 19 Oct and 26 Oct left
+    with Session(engine) as s:
+        reserve = lab_ai.proposal_reserve(s, mid)
+        assert reserve == (3 + 3 * 2) * 8
+        for d in range(1, 14):  # Rs 40/day of refinements on earlier days this month
+            s.add(
+                ResearchRun(
+                    kind="lab_hypothesis",
+                    role="lab_hypothesis",
+                    preset="lab",
+                    provider="a",
+                    model="m",
+                    status="ok",
+                    cost_inr=40.0 if d < 13 else 45.0,
+                    created_at=datetime(2026, 10, d, 22, 0, tzinfo=IST),
+                )
+            )
+        s.commit()  # Rs 525 spent: a proposal (Rs 8) still fits, a refinement does not
+        lab_ai.check_budget(s, ai, "lab_hypothesis", mid)
+        with pytest.raises(BudgetExceededError):
+            lab_ai.check_budget(s, ai, "lab_hypothesis", mid, reserve)
