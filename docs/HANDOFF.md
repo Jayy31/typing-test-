@@ -1,12 +1,12 @@
-# Handoff (2026-10-19)
+# Handoff (2026-10-20)
 
 Read `CLAUDE.md` first (hard rules, owner decisions, progress log), then `docs/DESIGN.md` and
 `docs/DESIGN_V2.md` (V2 wins on conflict). This file is the short version plus what the code
 doesn't show.
 
 ## State
-- **Phases 0-13: all built and merged to `main`.** Last: Phase 13 research agent (PRs #28-#32).
-- **Open PRs: none.** `ENGINE_VERSION` 9.0.0, latest migration `0018`.
+- **Phases 0-14: all built and merged to `main`.** Last: Phase 14 Strategy Lab (PRs #34-#38).
+- **Open PRs: none.** `ENGINE_VERSION` 10.0.0, latest migration `0020`.
 - **Not deployed yet.** The owner is doing the external setup step by step in chat:
   - done: Supabase, Vercel dashboard (`https://option-desk-tan.vercel.app`), Telegram bot, Anthropic key, healthchecks.io;
   - next: Oracle Always Free VM (`docs/setup/deploy.md`, `deploy/bootstrap.sh`).
@@ -39,6 +39,14 @@ doesn't show.
   - 2 agent runs/day (top candidates), then the single analyst within its cap.
   - IR domains come from the `website` column in `data/symbol_master.csv` (filled from general knowledge; needs a check). Overrides go in `data/ir_domains.yaml`.
   - The smoke test's agent run has its own ₹30 limit, separate from the ₹50 smoke cap.
+- **Strategy Lab:**
+  - `feat.strategy_lab` defaults to **off**.
+  - Mining and Stage 0 use pre-cutoff data only (never the full 5 years).
+  - The holdout stays pending until 20 trades and 15 events, then is evaluated once.
+  - Pre-event entries skip events intimated fewer than N trading days before entry.
+  - "Validated" needs EOD incubation plus 15 real-fill trades; EOD and real-fill results are always shown separately.
+  - Portfolio: same-direction overlaps count once; opposite-direction requests are blocked and logged.
+  - The lab has no code execution and never writes live config; promotion goes through Suggestion → PR (`config/promoted_strategies.yaml` slots).
 - **No manual steps:** jobs build themselves once their inputs exist (backtests, positioning history). Manual commands are kept only as optional re-runs.
 - **Labels:** previous-session data is labelled "EOD, previous session (<date>)".
 - **No custom domain.** Free hosted links only.
@@ -55,13 +63,15 @@ doesn't show.
 | Panel / single caps | `AI_MULTI_AGENT_MAX_PER_DAY` 4, `AI_SINGLE_ANALYST_MAX_PER_DAY` 5 |
 | Selection | EV > 0 and ≥ 10% of premium, `p_t1_before_sl` ≥ 0.55, `EDGE_RATIO_MIN` 1.2; `SCENARIO_SHRINK_WEIGHT` 0.5 until calibrated |
 | Trading | `LOTS_PER_SIGNAL` 3, `per_lot` booking; SL −50%, T1 +25%, T2 +50%, T3 +100% |
+| Strategy Lab AI | ₹30/day, ₹600/month; pauses ₹20/₹150 below the overall caps; ≤3 AI proposals/week; nightly 23:10, weekly summary Sunday 09:05 |
 | Prices | `worker/config/ai.yaml` (checked 2026-10-19; web search $10 per 1,000 searches) |
 
 ## Known gaps / half-done
-- **Everything external is unverified live.** See `docs/UNVERIFIED.md` items 1-45 (NSE endpoints, Upstox fields, real Anthropic tool and web calls, Batch API with `output_config`, company domains).
+- **Everything external is unverified live.** See `docs/UNVERIFIED.md` items 1-49 (NSE endpoints, Upstox fields, real Anthropic tool and web calls, Batch API with `output_config`, company domains).
 - **Broker data source:** not built (see above).
 - **5-year history:** the backfill runs on the VM only; the sandbox can't reach NSE.
 - **Calibration:** none yet. Everything shows "not yet calibrated" until enough post-cutoff events exist.
+- **Lab pre-event strategies** run in EOD incubation only (no live pre-event entry path); index events come from a curated YAML.
 - **Research tools on the old panel path:** the panel and single analyst don't use the research tools; only the agent does.
 
 ## Conventions

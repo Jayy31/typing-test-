@@ -194,36 +194,51 @@ def make_signals(s: Session, source: OptionDataSource, now: datetime) -> int:
                 enter_after = datetime.combine(
                     now.date() + timedelta(days=1), time(9, 15), now.tzinfo
                 )
-            s.add(
-                Signal(
-                    symbol=inst.symbol,
-                    sector=inst.sector,
-                    direction="CALL" if opt == "CE" else "PUT",
-                    strike=row.strike,
-                    expiry=exp,
-                    option_type=opt,
-                    score=0.0,
-                    status=watchlist.LAB_STATUS,
-                    book=book,
-                    pricing_status="priced",
-                    enter_after=enter_after,
-                    created_at=now,
-                    updated_at=now,
-                    flags_json={
-                        "lab": {
-                            "spec_id": spec_id,
-                            "spec": spec.name,
-                            "rules": spec.exits.overrides(),
-                            "max_hold_days": spec.exits.max_hold_days,
-                            "iv_spike_pts": spec.exits.iv_spike_exit_pts,
-                            "tag_id": tag.id,
-                            "mode": "real_fills",
-                        }
-                    },
-                )
+            sig = Signal(
+                symbol=inst.symbol,
+                sector=inst.sector,
+                direction="CALL" if opt == "CE" else "PUT",
+                strike=row.strike,
+                expiry=exp,
+                option_type=opt,
+                score=0.0,
+                status=watchlist.LAB_STATUS,
+                book=book,
+                pricing_status="priced",
+                enter_after=enter_after,
+                created_at=now,
+                updated_at=now,
+                flags_json={
+                    "lab": {
+                        "spec_id": spec_id,
+                        "spec": spec.name,
+                        "rules": spec.exits.overrides(),
+                        "max_hold_days": spec.exits.max_hold_days,
+                        "iv_spike_pts": spec.exits.iv_spike_exit_pts,
+                        "tag_id": tag.id,
+                        "mode": "real_fills",
+                    }
+                },
             )
+            s.add(sig)
             made += 1
+            if b is not None and b.status == "validated" and b.alerts_enabled:
+                s.flush()
+                _alert(s, sig, spec, b)
         stats["live_cursor"] = max_tag
         if b:
             b.stats_json = stats
     return made
+
+
+def _alert(s: Session, sig: Signal, spec: StrategySpec, b: LabBook) -> None:
+    """Validated strategies may send signal alerts (switch per strategy on the dashboard,
+    default off). Incubating strategies never alert; they appear in the digests only."""
+    from app.notify.outbox import enqueue_alert
+
+    text = (
+        f"STRATEGY SIGNAL ({spec.name}, validated, paper only)\n{sig.symbol} "
+        f"{'CALL' if sig.option_type == 'CE' else 'PUT'} {sig.strike:g} exp {sig.expiry}\n"
+        f"Book {b.book}; entry at the ask in the next paper-engine cycle."
+    )
+    enqueue_alert(s, "signal", text, f"lab_signal:{sig.id}", sig.id)

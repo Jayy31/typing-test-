@@ -63,6 +63,12 @@ export class SupabaseDb implements Db {
     if (error) throw new Error(`could not delete the lesson: ${error.message}`);
   }
 
+  async setLabAlerts(bookId: number, enabled: boolean): Promise<void> {
+    const sb = await supabaseServer();
+    const { error } = await sb.from("lab_books").update({ alerts_enabled: enabled }).eq("id", bookId);
+    if (error) throw new Error(`could not change the strategy alerts: ${error.message}`);
+  }
+
   async userEmail(): Promise<string | null> {
     const sb = await supabaseServer();
     const { data } = await sb.auth.getUser();

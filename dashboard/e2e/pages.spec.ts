@@ -152,6 +152,19 @@ const PAGES: [string, string, string[]][] = [
     ["Research file: BHARTIARTL v4", "Tariff hike matched by Jio", "+3 to +6", "v3"],
   ],
   [
+    "/lab",
+    "33-lab",
+    [
+      "Strategy books",
+      "EOD incubation (bhavcopy prices, modelled spread)",
+      "Real fills (live quotes): no trades yet",
+      "AI memory risk",
+      "deflated sharpe",
+      "Blocked (opposite direction)",
+      "All trials (including failures)",
+    ],
+  ],
+  [
     "/golive",
     "28-golive",
     [

@@ -1818,6 +1818,93 @@ for (let i = 0; i < 40; i++)
     ai_preset: i % 5 === 4 ? "budget" : null,
   });
 
+// ---- Phase 14 Strategy Lab ------------------------------------------------------------------
+const labTrade = (book: string, sym: string, dir: string, entry: number, exit: number | null, pnl: number) => ({
+  book, symbol: sym, direction: dir, option_type: dir === "bullish" ? "CE" : "PE",
+  entry_day: dateOnly(-entry), exit_day: exit == null ? null : dateOnly(-exit), pnl_inr: pnl,
+  pnl_pct: +(pnl / 300).toFixed(2), mode: "eod_incubation",
+  marks: [[dateOnly(-entry), 0], [dateOnly(-(exit ?? 0)), pnl]],
+});
+const eodTradesA = [
+  labTrade("lab:12", "TCS", "bullish", 40, 35, 2100), labTrade("lab:12", "INFY", "bullish", 33, 30, -900),
+  labTrade("lab:12", "HDFCBANK", "bullish", 28, 24, 1600), labTrade("lab:12", "SBIN", "bearish", 20, 17, 700),
+  labTrade("lab:12", "TCS", "bullish", 12, 8, 1250), labTrade("lab:12", "MARUTI", "bullish", 6, null, 300),
+];
+const eodTradesCore = [
+  labTrade("news_core", "TCS", "bullish", 39, 36, 1800), labTrade("news_core", "SUNPHARMA", "bearish", 25, 22, -600),
+  labTrade("news_core", "WIPRO", "bullish", 15, 11, 400),
+];
+const lab_hypotheses: Row[] = [
+  { id: 1, name: "post_results_drift", source: "known_pattern", status: "incubating", ai_memory_risk: false, registered_at: D(60),
+    rationale: "Prices under-react to clear earnings surprises and keep drifting for days (post-earnings announcement drift).",
+    expected_effect: "Positive expectancy over 5 sessions after a clear beat (calls) or miss (puts)." },
+  { id: 2, name: "pre_results_iv_runup", source: "known_pattern", status: "rejected", ai_memory_risk: false, registered_at: D(60),
+    rationale: "Implied volatility tends to rise into scheduled results; a long option bought a week before gains vega before the announcement.",
+    expected_effect: "Positive expectancy when bought 5-7 trading days before results and sold the day before." },
+  { id: 3, name: "mined_order_win_it", source: "data_mining", status: "holdout_pending", ai_memory_risk: false, registered_at: D(20),
+    rationale: "Pre-cutoff event study: order_win in IT: n=64, mean abnormal move +1.90% our way, hit 61% over 3 days, stable in both halves.",
+    expected_effect: "Calls/puts in the news direction earn a positive expectancy after costs.", origin_json: { scanned: 212 } },
+  { id: 4, name: "ai_block_deal_fii_drift", source: "ai_proposal", status: "testing", ai_memory_risk: true, registered_at: D(3),
+    rationale: "FII block buys reveal informed institutional demand that keeps pushing the stock for a few sessions.",
+    expected_effect: "Calls after FII block buys earn about +5% of premium per trade." },
+  { id: 5, name: "news_core", source: "news_core", status: "incubating", ai_memory_risk: false, registered_at: D(60),
+    rationale: "The main engine's news signals, as a strategy, so every lab strategy is compared with it on equal terms.",
+    expected_effect: "Baseline: whatever the main engine earns." },
+];
+const specYaml = (name: string, src: string, body: string) => `name: ${name}\nsource: ${src}\n${body}`;
+const lab_specs: Row[] = [
+  { id: 12, hypothesis_id: 1, version: 2, name: "post_results_drift", stage: "incubating", parent_spec_id: 11, created_at: D(40),
+    change_note: "grid: {'entry': {'timing': 'next_open'}}",
+    spec_yaml: specYaml("post_results_drift", "known_pattern", "trigger:\n  event_types: [results_beat, results_miss]\n  direction: from_event\nentry:\n  timing: next_open\nexits:\n  max_hold_days: 5\n  rule_set: v21") },
+  { id: 11, hypothesis_id: 1, version: 1, name: "post_results_drift", stage: "rejected", created_at: D(59),
+    spec_yaml: specYaml("post_results_drift", "known_pattern", "trigger:\n  event_types: [results_beat, results_miss]\nexits:\n  max_hold_days: 5") },
+  { id: 21, hypothesis_id: 2, version: 1, name: "pre_results_iv_runup", stage: "rejected", created_at: D(59),
+    spec_yaml: specYaml("pre_results_iv_runup", "known_pattern", "entry:\n  timing: before_event\n  days_before: 6\nexits:\n  exit_before_event: true") },
+  { id: 31, hypothesis_id: 3, version: 1, name: "mined_order_win_it", stage: "holdout_pending", created_at: D(19),
+    spec_yaml: specYaml("mined_order_win_it", "data_mining", "trigger:\n  event_types: [order_win]\nfilters:\n  sectors: [IT]") },
+  { id: 41, hypothesis_id: 4, version: 1, name: "ai_block_deal_fii_drift", stage: "stage0", created_at: D(3),
+    spec_yaml: specYaml("ai_block_deal_fii_drift", "ai_proposal", "trigger:\n  event_types: [deal_buy_fii]\n  direction: bullish") },
+  { id: 51, hypothesis_id: 5, version: 1, name: "news_core", stage: "incubating", created_at: D(60),
+    spec_yaml: specYaml("news_core", "news_core", "trigger:\n  event_types: [results]") },
+];
+const lab_trials: Row[] = [
+  { id: 101, spec_id: 11, kind: "stage0", label: null, n_trades: 188, n_events: 141, expectancy_pct: 1.2, ci_lo: -2.1, ci_hi: 4.4, win_rate: 0.47, created_at: D(58) },
+  { id: 102, spec_id: 12, kind: "stage0", label: null, n_trades: 176, n_events: 133, expectancy_pct: 6.8, ci_lo: 2.4, ci_hi: 11.1, win_rate: 0.53, created_at: D(39) },
+  { id: 103, spec_id: 12, kind: "cost", label: "spread x2", n_trades: 176, n_events: 133, expectancy_pct: 2.9, ci_lo: -1.2, ci_hi: 7.0, created_at: D(39) },
+  { id: 104, spec_id: 12, kind: "plateau", label: "strike itm1", n_trades: 170, n_events: 130, expectancy_pct: 5.1, created_at: D(39) },
+  { id: 105, spec_id: 12, kind: "plateau", label: "max_hold -1", n_trades: 176, n_events: 133, expectancy_pct: 4.0, created_at: D(39) },
+  { id: 106, spec_id: 12, kind: "holdout", label: null, n_trades: 24, n_events: 19, expectancy_pct: 5.5, ci_lo: 0.4, ci_hi: 10.9, created_at: D(25) },
+  { id: 107, spec_id: 21, kind: "stage0", label: null, n_trades: 96, n_events: 96, expectancy_pct: -4.1, ci_lo: -8.0, ci_hi: -0.3, win_rate: 0.38, created_at: D(57) },
+  { id: 108, spec_id: 31, kind: "holdout_count", label: null, n_trades: 9, n_events: 7, expectancy_pct: null, created_at: D(1) },
+  { id: 109, spec_id: 12, kind: "eod", label: "eod_incubation", n_trades: 5, n_events: 5, expectancy_pct: 4.1, created_at: D(1), metrics_json: { mode: "eod_incubation", trades: eodTradesA, open: 1 } },
+  { id: 110, spec_id: 51, kind: "eod", label: "eod_incubation", n_trades: 3, n_events: 3, expectancy_pct: 1.8, created_at: D(1), metrics_json: { mode: "eod_incubation", trades: eodTradesCore, open: 0 } },
+];
+const lab_verdicts: Row[] = [
+  { id: 201, spec_id: 12, stage: "stage0", passed: true, summary: "Stage 0: passed every check", created_at: D(39),
+    checks_json: { checks: {
+      min_trades: { passed: true, value: 176, need: 60 }, min_events: { passed: true, value: 133, need: 40 },
+      ci_excludes_zero: { passed: true, value: 2.4 }, deflated_sharpe: { passed: true, value: 0.97, trials: 214, need: 0.95 },
+      plateau: { passed: true, share: 0.83 }, placebo: { passed: true, real: 6.8, placebo_p: 2.2, runs: 100 },
+      concentration: { passed: true, stock: 0.14, month: 0.19 }, cost_stress: { passed: true, expectancy_pct: 2.9, spread_mult: 2 },
+      regime: { passed: true, share_positive: 0.67 } },
+      writeup: "Calls the morning after a clear results beat (puts after a miss) earned +6.8% of premium per trade over 176 trades, with every luck test passed. It holds at double spreads (+2.9%) and does not depend on one stock or month. Next: let the holdout confirm it." } },
+  { id: 202, spec_id: 12, stage: "holdout", passed: true, summary: "Stage 1 holdout: passed every check", created_at: D(25),
+    checks_json: { checks: { expectancy: { passed: true, value: 5.5 }, cost_stress: { passed: true, expectancy_pct: 1.6 } } } },
+  { id: 203, spec_id: 21, stage: "stage0", passed: false, summary: "Stage 0: failed ci_excludes_zero, placebo, cost_stress", created_at: D(57),
+    checks_json: { checks: { ci_excludes_zero: { passed: false, value: -8.0 }, placebo: { passed: false, real: -4.1, placebo_p: 1.1, runs: 100 },
+      cost_stress: { passed: false, expectancy_pct: -9.2 } } } },
+];
+const lab_books: Row[] = [
+  { id: 1, spec_id: 12, book: "lab:12", status: "incubating", alerts_enabled: false, started_at: D(41),
+    stats_json: { eod_incubation: { n: 5, events: 5, expectancy_pct: 4.1, win_rate: 0.8 } } },
+  { id: 2, spec_id: 51, book: "news_core", status: "incubating", alerts_enabled: false, started_at: D(41),
+    stats_json: { eod_incubation: { n: 3, events: 3, expectancy_pct: 1.8, win_rate: 0.67 },
+      portfolio: { mode: "eod_incubation", trades: 7, pnl_inr: 5050, blocked: [{ book: "lab:12", symbol: "SUNPHARMA", day: dateOnly(-25), reason: "opposite of open bearish trade (news_core)" }],
+        equity: Array.from({ length: 30 }, (_, i) => [dateOnly(-40 + i), 1_000_000 + Math.round(170 * i + 600 * Math.sin(i / 3))]),
+        attribution: { "lab:12": { trades: 6, pnl_inr: 4750 }, news_core: { trades: 3, pnl_inr: 1600 } },
+        correlation: { "lab:12": { "lab:12": 1, news_core: 0.41 }, news_core: { "lab:12": 0.41, news_core: 1 } } } } },
+];
+
 export const TABLES: Record<string, Row[]> = {
   instruments,
   signals,
@@ -1862,6 +1949,11 @@ export const TABLES: Record<string, Row[]> = {
   research_tool_calls,
   research_files,
   research_lessons,
+  lab_hypotheses,
+  lab_specs,
+  lab_trials,
+  lab_verdicts,
+  lab_books,
 };
 
 export { premiumPath };
@@ -1917,6 +2009,15 @@ export class FixtureDb implements Db {
       new_value: "deleted",
       changed_by: "owner@example.com",
     });
+  }
+
+  async setLabAlerts(bookId: number, enabled: boolean): Promise<void> {
+    const row = lab_books.find((r) => r.id === bookId);
+    if (!row) return;
+    const old = row.alerts_enabled;
+    row.alerts_enabled = enabled;
+    config_audit.push({ id: config_audit.length + 1, ts: new Date().toISOString(), key: `lab.alerts.${row.book}`,
+      old_value: old, new_value: enabled, changed_by: "owner@example.com" });
   }
 
   async userEmail(): Promise<string | null> {
