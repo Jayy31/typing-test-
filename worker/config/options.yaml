@@ -27,6 +27,7 @@ candidates:                   # strikes/expiries the simulator evaluates
   expiries: 2                 # current + next monthly
 
 simulator:
+  risk_neutral_drift: true      # paths drift at the risk-free rate, like the option prices
   horizon_cap_days: 20        # max simulated holding (also capped by expiry - time stop)
   scenario_sd_fraction: 0.5   # spread of each scenario's move around its mean (x |move|)
   min_scenario_sd_pct: 1.0    # floor for that spread, in stock %
@@ -52,6 +53,10 @@ selection:
   min_ev_pct: 0                 # EV must be above this ...
   min_ev_pct_of_premium: 10     # ... and at least this % of the premium
   min_p_t1_before_sl: 0.55
+
+# Events whose passing drops implied volatility (IV crush in the simulator, "event in window"
+# entry rule, and the "event falls after the current expiry" expiry rule). Future dates only.
+iv_event_types: [results]
 
 # Kotak Neo market data (app/market/kotak.py). Read-only: login only learns the data base URL.
 kotak:

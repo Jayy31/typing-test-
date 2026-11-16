@@ -20,6 +20,7 @@ from app.pricing.bs import greeks, price
 from app.sim.exits_vec import run_paths
 from app.trading.exits import ExitRules, PositionState
 from app.trading.targets import targets_for
+from app.config import get_settings
 from app.yaml_config import load_yaml
 
 F = NDArray[np.float64]
@@ -93,6 +94,10 @@ def simulate_stock(
     if cfg["use_iv_noise"] and daily_vol > 0:
         noise = np.cumsum(rng.standard_normal((paths, days)) * daily_vol, axis=1)
         noise -= 0.5 * (daily_vol**2) * t  # keep the noise mean-neutral
+    if cfg.get("risk_neutral_drift", True):
+        # options are priced with the risk-free rate, so the paths carry the same forward
+        # drift; without it calls look worse and puts better than the market prices them
+        noise = noise + float(get_settings().risk_free_rate) * t / 252
     spot = spot0 * (1 + drift) * np.exp(noise)
     return StockPaths(spot, spot0, days)
 
