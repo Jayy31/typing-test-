@@ -11,7 +11,7 @@ EOD incubation only (documented gap).
 """
 
 import logging
-from datetime import datetime, time, timedelta
+from datetime import datetime, time
 from typing import Any
 
 from sqlalchemy import func, select
@@ -21,6 +21,7 @@ from app.db.models import Instrument, LabBook, LabSpec, NewsTag, PaperTrade, Sig
 from app.lab.backtest import matches
 from app.lab.spec import StrategySpec, parse
 from app.market.options import OptionChain, OptionDataSource, OptionQuoteRow
+from app.signals.deferred import next_open
 from app.signals.expiry import trading_days_between
 from app.signals.filters import load_holidays
 from app.trading import core_rules, watchlist
@@ -191,8 +192,10 @@ def make_signals(s: Session, source: OptionDataSource, now: datetime) -> int:
                 continue
             enter_after = None
             if spec.entry.timing == "next_open":
-                enter_after = datetime.combine(
-                    now.date() + timedelta(days=1), time(9, 15), now.tzinfo
+                # next TRADING session (a plain +1 day lands on weekends / holidays and the
+                # entry TTL then cancels the signal before Monday's open)
+                enter_after = next_open(
+                    datetime.combine(now.date(), time(23, 59), now.tzinfo), holidays
                 )
             sig = Signal(
                 symbol=inst.symbol,

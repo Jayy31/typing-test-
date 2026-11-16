@@ -104,6 +104,48 @@ def _same(row: OptionQuoteRow) -> OptionQuoteRow:
     return row
 
 
+def _quote_moved(row: OptionQuoteRow, opt: dict[str, Any], entry_cfg: dict[str, Any]) -> bool:
+    """Entry re-check: the quote must still look like the one the signal was priced on."""
+    c = entry_cfg.get("recheck") or {}
+    if not c.get("enabled", True):
+        return False
+    max_spread = float(load_yaml("options.yaml")["liquidity"]["max_spread_pct"])
+    if (row.spread_pct or 999) > max_spread:
+        return True
+    priced = ((opt.get("best") or {}).get("ask")) if opt else None
+    drift = float(c.get("max_premium_drift_pct", 15))
+    return bool(priced and row.ask and row.ask > float(priced) * (1 + drift / 100))
+
+
+SpotFn = Callable[[str], float | None]
+
+
+def _no_spot(symbol: str) -> float | None:
+    return None
+
+
+def _settlement(tr: PaperTrade, spot: float, now: datetime) -> tuple[OptionChain, OptionQuoteRow]:
+    """Expired contract: one row priced at intrinsic value against the latest spot."""
+    assert tr.expiry and tr.strike and tr.option_type
+    k = float(tr.strike)
+    value = max(spot - k, 0.0) if tr.option_type == "CE" else max(k - spot, 0.0)
+    row = OptionQuoteRow(
+        str(tr.symbol),
+        tr.expiry,
+        k,
+        tr.option_type,
+        value,
+        value,
+        value,
+        None,
+        None,
+        None,
+        spot,
+        now,
+    )
+    return OptionChain(str(tr.symbol), tr.expiry, spot, now, (row,)), row
+
+
 def enter_signals(
     s: Session,
     chains: dict[tuple[str, date], OptionChain],
@@ -131,6 +173,8 @@ def enter_signals(
             continue
         chain = chains.get((sig.symbol, sig.expiry))
         row = chain.get(sig.strike, sig.option_type) if chain else None
+        if row is not None and (not row.ask or not row.bid):
+            row = depth(row)  # strike outside the chain's depth window: its own quote
         if chain is None or row is None or not row.ask or not row.bid:
             continue
         if entry_cfg.get("one_trade_per_stock", True) and s.scalar(
@@ -152,6 +196,8 @@ def enter_signals(
             )
             continue
         opt = _options_json(s, sig)
+        if _quote_moved(row, opt, entry_cfg):
+            continue  # wide spread or premium ran away since pricing: wait (the TTL still applies)
         pre_news = opt.get("pre_news_spot")
         sign = _side(sig.option_type)
         pred = sig.predicted_move_pct or 0.0
@@ -371,8 +417,11 @@ def monitor_trades(
     chains: dict[tuple[str, date], OptionChain],
     now: datetime,
     depth: DepthFn = _same,
+    spot_of: SpotFn = _no_spot,
 ) -> int:
-    """Step every open trade with the latest bid/spot. Returns number of trades that changed."""
+    """Step every open trade with the latest bid/spot. Returns number of trades that changed.
+    A trade whose expiry has passed is settled at intrinsic value (backstop: the time stop
+    normally exits days earlier)."""
     holidays = load_holidays(s)
     action = str(load_yaml("portfolio.yaml")["opposite_signal_action"])
     changed = 0
@@ -380,26 +429,41 @@ def monitor_trades(
         assert tr.expiry and tr.strike and tr.option_type and tr.state_json is not None
         chain = chains.get((str(tr.symbol), tr.expiry))
         row = chain.get(tr.strike, tr.option_type) if chain else None
-        if chain is None or row is None or not row.bid:
+        expired = now.date() > tr.expiry or (
+            now.date() == tr.expiry and now.strftime("%H:%M") >= "15:30"
+        )
+        if expired:
+            spot = chain.spot if chain else spot_of(str(tr.symbol))
+            if not spot:
+                continue
+            chain, row = _settlement(tr, spot, now)
+        elif row is not None and not row.bid:
+            row = depth(row)  # strike outside the chain's depth window: its own quote
+        if chain is None or row is None or row.bid is None or (not row.bid and not expired):
             continue
         thesis_broken = _opposite_signal(s, tr, now, action)
         rules = rules_from_json(tr.rules_json) if tr.rules_json else ExitRules.from_config()
         state = state_from_json(tr.state_json)
+        # Day-count rules (time stop, window stop, no-move) count COMPLETED sessions, as the
+        # simulator and backtester do: today counts only from the late-session cutoff.
+        late = now.strftime("%H:%M") >= str(load_yaml("exits.yaml")["day_rules_after"])
+        adj = 0 if late or expired else 1
+        since_event = _sessions_since_event(s, tr, now.date(), holidays)
         bar = Bar(
             row.bid,
             row.bid,
             row.bid,
             row.bid,
-            trading_days_to_expiry=trading_days_between(now.date(), tr.expiry, holidays),
-            sessions_since_event=_sessions_since_event(s, tr, now.date(), holidays),
+            trading_days_to_expiry=trading_days_between(now.date(), tr.expiry, holidays) + adj,
+            sessions_since_event=None if since_event is None else max(since_event - adj, 0),
             thesis_broken=thesis_broken,
             spot=chain.spot,
-            sessions_since_entry=trading_days_between(
-                as_ist(tr.entry_ts).date(), now.date(), holidays
+            sessions_since_entry=max(
+                trading_days_between(as_ist(tr.entry_ts).date(), now.date(), holidays) - adj, 0
             ),
         )
-        forced = _lab_exit(s, tr, row, now, holidays)
-        if forced:  # Phase 14 strategy exits (max hold, IV spike) at the current bid
+        forced = "EXPIRY" if expired else _lab_exit(s, tr, row, now, holidays)
+        if forced:  # expiry settlement, or Phase 14 strategy exits (max hold, IV spike)
             new = replace(
                 state,
                 remaining=0.0,
@@ -557,7 +621,8 @@ def close_trade(
     tr.exit_premium = round(sum(f.price * f.fraction for f in state.fills) / weights, 2)
     tr.exit_ts, tr.exit_reason, tr.status = now, state.fills[-1].event, "CLOSED"
     tr.exit_bid_qty = row.bid_qty
-    tr.exit_fill = fills.classify(row.bid_qty, lot * lots)
+    final_lots = lots_of(state.fills[-1], lots) if state.fills else lots
+    tr.exit_fill = fills.classify(row.bid_qty, lot * final_lots)  # lots of the final exit only
     tr.fillability = fills.worse(tr.entry_fill, tr.exit_fill)
     tr.spot_exit = chain.spot
     if tr.spot_entry and tr.option_type:
@@ -613,8 +678,19 @@ def trading_cycle(
     with session_scope(engine) as s:
         depth: DepthFn = getattr(source, "with_depth", _same)
         opened = enter_signals(s, chains, now, depth)
-        changed = monitor_trades(s, chains, now, depth)
+        changed = monitor_trades(s, chains, now, depth, _spot_fn(source))
     return len(opened) + changed
+
+
+def _spot_fn(source: LiveOptionData) -> SpotFn:
+    def spot(symbol: str) -> float | None:
+        try:
+            return source.spot(symbol)
+        except Exception as exc:  # noqa: BLE001 - settlement retries next cycle
+            log.warning("spot %s failed: %s", symbol, exc)
+            return None
+
+    return spot
 
 
 __all__ = ["replace", "trading_cycle"]

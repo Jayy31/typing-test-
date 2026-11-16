@@ -158,6 +158,14 @@ def pre_news_reference(
     return prev_close
 
 
+def prediction_horizon(scenarios: list[Scenario], window_days: int) -> float:
+    """Probability-weighted timing (trading days) of the scenarios behind the predicted move."""
+    total = sum(s.probability for s in scenarios)
+    if total <= 0:
+        return float(max(window_days, 1))
+    return max(1.0, sum(s.probability * max(s.timing_days, 1) for s in scenarios) / total)
+
+
 def plan_options(
     source: LiveOptionData,
     symbol: str,
@@ -235,21 +243,32 @@ def plan_options(
         holidays = load_holidays(s)
         if plan.atm_iv_pct:
             plan.iv_percentile = iv_percentile(s, symbol, plan.atm_iv_pct, now)
+        # only events still ahead whose passing drops IV (results); an event dated today is
+        # normally the news itself and its IV drop is already in the quotes
         events = list(
             s.scalars(
                 select(EventCalendar.event_date).where(
                     EventCalendar.symbol == symbol,
-                    EventCalendar.event_date >= today,
+                    EventCalendar.event_type.in_(load_yaml("options.yaml")["iv_event_types"]),
+                    EventCalendar.event_date > today,
                     EventCalendar.event_date <= chains[-1].expiry,
                 )
             )
         )
+    # Core rule: trade the current month; next month ONLY when the current one was too close
+    # (already filtered above) or the event falls after the current expiry. Never on EV alone.
+    trade_chain = chains[0]
+    if len(chains) > 1 and events and min(events) > chains[0].expiry:
+        trade_chain = chains[1]
     if len(chains) > 1 and events and min(events) <= chains[0].expiry:
         plan.event_iv_premium = event_iv_premium(plan.atm_iv_pct, atm_iv(chains[1]))
 
-    # implied move over the predicted window and the edge ratio (DESIGN_V2 section 2)
+    # implied move and the edge ratio (DESIGN_V2 section 2). Both sides use ONE horizon: the
+    # probability-weighted timing of the scenarios the predicted move was computed from (the AI
+    # tree plus analogue / positioning pseudo-scenarios), not a separate free-form window.
+    edge_days = prediction_horizon(scenarios, window_days)
     if plan.atm_iv_pct:
-        plan.implied_move_pct = round(n_day_move_pct(plan.atm_iv_pct, window_days * 7 / 5), 3)
+        plan.implied_move_pct = round(n_day_move_pct(plan.atm_iv_pct, edge_days * 7 / 5), 3)
         er = edge_ratio(predicted_move_pct, plan.implied_move_pct)
         er_raw = edge_ratio(predicted_raw, plan.implied_move_pct)
         plan.edge_ratio_raw = round(er_raw, 3) if er_raw is not None else None
@@ -263,14 +282,14 @@ def plan_options(
                     "edge",
                     f"edge ratio {plan.edge_ratio} below {gates['edge_ratio_min']:g}: predicted "
                     f"{predicted_move_pct:.2f}% vs implied {plan.implied_move_pct:.2f}% "
-                    f"over {window_days}d",
+                    f"over {edge_days:.1f}d",
                 ),
             )
 
     # candidates and simulation
     rules = ExitRules.from_config()
     sim_cfg = load_yaml("options.yaml")["simulator"]
-    max_td = max(trading_days_between(today, c.expiry, holidays) for c in chains)
+    max_td = trading_days_between(today, trade_chain.expiry, holidays)
     horizon = max(1, min(int(sim_cfg["horizon_cap_days"]), max_td - rules.time_stop_trading_days))
     daily_vol = (plan.atm_iv_pct or 30.0) / 100 / (252**0.5)
     seed = seed_for(f"{symbol}:{now:%Y%m%d}")
@@ -285,22 +304,26 @@ def plan_options(
     if events:
         event_day = max(trading_days_between(today, min(events), holidays) - 1, 0)
         plan.event_in_window = event_day < horizon
-    for chain in chains:
+    for chain in (trade_chain,):
         td = trading_days_between(today, chain.expiry, holidays)
         for row in candidate_rows(chain, opt_type):
             reason = liquidity_check(row, now)
+            if reason is None and not row.iv:
+                # no IV solves for this quote (price outside the model's bounds): simulating it
+                # with a borrowed IV would misprice it from day 1 and inflate its EV
+                reason = "no implied volatility for this quote"
             if reason is None and td <= rules.time_stop_trading_days:
                 reason = "too close to expiry for the time stop"
             inp = res = r_ai = r_mkt = None
             w_c = p_cal = None
-            if reason is None and row.bid and row.ask:
+            if reason is None and row.bid and row.ask and row.iv:
                 inp = CandidateInput(
                     chain.expiry,
                     row.strike,
                     opt_type,
                     row.bid,
                     row.ask,
-                    row.iv or plan.atm_iv_pct or 30.0,
+                    row.iv,
                     (chain.expiry - today).days,
                     td,
                     lot_size,

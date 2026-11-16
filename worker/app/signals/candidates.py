@@ -30,6 +30,10 @@ class EvidenceItem:
     cluster_id: int | None = None
 
 
+def is_graph_support(source: str) -> bool:
+    return source.startswith("kg:") and source.endswith(":support")
+
+
 @dataclass
 class Candidate:
     symbol: str
@@ -43,7 +47,21 @@ class Candidate:
 
     @property
     def sources(self) -> set[str]:
-        return {i.source for i in self.items}
+        """Independent sources. Graph SUPPORT rows restate a news item already counted on the
+        linked stock, so they never add a source."""
+        return {i.source for i in self.items if not is_graph_support(i.source)}
+
+    def ranked_event_types(self) -> list[str]:
+        """Event types by evidence weight, direct evidence before graph ('kg:') keys, for the
+        analogue lookup (the strongest direct event's history is tried first)."""
+        score: dict[str, float] = {}
+        for i in self.items:
+            if not i.event_type:
+                continue
+            w = abs(i.sentiment) * i.weight
+            for t in {i.event_type, taxonomy.parent(i.event_type) or i.event_type}:
+                score[t] = score.get(t, 0.0) + w
+        return sorted(score, key=lambda t: (t.startswith("kg:"), -score[t], t))
 
     @property
     def has_official(self) -> bool:

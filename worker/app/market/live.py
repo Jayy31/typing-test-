@@ -141,7 +141,12 @@ def years_to(expiry: date, now: datetime) -> float:
 
 def with_iv(row: OptionQuoteRow, spot: float, now: datetime) -> OptionQuoteRow:
     """Kotak sends no IV: solve it (in %) from the mid, else the last price."""
-    px = (row.bid + row.ask) / 2 if row.bid and row.ask else row.ltp
+    if row.bid and row.ask:
+        px: float | None = (row.bid + row.ask) / 2
+    elif row.volume:
+        px = row.ltp
+    else:
+        return row  # last price of a contract not traded today is stale: no IV from it
     t = years_to(row.expiry, now)
     if not px or not spot or t <= 0:
         return row

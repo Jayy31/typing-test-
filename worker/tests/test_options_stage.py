@@ -115,7 +115,8 @@ def test_priced_signal_with_strike_ev_and_candidates(engine: Engine) -> None:
             and sig.expected_value_inr is not None
         )
         assert 0 <= (sig.p_t1_before_sl or -1) <= 1 and sig.p_t3 is not None
-        assert sig.implied_move_pct == pytest.approx(8 * (4.2 / 365) ** 0.5, abs=0.01)
+        # implied move over the scenarios' probability-weighted timing (about 2.9 days)
+        assert sig.implied_move_pct == pytest.approx(8 * (2.9 * 1.4 / 365) ** 0.5, abs=0.01)
         assert sig.edge_ratio == pytest.approx(1.425 / sig.implied_move_pct, abs=0.01)  # shrunk
         assert sig.edge_ratio_raw == pytest.approx(2.85 / sig.implied_move_pct, abs=0.01)
         assert sig.predicted_move_pct == pytest.approx(

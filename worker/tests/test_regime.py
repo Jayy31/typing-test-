@@ -92,8 +92,8 @@ def test_backfill_and_live_day_with_all_three_inputs(engine: Engine) -> None:
     today = max(nifty) + timedelta(days=1)
     now = datetime.combine(today, datetime.min.time(), IST).replace(hour=8, minute=35)
     with session_scope(engine) as s:
-        for i in range(10):
-            ts = now - timedelta(days=10 - i)
+        for i in range(16):  # every calendar day: weekend rows repeat Friday and must not count
+            ts = now - timedelta(days=16 - i)
             s.add(MacroSnapshot(ts=ts, india_vix=14.0, fii_net=-900.0))
     r = compute_today(engine, now)
     assert r.inputs == ("VIX", "Nifty", "FII") and r.fii_net_cr == -9000.0

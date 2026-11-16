@@ -6,7 +6,7 @@ market regime (then all regimes). Statistics are direction-adjusted abnormal ret
 """
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any
 
@@ -33,6 +33,18 @@ class AnalogueResult:
     p25: float
     p75: float
     examples: list[dict[str, Any]] = field(default_factory=list)
+    event_type: str = ""  # the event-study key these stats came from
+
+    def flipped(self) -> "AnalogueResult":
+        """The same stats measured in the opposite direction."""
+        return replace(
+            self,
+            mean=-self.mean,
+            median=-self.median,
+            hit_rate=1 - self.hit_rate,
+            p25=-self.p75,
+            p75=-self.p25,
+        )
 
     @property
     def usable(self) -> bool:
@@ -192,4 +204,5 @@ def _with_examples(
         res.p25,
         res.p75,
         examples,
+        etype,
     )

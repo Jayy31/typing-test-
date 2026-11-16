@@ -81,4 +81,8 @@ def combine(
     mixed += analogue_scenarios(analogue, direction, agree, w, window)
     blended = from_scenarios(mixed, direction)
     assert blended is not None
-    return Prediction(blended.move_pct, "blended", blended.p_move), mixed
+    # direction probability: the analogue share uses its MEASURED hit rate (the share of past
+    # events that moved the news' way), not the sign of three quantile points
+    hit = analogue.hit_rate if agree else 1 - analogue.hit_rate
+    p_move = None if base.p_move is None else round((1 - w) * base.p_move + w * hit, 4)
+    return Prediction(blended.move_pct, "blended", p_move), mixed

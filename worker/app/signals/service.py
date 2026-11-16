@@ -89,7 +89,15 @@ def predict(item: WorkItem, out: AnalystOutput) -> tuple[Prediction | None, list
     mixed = positioning_tilt(dist, ev, window)  # learned base rates only; support-only states never
     tilted = from_scenarios(mixed, out.direction)
     assert tilted is not None
-    return Prediction(tilted.move_pct, f"{pred.source}+positioning", tilted.p_move), mixed
+    # direction probability from each state's measured share of up-moves, not the sign of its mean
+    used = [e for e in ev if e.basis == "base_rate" and e.weight > 0 and e.hit_up is not None]
+    w = sum(e.weight for e in used)
+    p_move = tilted.p_move
+    if pred.p_move is not None and used:
+        up = out.direction == "bullish"
+        hits = sum(e.weight * ((e.hit_up or 0.0) if up else 1 - (e.hit_up or 0.0)) for e in used)
+        p_move = round((1 - w) * pred.p_move + hits, 4)
+    return Prediction(tilted.move_pct, f"{pred.source}+positioning", p_move), mixed
 
 
 def _last_analysis(s: Session, symbol: str) -> Analysis | None:
@@ -151,7 +159,7 @@ def plan_work(
         analogue = None
         reg = regime_now if flags.active(s, "feat.regime") else None
         if flags.active(s, "feat.event_study"):
-            etypes = sorted(cand.event_types) or ["other"]
+            etypes = cand.ranked_event_types() or ["other"]
             analogue = lookup(
                 etypes,
                 inst.sector,
@@ -160,6 +168,10 @@ def plan_work(
                 now.date(),
                 regime_label=reg.label if reg else None,
             )
+            # graph ('kg:') stats are measured in the default-sign direction; a negative mean is
+            # what flipped this candidate's direction, so read them in the candidate's direction
+            if analogue is not None and analogue.event_type.startswith("kg:") and analogue.mean < 0:
+                analogue = analogue.flipped()
         message, ids = analyst.build_user_message(s, cand, hits, changes, now, analogue, reg)
         pos = None
         if flags.active(s, "feat.positioning"):

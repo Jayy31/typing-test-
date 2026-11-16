@@ -12,3 +12,10 @@ priced_in:
 # open trade is cancelled and recorded as rejected ("open trade on same stock"), so the
 # counterfactual tracker follows what it would have done.
 one_trade_per_stock: true
+
+# Entry re-check (a signal can enter up to signal_entry_ttl_minutes after it was priced): skip
+# this cycle if the spread is above the liquidity limit or the ask ran up more than this vs the
+# priced ask. The signal keeps waiting until the TTL.
+recheck:
+  enabled: true
+  max_premium_drift_pct: 15
