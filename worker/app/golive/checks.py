@@ -1,7 +1,7 @@
 """Go-live checks. Quick (2 h after the first start, run it on a trading-day morning before 09:00
-so market-hours jobs fall in the window): NSE endpoints FIRST, then database, Telegram, Upstox,
+so market-hours jobs fall in the window): NSE endpoints FIRST, then database, Telegram, Kotak,
 AI smoke test, market-hours jobs, source health, job errors, rows collected. Full (24 h): all of
-that plus row counts per table, history backfill progress, Upstox field names, XBRL share, DB size
+that plus row counts per table, history backfill progress, Kotak field names, XBRL share, DB size
 and the status of every docs/UNVERIFIED.md item. Telegram report + golive_checks row + the
 dashboard's "needs review" items."""
 
@@ -9,7 +9,7 @@ import json
 import logging
 from collections import Counter
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -117,31 +117,39 @@ def telegram_check(engine: Engine | None, since: datetime) -> Check:
     return Check("telegram", "ok", f"{sent} alert(s) delivered since start")
 
 
-def upstox_check(engine: Engine | None, now: datetime, since: datetime) -> Check:
+def kotak_check(engine: Engine | None, now: datetime, since: datetime) -> Check:
+    from app.market.live import SESSION_KEY
+
     st = get_settings()
-    if not st.broker_access_token:
-        return Check("upstox", "fail", "BROKER_ACCESS_TOKEN (Upstox analytics token) not set")
-    details = []
-    status = "ok"
-    if st.broker_token_issued_on:
-        left = (
-            date.fromisoformat(st.broker_token_issued_on) + timedelta(days=365) - now.date()
-        ).days
-        details.append(f"token expires in {left} days")
-        if left < 14:
-            status = "warn"
-    else:
-        details.append("BROKER_TOKEN_ISSUED_ON not set: no expiry reminder")
-        status = "warn"
+    missing = [
+        k.upper()
+        for k in (
+            "kotak_access_token",
+            "kotak_mobile",
+            "kotak_ucc",
+            "kotak_mpin",
+            "kotak_totp_secret",
+        )
+        if not getattr(st, k)
+    ]
+    if missing:
+        return Check("kotak", "fail", "Kotak keys not set: " + ", ".join(missing))
     with session_scope(engine) as s:
+        sess = get_config(s, SESSION_KEY, {}) or {}
         n = s.scalar(select(func.count(OptionQuote.id)).where(OptionQuote.ts >= since)) or 0
-        health = (get_config(s, "source_health", {}) or {}).get("upstox_instruments", {})
-    details.append(f"{n} option quotes stored since start")
+        health = (get_config(s, "source_health", {}) or {}).get("kotak_instruments", {})
+    login = "ok" if sess.get("ok") else f"FAILED {sess.get('error') or 'not run yet'}"
+    details = [
+        f"daily login: {login} (base URL {'known' if sess.get('base_url') else 'unknown'})",
+        f"{n} option quotes stored since start",
+    ]
+    if not sess.get("base_url"):
+        return Check("kotak", "fail", "Kotak login has not produced a base URL", details)
     if health.get("consecutive_failures", 0) >= 3:
         return Check(
-            "upstox", "fail", "instrument master keeps failing", [health.get("last_error", "")]
+            "kotak", "fail", "scrip master keeps failing", [health.get("last_error", "")] + details
         )
-    return Check("upstox", status, details[0] if details else "configured", details)
+    return Check("kotak", "ok" if sess.get("ok") else "warn", details[0], details)
 
 
 def smoke_check(engine: Engine | None) -> Check:
@@ -298,9 +306,9 @@ def history_check() -> Check:
     )
 
 
-def upstox_fields_check() -> Check:
-    folder = Path(get_settings().history_data_dir) / "raw_samples" / "upstox"
-    want = load_yaml("golive.yaml")["upstox_fields"]
+def kotak_fields_check() -> Check:
+    folder = Path(get_settings().history_data_dir) / "raw_samples" / "kotak"
+    want = load_yaml("golive.yaml")["kotak_fields"]
     lines, bad = [], 0
     for key, fields in want.items():
         files = sorted(folder.glob(f"*_{key}.json")) if folder.exists() else []
@@ -308,16 +316,32 @@ def upstox_fields_check() -> Check:
             lines.append(f"{key}: no sample yet")
             continue
         body = json.loads(files[-1].read_text())
-        missing = [f for f in fields if f not in body]
+        sample = body[0] if isinstance(body, list) and body else body
+        missing = [f for f in fields if not _has(sample, f)]
         bad += bool(missing)
         lines.append(f"{key}: {'missing ' + str(missing) if missing else 'ok'} ({files[-1].name})")
     status = "fail" if bad else "warn" if any("no sample" in x for x in lines) else "ok"
     return Check(
-        "upstox_fields",
+        "kotak_fields",
         status,
-        f"{len(want) - bad} of {len(want)} Upstox responses have the expected fields",
+        f"{len(want) - bad} of {len(want)} Kotak responses have the expected fields",
         lines,
     )
+
+
+def _has(body: Any, dotted: str) -> bool:
+    """'data.call.0.instrument.strikePrice' style path into a saved sample."""
+    cur = body
+    for part in dotted.split("."):
+        if isinstance(cur, list):
+            if not cur or not part.isdigit() or int(part) >= len(cur):
+                return False
+            cur = cur[int(part)]
+        elif isinstance(cur, dict) and part in cur:
+            cur = cur[part]
+        else:
+            return False
+    return True
 
 
 def xbrl_check(engine: Engine | None) -> Check:
@@ -359,7 +383,7 @@ def run(
     checks += [
         db_check(engine),
         telegram_check(engine, since),
-        upstox_check(engine, now, since),
+        kotak_check(engine, now, since),
         smoke_check(engine),
         market_jobs_check(engine, since, now),
         sources_check(engine),
@@ -370,7 +394,7 @@ def run(
         checks += [
             table_counts(engine),
             history_check(),
-            upstox_fields_check(),
+            kotak_fields_check(),
             xbrl_check(engine),
             db_size_check(engine),
             _index_events_check(),

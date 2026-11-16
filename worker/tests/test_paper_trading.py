@@ -230,7 +230,10 @@ def test_counterfactual_tracks_rejected_option(engine: Engine) -> None:
         assert rej.stock_return_pct and rej.stock_return_pct > 0
         assert rej.option_return_pct is not None and rej.option_return_pct > 0
         assert rej.details_json and "state" in rej.details_json["cf"]
-    track_rejections(engine, src, now + timedelta(days=20))  # past max_days -> resolved
+    later = now + timedelta(days=20)
+    while later.weekday() >= 5:  # tracking runs in market hours only
+        later += timedelta(days=1)
+    track_rejections(engine, src, later)  # past max_days -> resolved
     with session_scope(engine) as s:
         rej = s.scalars(select(RejectedCandidate).where(RejectedCandidate.stage == "edge")).one()
         assert rej.outcome_status == "resolved" and rej.exit_reason
@@ -352,32 +355,31 @@ def test_shrink_toward_market() -> None:
 
 
 def test_depth_fallback_fills_missing_quantities() -> None:
-    from app.market.live import UpstoxOptionData
+    from app.market.live import LiveOptionData
     from app.market.options import OptionQuoteRow
 
     class Client:
         configured = True
 
-        def quotes(self, keys: list[str]) -> dict[str, Any]:
-            return {
-                "status": "success",
-                "data": {
-                    "NSE_FO:X": {
-                        "instrument_token": keys[0],
-                        "last_price": 10.0,
-                        "net_change": 0.0,
-                        "depth": {
-                            "buy": [
-                                {"quantity": 350, "price": 9.9},
-                                {"quantity": 700, "price": 9.8},
-                            ],
-                            "sell": [{"quantity": 1050, "price": 10.1}],
-                        },
-                    }
-                },
-            }
+        def quotes(self, keys: list[str]) -> list[Any]:
+            seg, tok = keys[0].split("|")
+            return [
+                {
+                    "exchange": seg,
+                    "exchange_token": tok,
+                    "ltp": "10.0",
+                    "ohlc": {"close": "10.0"},
+                    "depth": {
+                        "buy": [
+                            {"quantity": "350", "price": "9.9"},
+                            {"quantity": "700", "price": "9.8"},
+                        ],
+                        "sell": [{"quantity": "1050", "price": "10.1"}],
+                    },
+                }
+            ]
 
-    src = UpstoxOptionData(None, Client())  # type: ignore[arg-type]
+    src = LiveOptionData(None, Client())  # type: ignore[arg-type]
     row = OptionQuoteRow(
         "TCS",
         date(2026, 10, 27),
@@ -393,7 +395,7 @@ def test_depth_fallback_fills_missing_quantities() -> None:
         datetime.now(IST),
         None,
         None,
-        "NSE_FO|123",
+        "nse_fo|123",
     )
     out = src.with_depth(row)
     assert (out.bid_qty, out.ask_qty) == (350, 1050)

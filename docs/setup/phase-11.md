@@ -3,7 +3,7 @@
 Full guide: `docs/setup/deploy.md`. Do these steps in order.
 
 1. **Accounts.** Create the GitHub GHCR package (make it public or have a `read:packages` token
-   ready), then Supabase (Mumbai), Anthropic, the Upstox Analytics Token, the Telegram bot,
+   ready), then Supabase (Mumbai), Anthropic, Kotak Neo Trade API (see deploy.md), the Telegram bot,
    healthchecks.io and Vercel. Optional: Cloudflare R2 and the GitHub fine-grained token.
 2. **Oracle VM.**
    - A1 Flex ARM, 2 OCPU / 12 GB, Mumbai or Hyderabad, Ubuntu 24.04, plus a 100 GB block volume.
@@ -22,7 +22,7 @@ Full guide: `docs/setup/deploy.md`. Do these steps in order.
 6. **Preflight.** Bootstrap runs it; it must print `preflight OK`.
 7. **+2 h: quick check on Telegram.**
    - If any NSE endpoint is BLOCKED or THROTTLED, set `NSE_HTTP_PROXY` and restart. Otherwise, tell
-     Claude which alternatives (BSE/Upstox) to build.
+     Claude which alternatives (BSE/Kotak) to build.
    - Once NSE is reachable, start the history backfill (`docs/setup/phase-4.md`).
 8. **+24 h: first-run report.**
    - Fix every FAIL.

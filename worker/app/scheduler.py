@@ -1,7 +1,7 @@
 """All job schedules live here. One worker process, APScheduler inside."""
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.base import BaseTrigger
@@ -34,6 +34,9 @@ from app.market.live import (
     configured_poll_minutes,
     poll_universe_options,
     sync_instruments_job,
+)
+from app.market.live import (
+    login_job as kotak_login_job,
 )
 from app.notify import templates
 from app.notify.digest import weekly_digest
@@ -74,27 +77,8 @@ def heartbeat(engine: Engine | None = None) -> int:
                 "STUCK JOBS\n" + "\n".join(f"- {x}" for x in stuck),
                 f"stuck:{now:%Y-%m-%d %H}",
             )
-        warning = token_expiry_warning(now)
-        if warning:
-            enqueue_alert(s, "health", warning, f"broker_token:{now.date()}")
     watchdog.ping()  # external heartbeat (healthchecks.io): alerts if the VM itself stops
     return len(bad)
-
-
-def token_expiry_warning(now: datetime, warn_days: int = 14) -> str | None:
-    """Upstox analytics tokens last one year: warn daily during the last two weeks."""
-    issued = get_settings().broker_token_issued_on
-    if not issued:
-        return None
-    expires = date.fromisoformat(issued) + timedelta(days=365)
-    left = (expires - now.date()).days
-    if left > warn_days:
-        return None
-    return (
-        f"SYSTEM PROBLEM\nUpstox analytics token expires on {expires} ({left} days left). "
-        "Generate a new one in the Upstox developer portal and update BROKER_ACCESS_TOKEN and "
-        "BROKER_TOKEN_ISSUED_ON."
-    )
 
 
 def _job(sched: BlockingScheduler, name: str, fn: JobFn, trigger: BaseTrigger) -> None:
@@ -251,12 +235,22 @@ def build_scheduler() -> BlockingScheduler:
         CronTrigger(hour=7, minute=50, timezone=IST),
     )
     _job(sched, "cleanup", cleanup, CronTrigger(hour=3, minute=30, timezone=IST))
-    # Live options (Phase 3a, Upstox analytics token; jobs no-op until BROKER_ACCESS_TOKEN is set)
+    # Live options from Kotak Neo (market data only; jobs no-op until the KOTAK_* keys are set).
+    # The daily login only learns the data base URL; the scrip master sync follows it.
+    lh, lm = (int(x) for x in str(load_yaml("options.yaml")["kotak"]["login_time"]).split(":"))
     _job(
         sched,
-        "upstox_instruments",
+        "kotak_login",
+        kotak_login_job,
+        CronTrigger(day_of_week="mon-fri", hour=lh, minute=lm, timezone=IST),
+    )
+    _job(
+        sched,
+        "kotak_instruments",
         sync_instruments_job,
-        CronTrigger(day_of_week="mon-fri", hour=7, minute=35, timezone=IST),
+        CronTrigger(
+            day_of_week="mon-fri", hour=lh + (lm + 5) // 60, minute=(lm + 5) % 60, timezone=IST
+        ),
     )
     # Paper trading: one cycle polls chains for live signals + open trades, enters and exits.
     _job(sched, "trading_cycle", trading_cycle, IntervalTrigger(minutes=configured_poll_minutes()))

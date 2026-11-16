@@ -27,7 +27,7 @@ from app.db.models import (
     TradeEvent,
 )
 from app.db.session import session_scope
-from app.market.live import UpstoxOptionData, market_open, store_chain
+from app.market.live import LiveOptionData, market_open, store_chain
 from app.market.options import OptionChain, OptionQuoteRow
 from app.notify import templates
 from app.notify.outbox import enqueue_alert
@@ -62,7 +62,7 @@ OPEN = "OPEN"
 
 # ---- data ---------------------------------------------------------------------------
 def fetch_chains(
-    source: UpstoxOptionData, wanted: set[tuple[str, date]], engine: Engine | None
+    source: LiveOptionData, wanted: set[tuple[str, date]], engine: Engine | None
 ) -> dict[tuple[str, date], OptionChain]:
     chains: dict[tuple[str, date], OptionChain] = {}
     for sym, exp in sorted(wanted):
@@ -578,12 +578,12 @@ def close_trade(
 # ---- job ------------------------------------------------------------------------------
 def trading_cycle(
     engine: Engine | None = None,
-    source: UpstoxOptionData | None = None,
+    source: LiveOptionData | None = None,
     now: datetime | None = None,
 ) -> int:
     """Job entrypoint (market hours only). Returns entries + trades changed."""
     now = now or datetime.now(IST)
-    source = source or UpstoxOptionData(engine)
+    source = source or LiveOptionData(engine)
     if not source.available or not market_open(now):
         return 0
     reprice_due(engine, source, now)  # after-hours signals get live prices at the open

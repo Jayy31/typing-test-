@@ -47,7 +47,7 @@ curl -fsSL "$RAW/.env.example" -o /opt/desk/env.example
 grep -q '^DESK_IMAGE=' "$ENV" || echo "DESK_IMAGE=$IMAGE" >> "$ENV"
 grep -q '^HISTORY_DATA_DIR=' "$ENV" || echo "HISTORY_DATA_DIR=/data/history" >> "$ENV"
 grep -q '^DUCKDB_PATH=' "$ENV" || echo "DUCKDB_PATH=/data/history/history.duckdb" >> "$ENV"
-SECRET_RE='KEY|TOKEN|SECRET|PASSWORD|DATABASE_URL|PROXY|PING_URL'
+SECRET_RE='KEY|TOKEN|SECRET|PASSWORD|MPIN|DATABASE_URL|PROXY|PING_URL'
 while IFS= read -r line; do
   key=${line%%=*}
   [[ "$line" =~ ^[A-Z0-9_]+= ]] || continue

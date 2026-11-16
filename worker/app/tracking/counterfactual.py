@@ -14,7 +14,7 @@ from sqlalchemy import Engine, select
 from app.config import IST
 from app.db.models import RejectedCandidate
 from app.db.session import session_scope
-from app.market.live import UpstoxOptionData, market_open
+from app.market.live import LiveOptionData, market_open
 from app.market.options import OptionChain
 from app.signals.expiry import trading_days_between
 from app.signals.filters import load_holidays
@@ -112,11 +112,11 @@ def update_one(
 
 def track_rejections(
     engine: Engine | None = None,
-    source: UpstoxOptionData | None = None,
+    source: LiveOptionData | None = None,
     now: datetime | None = None,
 ) -> int:
     now = now or datetime.now(IST)
-    source = source or UpstoxOptionData(engine)
+    source = source or LiveOptionData(engine)
     if not source.available or not market_open(now):
         return 0
     cfg = load_yaml("tracking.yaml")["counterfactual"]

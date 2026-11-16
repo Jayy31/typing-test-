@@ -11,7 +11,7 @@ from app.calibration.service import resolve_move
 from app.config import IST
 from app.db.models import Analysis, PredictionScore
 from app.db.session import session_scope
-from app.market.live import UpstoxOptionData
+from app.market.live import LiveOptionData
 from app.signals.expiry import trading_days_between
 from app.signals.filters import load_holidays
 from app.timeutil import as_ist
@@ -75,12 +75,12 @@ def score(ps: PredictionScore, closes: list[tuple[str, float]], holidays: set[da
 
 def update_scores(
     engine: Engine | None = None,
-    source: UpstoxOptionData | None = None,
+    source: LiveOptionData | None = None,
     now: datetime | None = None,
 ) -> int:
     """Daily after the close: append each open prediction's close; score when its window ends."""
     now = now or datetime.now(IST)
-    source = source or UpstoxOptionData(engine)
+    source = source or LiveOptionData(engine)
     if not source.available or now.weekday() >= 5:
         return 0
     buffer = int(load_yaml("tracking.yaml")["scorecard"]["buffer_days"])

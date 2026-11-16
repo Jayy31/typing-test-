@@ -30,12 +30,13 @@ from app.db.session import session_scope
 from app.flags import ENGINE_VERSION
 from app.history.analogues import AnalogueResult, lookup
 from app.kg.propagate import propagate
-from app.market.live import UpstoxOptionData
+from app.market.live import LiveOptionData, market_open
 from app.notify import templates
 from app.notify.outbox import enqueue_alert
 from app.positioning.evidence import tilt as positioning_tilt
 from app.positioning.service import evidence_from as positioning_evidence
 from app.positioning.service import for_signal as positioning_for
+from app.positioning.service import live_snapshot as positioning_live
 from app.positioning.service import source_label as positioning_label
 from app.regime.service import current_in as current_regime_in
 from app.rules.engine import RuleContext, RuleHit, evaluate, fired_macro_rules
@@ -160,7 +161,9 @@ def plan_work(
                 regime_label=reg.label if reg else None,
             )
         message, ids = analyst.build_user_message(s, cand, hits, changes, now, analogue, reg)
-        pos = positioning_for(s, cand.symbol, now) if flags.active(s, "feat.positioning") else None
+        pos = None
+        if flags.active(s, "feat.positioning"):
+            pos = positioning_for(s, cand.symbol, now, live=_live_positioning(s, cand.symbol, now))
         if pos:
             lines = "\n".join(f"- {e.line()}" for e in positioning_evidence(pos))
             message += (
@@ -184,6 +187,15 @@ def plan_work(
     return work[: int(cfg["max_analyses_per_cycle"])], changes
 
 
+def _live_positioning(s: Session, symbol: str, now: datetime) -> dict[str, Any] | None:
+    """Live intraday positioning states from Kotak during market hours (else None: EOD only)."""
+    if not load_yaml("positioning.yaml").get("live", {}).get("enabled", True):
+        return None
+    if not get_settings().kotak_access_token or not market_open(now):
+        return None
+    return positioning_live(LiveOptionData(s.get_bind()), symbol, now)  # type: ignore[arg-type]
+
+
 def _option(direction: str) -> str | None:
     return {"bullish": "CALL", "bearish": "PUT"}.get(direction)
 
@@ -193,7 +205,7 @@ def price_analysis(
     out: AnalystOutput,
     now: datetime,
     engine: Engine | None,
-    source: UpstoxOptionData | None,
+    source: LiveOptionData | None,
 ) -> OptionPlan | None:
     """Options stage (network reads), only for a directional view with live data available."""
     pred, dist = predict(item, out)
@@ -973,7 +985,7 @@ def _run_agent(
 def run_signal_cycle(
     engine: Engine | None = None,
     ai: AiClient | None = None,
-    source: UpstoxOptionData | None = None,
+    source: LiveOptionData | None = None,
     only: set[str] | None = None,
 ) -> int:
     """Job entrypoint. Returns the number of analyses run. `only` limits it to some stocks."""
@@ -989,7 +1001,7 @@ def run_signal_cycle(
         return 0
     ai = ai or AiClient(engine=engine)
     done = 0
-    source = source or UpstoxOptionData(engine)
+    source = source or LiveOptionData(engine)
     for item in work:
         with session_scope(engine) as s:
             mode, why = choose_mode(s, ai, now, item.cand.impact_order)

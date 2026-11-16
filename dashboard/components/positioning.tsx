@@ -33,7 +33,9 @@ export const featureLabel = (f: string) => LABEL[f] ?? f;
 export const freshnessLabel = (source: string, asOf: string) =>
   source === "eod"
     ? `EOD, previous session (${asOf})`
-    : `live intraday (${asOf})`;
+    : source === "live+eod"
+      ? `live intraday where available, other features EOD, previous session (${asOf})`
+      : `live intraday (${asOf})`;
 
 /** Positioning evidence for a signal: support-only states change nothing; base-rate states tilt the prediction. */
 export function PositioningCard({

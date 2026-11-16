@@ -1,8 +1,9 @@
-"""Live market data: Upstox instrument sync, option-chain polling and storage, IV history."""
+"""Live market data: Kotak Neo daily login (base URL only), scrip master sync, option-chain
+polling and storage, IV history."""
 
 import logging
 from dataclasses import replace
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from sqlalchemy import Engine, select
@@ -13,21 +14,26 @@ from app.config import IST, get_settings
 from app.db.config_store import get_config, set_config
 from app.db.models import Instrument, OptionQuote, Signal
 from app.db.session import session_scope
-from app.market.options import OptionChain, OptionQuoteRow
-from app.market.upstox import (
+from app.market.kotak import (
     FnoInstrument,
+    KotakClient,
     Quote,
-    UpstoxClient,
-    parse_instruments,
+    chain_lot,
+    parse_cash_master,
+    parse_fo_master,
+    parse_futures,
     parse_option_chain,
     parse_quotes,
 )
+from app.market.options import OptionChain, OptionQuoteRow
+from app.pricing.bs import implied_vol
 from app.signals.lifecycle import LIVE
 from app.timeutil import as_ist
 from app.yaml_config import load_yaml
 
 log = logging.getLogger(__name__)
 EXPIRIES_KEY = "fno_expiries"
+SESSION_KEY = "kotak.session"  # {base_url, feed_url, day, ok, error}: no tokens are ever stored
 
 
 def market_open(now: datetime) -> bool:
@@ -36,17 +42,74 @@ def market_open(now: datetime) -> bool:
     return now.weekday() < 5 and hours["open"] <= t <= hours["close"]
 
 
-class UpstoxInstrumentsCollector(Collector[Any]):
-    """Daily: map our symbols to Upstox keys/ISINs, real lot sizes and monthly expiries."""
+def kotak_cfg() -> dict[str, Any]:
+    return dict(load_yaml("options.yaml")["kotak"])
 
-    name = "upstox_instruments"
-    timeout_s = 60.0
 
-    def __init__(self, client: UpstoxClient | None = None) -> None:
-        self.client = client or UpstoxClient()
+def stored_base_url(engine: Engine | None) -> str | None:
+    with session_scope(engine) as s:
+        return (get_config(s, SESSION_KEY, {}) or {}).get("base_url")
+
+
+def login_job(engine: Engine | None = None, client: KotakClient | None = None) -> int:
+    """Daily 08:30 (and on demand): TOTP + MPIN login to learn the data base URL. A failure keeps
+    yesterday's base URL (Kotak: 'stable for the day and rarely changes') and raises a health
+    alert through the job runner."""
+    client = client or KotakClient()
+    if not client.login_configured:
+        return 0
+    now = datetime.now(IST)
+    try:
+        info = client.login()
+    except Exception as exc:
+        with session_scope(engine) as s:
+            prev = get_config(s, SESSION_KEY, {}) or {}
+            set_config(
+                s,
+                SESSION_KEY,
+                {**prev, "ok": False, "error": str(exc)[:200], "at": now.isoformat()},
+            )
+        raise
+    with session_scope(engine) as s:
+        set_config(
+            s,
+            SESSION_KEY,
+            {
+                **info,
+                "day": now.date().isoformat(),
+                "ok": True,
+                "error": None,
+                "at": now.isoformat(),
+            },
+        )
+    return 1
+
+
+def client_for(engine: Engine | None) -> KotakClient:
+    c = KotakClient(base_url=stored_base_url(engine))
+    if c.configured and not c.base_url and c.login_configured:
+        login_job(engine, c)
+    return c
+
+
+class KotakInstrumentsCollector(Collector[Any]):
+    """Daily: map our symbols to Kotak tokens (spot quotes), real lot sizes and monthly expiries
+    from the scrip master CSVs (nse_cm, nse_fo)."""
+
+    name = "kotak_instruments"
+    timeout_s = 180.0
+
+    def __init__(self, client: KotakClient | None = None) -> None:
+        self.client = client
 
     def fetch(self) -> Any:
-        return self.client.instruments()
+        c = self.client or client_for(None)
+        files = c.scrip_files()
+        cm = next((u for u in files if "/nse_cm" in u), None)
+        fo = next((u for u in files if u.endswith("/nse_fo.csv")), None)
+        if not cm or not fo:
+            raise RuntimeError("scrip master file list has no nse_cm / nse_fo file")
+        return {"cm": c.download(cm), "fo": c.download(fo)}
 
     def parse(self, raw: Any) -> list[Any]:
         return [raw]
@@ -54,12 +117,13 @@ class UpstoxInstrumentsCollector(Collector[Any]):
     def store(self, items: list[Any], engine: Engine | None) -> int:
         with session_scope(engine) as s:
             insts = {i.symbol: i for i in s.scalars(select(Instrument))}
-            equities, fno = parse_instruments(items[0], set(insts))
+            equities = parse_cash_master(items[0]["cm"], set(insts))
+            fno = parse_fo_master(items[0]["fo"], set(insts))
             if not equities:
-                raise RuntimeError("instrument master had no matching NSE equities; check format")
+                raise RuntimeError("scrip master had no matching NSE equities; check format")
             for sym, inst in insts.items():
                 if sym in equities:
-                    inst.instrument_key, inst.isin = equities[sym]
+                    inst.instrument_key = equities[sym]
                 f = fno.get(sym)
                 inst.is_fno = bool(f and f.expiries)
                 if f and f.lot_size:
@@ -70,16 +134,38 @@ class UpstoxInstrumentsCollector(Collector[Any]):
             return len(equities)
 
 
-class UpstoxOptionData:
-    """OptionDataSource backed by Upstox (live). `as_of` is ignored: live data only."""
+def years_to(expiry: date, now: datetime) -> float:
+    end = datetime.combine(expiry, time(15, 30), IST)
+    return max((end - now).total_seconds(), 0.0) / (365.0 * 86400)
 
-    def __init__(self, engine: Engine | None = None, client: UpstoxClient | None = None) -> None:
+
+def with_iv(row: OptionQuoteRow, spot: float, now: datetime) -> OptionQuoteRow:
+    """Kotak sends no IV: solve it (in %) from the mid, else the last price."""
+    px = (row.bid + row.ask) / 2 if row.bid and row.ask else row.ltp
+    t = years_to(row.expiry, now)
+    if not px or not spot or t <= 0:
+        return row
+    iv = implied_vol(px, spot, row.strike, t, float(get_settings().risk_free_rate), row.option_type)
+    return replace(row, iv=round(iv * 100, 3) if iv else None)
+
+
+class LiveOptionData:
+    """OptionDataSource (and FuturesQuoteSource) backed by Kotak Neo market data. `as_of` is
+    ignored: live data only."""
+
+    def __init__(self, engine: Engine | None = None, client: KotakClient | None = None) -> None:
         self.engine = engine
-        self.client = client or UpstoxClient()
+        self._client = client
+
+    @property
+    def client(self) -> KotakClient:
+        if self._client is None:
+            self._client = client_for(self.engine)
+        return self._client
 
     @property
     def available(self) -> bool:
-        return self.client.configured
+        return bool(self._client.configured if self._client else get_settings().kotak_access_token)
 
     def _key(self, symbol: str) -> str | None:
         with session_scope(self.engine) as s:
@@ -93,12 +179,49 @@ class UpstoxOptionData:
         return [d for d in (date.fromisoformat(x) for x in raw) if d >= today]
 
     def chain(self, symbol: str, expiry: date, as_of: date | None = None) -> OptionChain | None:
-        key = self._key(symbol)
-        if not key:
+        """Chain (LTP, OI, volume per strike) + spot quote + one batched depth quote for the
+        strikes around ATM (bid/ask and quantities), then IV solved per row."""
+        q = self.quote(symbol)
+        if q is None:
             return None
-        raw = self.client.option_chain(key, expiry)
-        chain = parse_option_chain(raw, symbol, expiry, datetime.now(IST))
-        return chain if chain.rows and chain.spot > 0 else None
+        now = datetime.now(IST)
+        raw = self.client.option_chain(symbol, expiry, "option", int(kotak_cfg()["chain_count"]))
+        chain = parse_option_chain(raw, symbol, expiry, q.last_price, now)
+        if not chain.rows:
+            return None
+        n = int(load_yaml("options.yaml")["polling"]["strikes_each_side"])
+        strikes = chain.strikes()
+        atm = strikes.index(chain.atm_strike())
+        near = set(strikes[max(0, atm - n) : atm + n + 1])
+        keys = [r.instrument_key for r in chain.rows if r.strike in near and r.instrument_key]
+        try:
+            depth = parse_quotes(self.client.quotes(keys), now) if keys else {}
+        except Exception as exc:  # noqa: BLE001 - chain still usable on LTP; fills read "unknown"
+            log.warning("depth quotes %s %s failed: %s", symbol, expiry, exc)
+            depth = {}
+        rows = []
+        for r in chain.rows:
+            d = depth.get(r.instrument_key or "")
+            if d:
+                r = replace(
+                    r,
+                    bid=d.bid,
+                    ask=d.ask,
+                    bid_qty=d.bid_qty,
+                    ask_qty=d.ask_qty,
+                    ltp=r.ltp or d.last_price,
+                )
+            rows.append(with_iv(r, q.last_price, now))
+        lot = chain_lot(raw)
+        if lot:
+            self._note_lot(symbol, lot)
+        return OptionChain(symbol, expiry, q.last_price, now, tuple(rows))
+
+    def _note_lot(self, symbol: str, lot: int) -> None:
+        with session_scope(self.engine) as s:
+            inst = s.get(Instrument, symbol)
+            if inst and inst.lot_size != lot:
+                inst.lot_size = lot
 
     def quote(self, symbol: str) -> Quote | None:
         key = self._key(symbol)
@@ -107,8 +230,8 @@ class UpstoxOptionData:
         return parse_quotes(self.client.quotes([key]), datetime.now(IST)).get(key)
 
     def with_depth(self, row: OptionQuoteRow) -> OptionQuoteRow:
-        """Fallback when the chain carries no bid/ask quantities: read the option's own
-        market-depth quote (best level) for the fill check. Used only at entry and exit."""
+        """When a row has no bid/ask quantities (outside the depth window), read the option's own
+        depth quote. Used only at entry and exit (fill check)."""
         if (row.bid_qty is not None and row.ask_qty is not None) or not row.instrument_key:
             return row
         try:
@@ -122,6 +245,8 @@ class UpstoxOptionData:
             return row
         return replace(
             row,
+            bid=row.bid if row.bid is not None else q.bid,
+            ask=row.ask if row.ask is not None else q.ask,
             bid_qty=row.bid_qty if row.bid_qty is not None else q.bid_qty,
             ask_qty=row.ask_qty if row.ask_qty is not None else q.ask_qty,
         )
@@ -129,6 +254,14 @@ class UpstoxOptionData:
     def spot(self, symbol: str, as_of: date | None = None) -> float | None:
         q = self.quote(symbol)
         return q.last_price if q else None
+
+    def future(self, symbol: str, expiry: date) -> dict[str, float] | None:
+        """Stock future of the same expiry month: {last, prev_close, oi, chg_oi}."""
+        raw = self.client.option_chain(symbol, None, "fut", 0)
+        for d, vals in parse_futures(raw).items():
+            if (d.year, d.month) == (expiry.year, expiry.month):
+                return vals or None
+        return None
 
 
 def store_chain(s: Session, chain: OptionChain) -> int:
@@ -215,7 +348,7 @@ def hist_atm_ivs(symbol: str, now: datetime) -> dict[date, float]:
 
 
 def _poll(
-    engine: Engine | None, symbols: list[str], source: UpstoxOptionData, n_expiries: int
+    engine: Engine | None, symbols: list[str], source: LiveOptionData, n_expiries: int
 ) -> int:
     stored = 0
     for sym in symbols:
@@ -231,11 +364,9 @@ def _poll(
     return stored
 
 
-def poll_active_options(
-    engine: Engine | None = None, source: UpstoxOptionData | None = None
-) -> int:
+def poll_active_options(engine: Engine | None = None, source: LiveOptionData | None = None) -> int:
     """Every OPTION_POLL_ACTIVE_MIN in market hours: stocks with live signals (open trades: 3b)."""
-    source = source or UpstoxOptionData(engine)
+    source = source or LiveOptionData(engine)
     if not source.available or not market_open(datetime.now(IST)):
         return 0
     with session_scope(engine) as s:
@@ -244,10 +375,10 @@ def poll_active_options(
 
 
 def poll_universe_options(
-    engine: Engine | None = None, source: UpstoxOptionData | None = None
+    engine: Engine | None = None, source: LiveOptionData | None = None
 ) -> int:
     """Twice a day: nearest monthly chain for every F&O stock (feeds IV history)."""
-    source = source or UpstoxOptionData(engine)
+    source = source or LiveOptionData(engine)
     if not source.available:
         return 0
     with session_scope(engine) as s:
@@ -260,9 +391,9 @@ def configured_poll_minutes() -> int:
 
 
 def sync_instruments_job(engine: Engine | None = None) -> int:
-    if not UpstoxClient().configured:
+    if not get_settings().kotak_access_token:
         return 0
-    return UpstoxInstrumentsCollector().run(engine)
+    return KotakInstrumentsCollector(client_for(engine)).run(engine)
 
 
 __all__ = ["FnoInstrument", "Quote"]

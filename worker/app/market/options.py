@@ -1,5 +1,5 @@
 """One option-data interface, two implementations (DESIGN_V2 section 0):
-  - live broker (Upstox, Phase 3) for paper trading
+  - live broker (Kotak Neo market data) for paper trading
   - historical NSE F&O bhavcopy (Phase 4) for the backtester and simulator calibration
 Callers depend only on `OptionDataSource`. `StaticOptionData` serves tests and replays.
 """

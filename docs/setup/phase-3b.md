@@ -1,3 +1,5 @@
+> **Update (2026-11):** the broker is now **Kotak Neo** (market data only). Upstox was removed; see `docs/notes/kotak-api.md` and `docs/setup/deploy.md` section 1.
+
 # Phase 3b setup (owner checklist)
 
 Phase 3b adds paper trading: entries, exits, trade alerts, portfolio, rejected-candidate tracking,
