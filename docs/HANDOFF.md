@@ -1,18 +1,19 @@
-# Handoff (2026-10-20)
+# Handoff (2026-11-16)
 
 Read `CLAUDE.md` first (hard rules, owner decisions, progress log), then `docs/DESIGN.md` and
 `docs/DESIGN_V2.md` (V2 wins on conflict). This file is the short version plus what the code
 doesn't show.
 
 ## State
-- **Phases 0-14: all built and merged to `main`.** Last: Phase 14 Strategy Lab (PRs #34-#38) and its follow-ups (#39).
+- **Phases 0-14: all built and merged to `main`.** Last: Phase 14 Strategy Lab (PRs #34-#38), its follow-ups (#39) and the Kotak broker switch (#40).
 - **Open PRs: none.** `ENGINE_VERSION` 10.1.0, latest migration `0020`, DuckDB history schema v8.
 - **Not deployed yet.** The owner is doing the external setup step by step in chat:
   - done: Supabase, Vercel dashboard (`https://option-desk-tan.vercel.app`), Telegram bot, Anthropic key, healthchecks.io;
   - next: Oracle Always Free VM (`docs/setup/deploy.md`, `deploy/bootstrap.sh`).
-- **Broker: Kotak Neo** (market data only; Upstox removed). Built in the `kotak-broker` PR; not run live yet.
+- **Broker: Kotak Neo** (market data only; Upstox removed). Merged in #40; not run against the live Kotak API yet (field names from Kotak's docs, checked by the go-live report).
   - Owner has the Neo app API; keeps **no funds** in the account and must **never whitelist a static IP** (Kotak then rejects all order APIs).
   - VM needs `KOTAK_ACCESS_TOKEN`, `KOTAK_MOBILE`, `KOTAK_UCC`, `KOTAK_MPIN`, `KOTAK_TOTP_SECRET` (the TOTP secret text, not just the authenticator).
+  - Setup steps: `docs/setup/deploy.md` section 1 and `docs/setup/setup-guide.pdf` section 7; API notes `docs/notes/kotak-api.md`.
   - Until set: live option prices and paper trading don't run; preflight flags the `KOTAK_*` keys; the go-live `kotak` line is FAIL.
 
 ## Owner decisions not obvious from code
@@ -70,6 +71,8 @@ doesn't show.
 - **5-year history:** the backfill runs on the VM only; the sandbox can't reach NSE.
 - **Calibration:** none yet. Everything shows "not yet calibrated" until enough post-cutoff events exist.
 - **Lab pre-event strategies** run in EOD incubation only (no live pre-event entry path); index events come from a curated YAML, used only once each entry is verified against an NSE Indices press release (nightly check, Go-live page).
+- **Dependencies:** CI runs pip-audit; #40 upgraded pypdf (to 7), certifi, opentelemetry-api and soupsieve for new CVEs. Expect occasional bumps like this.
+- **Calendar-dependent tests:** two were fixed in #40; tests using real dates can break as the calendar moves.
 - **Research tools on the old panel path:** the panel and single analyst don't use the research tools; only the agent does.
 
 ## Conventions

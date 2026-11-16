@@ -125,7 +125,7 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 | 14 | Strategy Lab `feat.strategy_lab` (off by default): strategy specs + spec backtester, pre-registered hypotheses, Stage 0 luck tests on pre-cutoff data, one-time holdout, idea sources (patterns, mining, evidence, AI ≤3/week), refinement, strategy paper books (EOD incubation + real fills), portfolio, /lab, Lab page | done |
 
 ## Current phase
-All phases built (0-14). Next: owner deploys per `docs/setup/deploy.md`; broker data source still to be chosen. Update this line when a phase is done.
+All phases built (0-14). Next: owner deploys per `docs/setup/deploy.md` (broker: Kotak Neo, keys `KOTAK_*`). Update this line when a phase is done.
 
 ## Owner notes
 - Not deploying until all phases are done; external accounts and keys come in the Go-live phase.
