@@ -17,6 +17,8 @@ from app.config import IST
 from app.db.models import MacroSnapshot, MarketRegime
 from app.db.session import session_scope
 from app.regime.classifier import Regime, cfg, classify, series
+from app.signals.expiry import is_trading_day
+from app.signals.filters import load_holidays
 from app.timeutil import as_ist
 
 log = logging.getLogger(__name__)
@@ -41,6 +43,7 @@ def _index_series(name: str, before: date | None = None) -> dict[date, float]:
 def _daily_fii(engine: Engine | None, upto: date) -> dict[date, float]:
     """Last FII net value of each day (Rs crore) from macro snapshots."""
     with session_scope(engine) as s:
+        holidays = load_holidays(s)
         rows = s.execute(
             select(MacroSnapshot.ts, MacroSnapshot.fii_net)
             .where(MacroSnapshot.fii_net.is_not(None))
@@ -49,7 +52,9 @@ def _daily_fii(engine: Engine | None, upto: date) -> dict[date, float]:
     out: dict[date, float] = {}
     for ts, v in rows:
         d = as_ist(ts).date()
-        if d <= upto and v is not None:
+        # the collector stores the latest published figure every calendar day: weekends and
+        # holidays repeat the last session's number and must not count as extra days
+        if d <= upto and v is not None and is_trading_day(d, holidays):
             out[d] = float(v)
     return out
 

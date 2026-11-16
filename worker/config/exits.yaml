@@ -26,6 +26,8 @@ window_stop:                      # v2.1 A3: move must start within the scenario
   buffer_days: 1
   started_fraction: 0.25          # "started" = stock moved >= 25% of the predicted move our way
 
+day_rules_after: "15:00"           # live: day-count rules (time stop, window stop, no-move)
+                                  # count today only from this time, like the backtest's close
 no_move_sessions: 2               # sessions after the event with no meaningful move -> exit
 no_move_threshold_pct: 10         # "meaningful" = premium moved at least this much either way
 time_stop_trading_days: 5         # backstop: exit this many trading days before expiry

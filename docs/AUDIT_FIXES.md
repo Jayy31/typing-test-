@@ -9,27 +9,32 @@ Status: `todo` | `done (PR #n)` | `wontfix (why)`. "Checked" = confirmed by read
 before fixing (others must be confirmed while fixing; if a finding is wrong, mark `wontfix`).
 
 ## Progress
-- 2026-11-16: audit finished, this file written. Nothing fixed yet.
+- 2026-11-16: audit finished, this file written.
+- 2026-11-16: group A fixed (all rows), tests in `worker/tests/test_audit_fixes.py`. A2 note: the
+  `row.iv or 30.0` fallback remains only in trade attribution / predicted-move targets. A11b: IV
+  events are future `results` dates only (`options.yaml iv_event_types`). New config:
+  `options.yaml simulator.risk_neutral_drift`, `entry.yaml recheck`, `exits.yaml day_rules_after`.
+  Next: group B, then C.
 
 ## A. Live trading and trade selection
 | # | Where | Problem | Fix | Checked | Status |
 |---|---|---|---|---|---|
-| A1 | `trading/paper_engine.py:383` (+134,177,459), `market/live.py` chain depth window | Open trade skipped when its row has no bid (Kotak chain rows only get bid/ask within `strikes_each_side` of ATM); `with_depth` only called after the bid guard; no expiry settlement, trade stays OPEN forever | Call depth before the guards (entry + monitor); settle at intrinsic on/after expiry | yes | todo |
-| A2 | `signals/options_stage.py:303`; `paper_engine.py:270,365` | IV solver failure replaced by ATM IV / 30 -> inflated EV, picked by max-EV | Skip candidates with no solvable IV; keep fallback only for attribution | yes | todo |
-| A3 | `sim/simulator.py:90-96` | Paths have no risk-neutral drift while BS uses r: calls penalised ~4 pts vs puts | Add (r)·t to the log path | yes | todo |
-| A4 | `signals/prediction.py:30-64`, `positioning/evidence.py:78-96` | p_move from the sign of point masses (analogue quantiles, positioning mean), measured hit rates unused | p_move = AI part + analogue weight x hit_rate + positioning weight x hit_up | yes | todo |
-| A5 | `kg/signs.py:57`, `history/event_study.py:433`, `signals/prediction.py:52` | Graph analogue stats applied with wrong sign when the learned sign flips the default | Flip stats (agree flag) when sign is flipped | no | todo |
-| A6 | `signals/service.py:154`, `history/analogues.py:96` | Analogue event type = alphabetical first; `kg:` keys beat direct types | Order by evidence weight, direct types first | yes | todo |
-| A7 | `kg/propagate.py:178`, `signals/candidates.py:44,159`, `signals/scoring.py:20` | Graph support rows count as independent sources / votes | Exclude support rows from source count and source quality | no | todo |
-| A8 | `signals/options_stage.py:200-204,336` | Next-month expiry chosen on EV although current month is valid | Only the rule's expiry (current if >= min days and event not after it, else next) | yes | todo |
-| A9 | `signals/options_stage.py:252-254` | Edge ratio: predicted move and implied move on different horizons | One horizon for both (prediction window) | no | todo |
-| A10 | `trading/paper_engine.py:132-178` | Entry does not re-check spread / premium drift vs the priced candidate | Re-run liquidity check + max premium drift at entry | no | todo |
-| A11a | `trading/lab_signals.py:192` | Lab `next_open` on Friday/holiday eve always hits entry TTL | Use `deferred.next_open` | yes | todo |
-| A11b | `signals/options_stage.py:238-246,284` | IV crush / event-in-window for past (today) events and any calendar row | Only future results-type events | no | todo |
-| A11c | `trading/paper_engine.py:560` | Exit fill class uses total lots, partial exits unclassified | Classify with the lots of that exit | no | todo |
-| A11d | `market/kotak.py:226`, `market/live.py` | Row ts = fetch time, stale LTP used for IV | Rows without depth: no IV from LTP into atm_iv/history unless traded today (volume>0) | no | todo |
-| A11e | `scheduler.py:217`, `regime/service.py:41` | FII figure stored every calendar day -> weekends double count | De-duplicate by trading day | no | todo |
-| A11f | `paper_engine.py:393` vs `sim/exits_vec.py:101` | Live date-based exits fire at first poll, sim at close | Live TIME/WINDOW/NOMOVE only after 15:00 of the qualifying day | no | todo |
+| A1 | `trading/paper_engine.py:383` (+134,177,459), `market/live.py` chain depth window | Open trade skipped when its row has no bid (Kotak chain rows only get bid/ask within `strikes_each_side` of ATM); `with_depth` only called after the bid guard; no expiry settlement, trade stays OPEN forever | Call depth before the guards (entry + monitor); settle at intrinsic on/after expiry | yes | done (group A PR) |
+| A2 | `signals/options_stage.py:303`; `paper_engine.py:270,365` | IV solver failure replaced by ATM IV / 30 -> inflated EV, picked by max-EV | Skip candidates with no solvable IV; keep fallback only for attribution | yes | done (group A PR) |
+| A3 | `sim/simulator.py:90-96` | Paths have no risk-neutral drift while BS uses r: calls penalised ~4 pts vs puts | Add (r)·t to the log path | yes | done (group A PR) |
+| A4 | `signals/prediction.py:30-64`, `positioning/evidence.py:78-96` | p_move from the sign of point masses (analogue quantiles, positioning mean), measured hit rates unused | p_move = AI part + analogue weight x hit_rate + positioning weight x hit_up | yes | done (group A PR) |
+| A5 | `kg/signs.py:57`, `history/event_study.py:433`, `signals/prediction.py:52` | Graph analogue stats applied with wrong sign when the learned sign flips the default | Flip stats (agree flag) when sign is flipped | no | done (group A PR) |
+| A6 | `signals/service.py:154`, `history/analogues.py:96` | Analogue event type = alphabetical first; `kg:` keys beat direct types | Order by evidence weight, direct types first | yes | done (group A PR) |
+| A7 | `kg/propagate.py:178`, `signals/candidates.py:44,159`, `signals/scoring.py:20` | Graph support rows count as independent sources / votes | Exclude support rows from source count and source quality | no | done (group A PR) |
+| A8 | `signals/options_stage.py:200-204,336` | Next-month expiry chosen on EV although current month is valid | Only the rule's expiry (current if >= min days and event not after it, else next) | yes | done (group A PR) |
+| A9 | `signals/options_stage.py:252-254` | Edge ratio: predicted move and implied move on different horizons | One horizon for both (prediction window) | no | done (group A PR) |
+| A10 | `trading/paper_engine.py:132-178` | Entry does not re-check spread / premium drift vs the priced candidate | Re-run liquidity check + max premium drift at entry | no | done (group A PR) |
+| A11a | `trading/lab_signals.py:192` | Lab `next_open` on Friday/holiday eve always hits entry TTL | Use `deferred.next_open` | yes | done (group A PR) |
+| A11b | `signals/options_stage.py:238-246,284` | IV crush / event-in-window for past (today) events and any calendar row | Only future results-type events | no | done (group A PR) |
+| A11c | `trading/paper_engine.py:560` | Exit fill class uses total lots, partial exits unclassified | Classify with the lots of that exit | no | done (group A PR) |
+| A11d | `market/kotak.py:226`, `market/live.py` | Row ts = fetch time, stale LTP used for IV | Rows without depth: no IV from LTP into atm_iv/history unless traded today (volume>0) | no | done (group A PR) |
+| A11e | `scheduler.py:217`, `regime/service.py:41` | FII figure stored every calendar day -> weekends double count | De-duplicate by trading day | no | done (group A PR) |
+| A11f | `paper_engine.py:393` vs `sim/exits_vec.py:101` | Live date-based exits fire at first poll, sim at close | Live TIME/WINDOW/NOMOVE only after 15:00 of the qualifying day | no | done (group A PR) |
 
 ## B. Learning system
 | # | Where | Problem | Fix | Checked | Status |

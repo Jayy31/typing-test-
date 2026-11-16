@@ -104,6 +104,19 @@ def _same(row: OptionQuoteRow) -> OptionQuoteRow:
     return row
 
 
+def _quote_moved(row: OptionQuoteRow, opt: dict[str, Any], entry_cfg: dict[str, Any]) -> bool:
+    """Entry re-check: the quote must still look like the one the signal was priced on."""
+    c = entry_cfg.get("recheck") or {}
+    if not c.get("enabled", True):
+        return False
+    max_spread = float(load_yaml("options.yaml")["liquidity"]["max_spread_pct"])
+    if (row.spread_pct or 999) > max_spread:
+        return True
+    priced = ((opt.get("best") or {}).get("ask")) if opt else None
+    drift = float(c.get("max_premium_drift_pct", 15))
+    return bool(priced and row.ask and row.ask > float(priced) * (1 + drift / 100))
+
+
 SpotFn = Callable[[str], float | None]
 
 
@@ -117,8 +130,18 @@ def _settlement(tr: PaperTrade, spot: float, now: datetime) -> tuple[OptionChain
     k = float(tr.strike)
     value = max(spot - k, 0.0) if tr.option_type == "CE" else max(k - spot, 0.0)
     row = OptionQuoteRow(
-        str(tr.symbol), tr.expiry, k, tr.option_type, value, value, value, None, None, None,
-        spot, now,
+        str(tr.symbol),
+        tr.expiry,
+        k,
+        tr.option_type,
+        value,
+        value,
+        value,
+        None,
+        None,
+        None,
+        spot,
+        now,
     )
     return OptionChain(str(tr.symbol), tr.expiry, spot, now, (row,)), row
 
@@ -173,6 +196,8 @@ def enter_signals(
             )
             continue
         opt = _options_json(s, sig)
+        if _quote_moved(row, opt, entry_cfg):
+            continue  # wide spread or premium ran away since pricing: wait (the TTL still applies)
         pre_news = opt.get("pre_news_spot")
         sign = _side(sig.option_type)
         pred = sig.predicted_move_pct or 0.0
@@ -419,17 +444,22 @@ def monitor_trades(
         thesis_broken = _opposite_signal(s, tr, now, action)
         rules = rules_from_json(tr.rules_json) if tr.rules_json else ExitRules.from_config()
         state = state_from_json(tr.state_json)
+        # Day-count rules (time stop, window stop, no-move) count COMPLETED sessions, as the
+        # simulator and backtester do: today counts only from the late-session cutoff.
+        late = now.strftime("%H:%M") >= str(load_yaml("exits.yaml")["day_rules_after"])
+        adj = 0 if late or expired else 1
+        since_event = _sessions_since_event(s, tr, now.date(), holidays)
         bar = Bar(
             row.bid,
             row.bid,
             row.bid,
             row.bid,
-            trading_days_to_expiry=trading_days_between(now.date(), tr.expiry, holidays),
-            sessions_since_event=_sessions_since_event(s, tr, now.date(), holidays),
+            trading_days_to_expiry=trading_days_between(now.date(), tr.expiry, holidays) + adj,
+            sessions_since_event=None if since_event is None else max(since_event - adj, 0),
             thesis_broken=thesis_broken,
             spot=chain.spot,
-            sessions_since_entry=trading_days_between(
-                as_ist(tr.entry_ts).date(), now.date(), holidays
+            sessions_since_entry=max(
+                trading_days_between(as_ist(tr.entry_ts).date(), now.date(), holidays) - adj, 0
             ),
         )
         forced = "EXPIRY" if expired else _lab_exit(s, tr, row, now, holidays)

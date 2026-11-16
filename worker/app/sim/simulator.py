@@ -16,11 +16,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from app.ai.schemas import Scenario
+from app.config import get_settings
 from app.pricing.bs import greeks, price
 from app.sim.exits_vec import run_paths
 from app.trading.exits import ExitRules, PositionState
 from app.trading.targets import targets_for
-from app.config import get_settings
 from app.yaml_config import load_yaml
 
 F = NDArray[np.float64]
