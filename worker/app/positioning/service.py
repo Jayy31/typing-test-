@@ -29,6 +29,8 @@ def source_label(source: str, as_of: str | date) -> str:
     """How fresh positioning data is. Previous-session closing data must never read as live."""
     if source == "eod":
         return f"EOD, previous session ({as_of})"
+    if source == "live+eod":
+        return f"live intraday where available, other features EOD, previous session ({as_of})"
     return f"live intraday ({as_of})"
 
 
@@ -86,17 +88,45 @@ def live_states(
     )
 
 
+def live_snapshot(source: Any, symbol: str, now: datetime) -> dict[str, tuple[str, float]] | None:
+    """Intraday states from the broker: near-month chain (OI, volume, IV) + stock future.
+    Features that need history (PCR change, unusual activity, delivery, rollover) stay EOD."""
+    try:
+        exps = source.expiries(symbol)
+        if not exps:
+            return None
+        chain = source.chain(symbol, exps[0])
+        if chain is None:
+            return None
+        fut = source.future(symbol, exps[0])
+    except Exception as exc:  # noqa: BLE001 - positioning is evidence only; fall back to EOD
+        log.info("positioning: live snapshot %s failed (%s)", symbol, type(exc).__name__)
+        return None
+    rows = [OptRow(r.strike, r.option_type, oi=r.oi, volume=r.volume, iv=r.iv) for r in chain.rows]
+    return live_states(rows, chain.spot, fut) or None
+
+
 def for_signal(
-    s: Session, symbol: str, now: datetime, states: dict[str, tuple[str, float]] | None = None
+    s: Session,
+    symbol: str,
+    now: datetime,
+    states: dict[str, tuple[str, float]] | None = None,
+    live: dict[str, tuple[str, float]] | None = None,
 ) -> dict[str, Any] | None:
-    """Evidence for one stock now: live states if given, else the latest end-of-day ones."""
+    """Evidence for one stock now: the latest end-of-day states, with live intraday states (when
+    the broker supplies them) replacing the same features."""
     source, as_of = "live", now.date()
     if states is None:
         eod = eod_states(symbol, now.date())
-        if eod is None:
+        if eod is None and not live:
             return None
-        as_of, states = eod
-        source = "eod"
+        states = {}
+        if eod is not None:
+            as_of, states = eod
+            source = "eod"
+        if live:
+            states = {**states, **live}
+            source = "live" if eod is None else "live+eod"
     ev = assess(states, stats_lookup)
     row = s.get(PositioningSnapshot, (as_of, symbol)) or PositioningSnapshot(
         day=as_of, symbol=symbol

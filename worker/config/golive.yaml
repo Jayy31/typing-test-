@@ -29,7 +29,7 @@ nse_probe:
       data: splits / bonus / dividends
       json_path: /api/corporates-corporateActions?index=equities
       fields: [symbol, subject, exDate]
-      alternative: BSE corporate actions; Upstox instrument master (contract changes)
+      alternative: BSE corporate actions; Kotak scrip master (contract changes)
     - name: insider
       data: insider trades (PIT)
       json_path: /api/corporates-pit?index=equities
@@ -54,35 +54,38 @@ nse_probe:
       data: issued shares (market cap for materiality)
       json_path: /api/quote-equity?symbol=TCS
       fields: [securityInfo.issuedSize]
-      alternative: Upstox market-quote (no issued size) + yearly manual market caps
+      alternative: Kotak quotes (no issued size) + yearly manual market caps
     - name: fno_ban
       data: F&O ban list
       url: https://nsearchives.nseindia.com/content/fo/fo_secban.csv
       csv_contains: []
-      alternative: none free; ban stocks are also rejected by Upstox chain liquidity checks
+      alternative: none free; ban stocks are also rejected by the live chain liquidity checks
     - name: lot_sizes
       data: F&O lot sizes
       url: https://archives.nseindia.com/content/fo/fo_mktlots.csv
       csv_contains: [SYMBOL]
-      alternative: Upstox instrument master (lot_size per contract) - already used daily
+      alternative: Kotak scrip master (lLotSize per contract) - already used daily
     - name: equity_bhavcopy
       data: daily equity prices (history)
       url: https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{ddmmyyyy}.csv
       csv_contains: [SYMBOL, CLOSE_PRICE, TTL_TRD_QNTY]
-      alternative: BSE equity bhavcopy; Upstox historical candles API
+      alternative: BSE equity bhavcopy; Kotak historical candles (active instruments, 180 days)
     - name: fo_bhavcopy
       data: daily F&O prices (history, IV backfill)
       url: https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{yyyymmdd}_F_0000.csv.zip
       zip: true
-      alternative: Upstox expired-instruments historical candles (paid plans) - otherwise none free
+      alternative: none free (Kotak history covers active contracts only)
     - name: index_close
       data: index closes incl. Nifty 50 and India VIX (history)
       url: https://archives.nseindia.com/content/indices/ind_close_all_{ddmmyyyy}.csv
       csv_contains: [Index Name, Closing Index Value]
-      alternative: Upstox historical candles for index instrument keys; Yahoo ^NSEI / ^INDIAVIX
-upstox_fields:                    # saved raw samples (raw_samples/upstox) -> expected keys
-  v2_option_chain: [data]
-  v2_market-quote_quotes: [data]
+      alternative: Kotak quotes for Nifty 50 / INDIA VIX (live); Yahoo ^NSEI / ^INDIAVIX
+kotak_fields:                     # saved raw samples (raw_samples/kotak) -> expected paths
+  script-details_1.0_masterscrip_file-paths: [data.filesPaths]
+  script-details_1.0_quotes_neosymbol: [exchange, exchange_token, ltp, ohlc.close, depth.buy, depth.sell]
+  market-data_1.0_watchlist_option-chain_option: [data.common_data.mktLot, data.call.0.instrument.strikePrice,
+                                           data.call.0.instrument.neoSymbol, data.call.0.quote.ltp,
+                                           data.call.0.openInterest.current]
 
 # docs/UNVERIFIED.md items -> the check that verifies them (or the manual step)
 unverified:
@@ -92,8 +95,8 @@ unverified:
   4: {check: rows}
   5: {check: nse_probe}
   6: {check: telegram}
-  7: {check: upstox_fields}
-  8: {check: upstox_fields}
+  7: {check: kotak_fields}
+  8: {check: kotak_fields}
   9: {check: history}
   10: {check: history}
   11: {check: ai_smoke}
@@ -123,11 +126,16 @@ unverified:
   35: {manual: "First monthly report: ai_summary_status = ok"}
   36: {check: nse_probe}
   50: {check: index_events}
+  51: {check: kotak}
+  52: {check: kotak}
+  53: {check: kotak_fields}
+  54: {manual: "After two weeks: compare live and EOD positioning states on a few Stock pages"}
 
 # make preflight: env keys that must have a value before the first start (others are optional)
 # (AI_MODEL_* and AI_MODEL_KNOWLEDGE_CUTOFF have code defaults; preflight lists the resolved models)
 required_env: [DATABASE_URL, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY,
-               BROKER_ACCESS_TOKEN, BROKER_TOKEN_ISSUED_ON, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+               KOTAK_ACCESS_TOKEN, KOTAK_MOBILE, KOTAK_UCC, KOTAK_MPIN,
+               KOTAK_TOTP_SECRET, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                DASHBOARD_ALLOWED_EMAIL, DASHBOARD_BASE_URL]
 
 # Curated index inclusion / exclusion dates (data/index_events.yaml) checked against NSE Indices

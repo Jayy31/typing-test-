@@ -180,7 +180,7 @@ def test_tool_session_never_writes(engine: Engine, monkeypatch) -> None:
 FORBIDDEN_IMPORTS = (
     "app.trading.paper",
     "app.trading.engine",
-    "app.market.upstox",
+    "app.market.kotak",
     "app.market.live",
     "app.notify",
     "app.signals.service",

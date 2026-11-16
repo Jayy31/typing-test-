@@ -20,7 +20,7 @@ from app.config import get_settings
 from app.db.models import EventCalendar, OptionQuote
 from app.db.session import session_scope
 from app.market.implied import edge_ratio, event_iv_premium, n_day_move_pct
-from app.market.live import UpstoxOptionData, atm_iv, iv_percentile
+from app.market.live import LiveOptionData, atm_iv, iv_percentile
 from app.market.options import OptionChain, OptionQuoteRow
 from app.signals.expiry import trading_days_between
 from app.signals.filters import load_holidays
@@ -159,7 +159,7 @@ def pre_news_reference(
 
 
 def plan_options(
-    source: UpstoxOptionData,
+    source: LiveOptionData,
     symbol: str,
     direction: str,
     scenarios: list[Scenario],

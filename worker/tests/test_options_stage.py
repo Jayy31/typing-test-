@@ -10,8 +10,8 @@ from app.ai.client import AiClient
 from app.config import IST, Settings
 from app.db.models import Alert, Analysis, RejectedCandidate, Signal, SignalCandidate
 from app.db.session import session_scope
+from app.market.kotak import Quote
 from app.market.options import OptionChain, OptionQuoteRow
-from app.market.upstox import Quote
 from app.pricing.bs import price
 from app.signals.service import run_signal_cycle
 from tests.helpers import (

@@ -44,3 +44,9 @@ evidence:
   window: 3                    # forward trading days for the base rate
   max_total_weight: 0.25       # positioning's share of the prediction, at most
   max_states: 4                # strongest usable states per signal
+
+# Live intraday states from the broker (Kotak option chain + stock future) replace the same EOD
+# features during market hours. Base rates were learned on end-of-day states, so intraday values
+# are a close but not identical input; the source label says which is which.
+live:
+  enabled: true

@@ -52,3 +52,8 @@ selection:
   min_ev_pct: 0                 # EV must be above this ...
   min_ev_pct_of_premium: 10     # ... and at least this % of the premium
   min_p_t1_before_sl: 0.55
+
+# Kotak Neo market data (app/market/kotak.py). Read-only: login only learns the data base URL.
+kotak:
+  login_time: "08:30"            # daily TOTP + MPIN login (weekdays)
+  chain_count: 20                # strikes per side from the option-chain API (multiple of 10)

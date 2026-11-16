@@ -12,8 +12,8 @@ phase checks them all in one pass (the first-run report flags mismatches).
 | 4 | 1 | Yahoo tickers (brent, usdinr, dxy, us10y, india_vix, ADRs) | `app/collectors/macro.py` | non-null macro snapshot columns |
 | 5 | 2 | NSE ban list CSV and corporate-actions JSON | `app/collectors/nse.py` | `fno_ban` config, events_calendar rows |
 | 6 | 2 | Telegram Bot API behaviour (buttons, polling) | `app/notify/telegram.py` | first-run report delivery |
-| 7 | 3a | Upstox field names (instruments, option chain, quotes, depth quantities) | `app/market/upstox.py` | saved raw samples vs parsers |
-| 8 | 3b | Upstox bid/ask quantity fields (fallback in place) | `app/trading/fills.py` | fill class not always "unknown" |
+| 7 | 3a | Kotak Neo field names (scrip master columns, option chain, quotes, futures chain) as documented in Kotak's REST docs | `app/market/kotak.py` | saved raw samples (raw_samples/kotak) vs `golive.yaml kotak_fields` |
+| 8 | 3b | Kotak quotes `depth.buy/sell` carry bid/ask price and quantity for F&O instruments (fallback: fill class "unknown") | `app/market/kotak.py`, `app/trading/fills.py` | fill class not always "unknown" |
 | 9 | 4 | NSE archive URLs and bhavcopy columns (equity, F&O old + UDiFF, indices) | `config/history.yaml` | `python -m app.history.verify` |
 | 10 | 4 | NSE announcements history API, GDELT | `app/history/news_history.py` | loaded_files status |
 | 11 | 5 | Real Anthropic structured outputs per agent with thinking / effort | `app/ai/panel.py` | AI smoke test (`ai_smoke_runs`) |
@@ -56,3 +56,7 @@ phase checks them all in one pass (the first-run report flags mismatches).
 | 48 | 14 | EOD incubation (bhavcopy close + backtest spread model) is close enough to real fills to rank strategies; real-fill confirmation (15 trades) still required for Validated | `app/lab/books.py` | Lab page: EOD vs real-fill expectancy side by side once a broker exists |
 | 49 | 14 | Lab AI cost estimates (proposal or AI refinement Rs 8, write-up Rs 0.2) hold on real runs | `config/strategy_lab.yaml` `estimates_inr` | Lab spend in /lab and the weekly digest |
 | 50 | 14 | NSE Indices press-release listing URLs (`config/golive.yaml` `index_events.listing_urls`), link titles and release layout (date at the top, inclusions/exclusions named with the company) let `app/golive/index_events.py` verify each `data/index_events.yaml` entry | `app/golive/index_events.py` | Go-live page entry "Index event dates (automatic)" and the 24-hour report check `index_events`; unreachable = entries stay unverified and excluded |
+| 51 | Kotak | Daily TOTP + MPIN login returns `baseUrl`; data APIs then work with the access token alone (Kotak docs: no 2FA session needed for quotes / scrip master / option chain) | `app/market/kotak.py`, `app/market/live.py` | 2-hour check line `kotak`; option quotes stored |
+| 52 | Kotak | nse_fo `lExpiryDate` + 315511200 = expiry (IST); nse_cm EQ row is `pTrdSymbol` = `<SYMBOL>-EQ` | `app/market/kotak.py` | `fno_expiries` config matches the NSE calendar; spot quotes resolve |
+| 53 | Kotak | Quotes path accepts several comma-separated `seg|token` items (pipe sent URL-encoded by httpx) | `app/market/kotak.py` | depth quotes return bid/ask (item 8) |
+| 54 | Kotak | Intraday positioning states (live chain + stock future) are a fair input to base rates learned on end-of-day states | `config/positioning.yaml live` | compare live vs EOD states on the Stock page; switch `live.enabled` off if they diverge |

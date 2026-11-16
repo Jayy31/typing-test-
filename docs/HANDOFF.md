@@ -6,18 +6,14 @@ doesn't show.
 
 ## State
 - **Phases 0-14: all built and merged to `main`.** Last: Phase 14 Strategy Lab (PRs #34-#38) and its follow-ups (#39).
-- **Open PRs: none.** `ENGINE_VERSION` 10.0.0, latest migration `0020`, DuckDB history schema v8.
+- **Open PRs: none.** `ENGINE_VERSION` 10.1.0, latest migration `0020`, DuckDB history schema v8.
 - **Not deployed yet.** The owner is doing the external setup step by step in chat:
   - done: Supabase, Vercel dashboard (`https://option-desk-tan.vercel.app`), Telegram bot, Anthropic key, healthchecks.io;
   - next: Oracle Always Free VM (`docs/setup/deploy.md`, `deploy/bootstrap.sh`).
-- **Broker: not chosen.** Upstox is in the code but the owner's account wasn't recognised, so it is postponed.
-  - Candidate: Kotak Neo (free API, TOTP; its key can trade, so keep a low balance).
-  - Zerodha and Groww charge about ₹500/month.
-  - Plug a new broker in through `app/market/options.py` (`OptionDataSource`) and `FuturesQuoteSource`.
-  - Until a broker exists:
-    - live option prices and paper trading don't run;
-    - preflight flags `BROKER_ACCESS_TOKEN` / `BROKER_TOKEN_ISSUED_ON`;
-    - the 2-hour go-live check shows the Upstox line as FAIL (expected).
+- **Broker: Kotak Neo** (market data only; Upstox removed). Built in the `kotak-broker` PR; not run live yet.
+  - Owner has the Neo app API; keeps **no funds** in the account and must **never whitelist a static IP** (Kotak then rejects all order APIs).
+  - VM needs `KOTAK_ACCESS_TOKEN`, `KOTAK_MOBILE`, `KOTAK_UCC`, `KOTAK_MPIN`, `KOTAK_TOTP_SECRET` (the TOTP secret text, not just the authenticator).
+  - Until set: live option prices and paper trading don't run; preflight flags the `KOTAK_*` keys; the go-live `kotak` line is FAIL.
 
 ## Owner decisions not obvious from code
 - **Paper trading only.** NSE F&O **stock** options only, never index options.
@@ -69,7 +65,7 @@ doesn't show.
 | Prices | `worker/config/ai.yaml` (checked 2026-10-19; web search $10 per 1,000 searches) |
 
 ## Known gaps / half-done
-- **Everything external is unverified live.** See `docs/UNVERIFIED.md` items 1-50 (NSE endpoints, Upstox fields, real Anthropic tool and web calls, Batch API with `output_config`, company domains).
+- **Everything external is unverified live.** See `docs/UNVERIFIED.md` items 1-54 (NSE endpoints, Kotak fields, real Anthropic tool and web calls, Batch API with `output_config`, company domains).
 - **Broker data source:** not built (see above).
 - **5-year history:** the backfill runs on the VM only; the sandbox can't reach NSE.
 - **Calibration:** none yet. Everything shows "not yet calibrated" until enough post-cutoff events exist.

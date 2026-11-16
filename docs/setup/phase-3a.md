@@ -1,3 +1,5 @@
+> **Update (2026-11):** the broker is now **Kotak Neo** (market data only). Upstox was removed; see `docs/notes/kotak-api.md` and `docs/setup/deploy.md` section 1.
+
 # Phase 3a setup (owner checklist)
 
 Phase 3a adds live option data from Upstox, implied move / edge ratio, the Monte Carlo simulator that

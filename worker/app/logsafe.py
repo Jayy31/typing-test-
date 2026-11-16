@@ -8,10 +8,9 @@ from app.config import get_settings
 SECRET_FIELDS = (
     "supabase_service_role_key",
     "anthropic_api_key",
-    "broker_api_key",
-    "broker_api_secret",
-    "broker_access_token",
-    "broker_totp_secret",
+    "kotak_access_token",
+    "kotak_mpin",
+    "kotak_totp_secret",
     "twelvedata_api_key",
     "alphavantage_api_key",
     "telegram_bot_token",

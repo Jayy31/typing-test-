@@ -56,14 +56,13 @@ class Settings(BaseSettings):
     # overrides via RESEARCH_<ROLE>_<FIELD> env keys (read by app.research.config)
     research_agent_preset: str = "budget"
 
-    # Broker (market data only; no order placement)
-    broker: str = "upstox"
-    broker_api_key: str = ""
-    broker_api_secret: str = ""
-    broker_client_id: str = ""
-    broker_access_token: str = ""
-    broker_totp_secret: str = ""
-    broker_token_issued_on: str = ""  # YYYY-MM-DD; Upstox analytics token lasts 1 year
+    # Broker: Kotak Neo, market data only (no order code; see app/market/kotak.py)
+    kotak_access_token: str = ""  # Neo app > More > Trade API > your application's token
+    kotak_mobile: str = ""  # registered mobile number (+91 added when missing)
+    kotak_ucc: str = ""  # unique client code
+    kotak_mpin: str = ""  # 6-digit MPIN (daily login, only to learn the data base URL)
+    kotak_totp_secret: str = ""  # base32 secret behind the TOTP QR code
+    kotak_base_url: str = ""  # optional override; normally learned at the daily login
 
     # Market / macro data
     macro_provider: str = "yfinance"

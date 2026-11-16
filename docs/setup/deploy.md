@@ -22,8 +22,16 @@ hours (option polling, trading cycle). The full first-run report arrives 24 hour
    `<vercel-url>/auth/callback` as a redirect URL.
 3. **Anthropic**: create an API key. Set a monthly spend limit in the console as well as
    `AI_MONTHLY_BUDGET_INR`.
-4. **Upstox**: open the developer console and generate the **Analytics Token**. It is read-only and
-   valid for 1 year. Record the date you generated it in `BROKER_TOKEN_ISSUED_ON`.
+4. **Kotak Neo** (market data only; see `docs/notes/kotak-api.md`). In the Neo app go to More >
+   Trade API:
+   - Create an application under "Your Applications" and copy its token (`KOTAK_ACCESS_TOKEN`).
+   - Open "TOTP Registration", verify with mobile OTP and client code, and on the QR screen save
+     the **secret key text** (`KOTAK_TOTP_SECRET`) as well as adding it to your authenticator.
+     If TOTP is already registered without a saved key, deregister and register again (Kotak has
+     a 5-minute cooldown between attempts).
+   - Note your mobile number (`KOTAK_MOBILE`), client code (`KOTAK_UCC`) and MPIN (`KOTAK_MPIN`).
+   - **Do not add any static IP.** Kotak then rejects every order request from the API.
+     Market data works from any IP. Keep no funds in the account.
 5. **Telegram**: create a bot with @BotFather (`/newbot`) to get the token. Send the bot a message,
    then open `https://api.telegram.org/bot<token>/getUpdates` to read your chat id.
 6. **healthchecks.io** (free): create a check with period 10 min and grace 15 min. Copy its ping URL
@@ -122,13 +130,12 @@ at any time.
 | `AI_DAILY_BUDGET_INR` | no | VM .env | AI (Anthropic) |
 | `AI_MONTHLY_BUDGET_INR` | no | VM .env | AI (Anthropic) |
 | `RESEARCH_AGENT_PRESET` | no | VM .env | AI research agent (budget / balanced / full; blank = budget) |
-| `BROKER` | no | VM .env | Broker (market data only; no order placement) |
-| `BROKER_API_KEY` | no | VM .env | Broker (market data only; no order placement) |
-| `BROKER_API_SECRET` | no | VM .env | Broker (market data only; no order placement) |
-| `BROKER_CLIENT_ID` | no | VM .env | Broker (market data only; no order placement) |
-| `BROKER_ACCESS_TOKEN` | yes | VM .env | Upstox developer console > Analytics Token (1 year) |
-| `BROKER_TOTP_SECRET` | no | VM .env | Broker (market data only; no order placement) |
-| `BROKER_TOKEN_ISSUED_ON` | yes | VM .env | date you generated the Analytics Token (YYYY-MM-DD) |
+| `KOTAK_ACCESS_TOKEN` | yes | VM .env | Neo app > More > Trade API > Your Applications > token |
+| `KOTAK_MOBILE` | yes | VM .env | registered mobile number (+91 is added if missing) |
+| `KOTAK_UCC` | yes | VM .env | your Kotak client code |
+| `KOTAK_MPIN` | yes | VM .env | your 6-digit MPIN (daily login only learns the data address) |
+| `KOTAK_TOTP_SECRET` | yes | VM .env | secret key text from Trade API > TOTP Registration |
+| `KOTAK_BASE_URL` | no | VM .env | leave blank (learned at the daily login) |
 | `MACRO_PROVIDER` | no | VM .env | Market / macro data |
 | `TWELVEDATA_API_KEY` | no | VM .env | Market / macro data |
 | `ALPHAVANTAGE_API_KEY` | no | VM .env | Market / macro data |
@@ -204,13 +211,13 @@ Never put the service_role key in Vercel.
 - **2 h after the first start: quick check** (Telegram and the dashboard's Go-live page). It tests
   every NSE endpoint first, then:
   - the database and Telegram;
-  - the Upstox token and its expiry;
+  - the Kotak daily login and its data address;
   - the AI smoke test;
   - whether market-hours jobs ran;
   - source health, job errors, and rows collected.
 - **24 h after: first-run report.** Everything above, plus:
   - row counts for every table and history backfill progress;
-  - Upstox response field names and the XBRL share;
+  - Kotak response field names and the XBRL share;
   - database size;
   - each `docs/UNVERIFIED.md` item marked verified, FAILED, or *needs you* (with the manual step).
 - Failed checks also appear under "Needs review" on the dashboard Today page.
@@ -226,7 +233,7 @@ OK / BLOCKED / THROTTLED / field mismatch.
 **Option 1: a proxy for NSE only.** Set `NSE_HTTP_PROXY=http://user:pass@host:port` in
 `/opt/desk/.env`, for example a residential/ISP proxy in India, or a small home machine running
 tinyproxy. Then `docker restart desk-worker` and run `app.golive probe` again. Only NSE hosts go
-through it; Upstox, Telegram, Anthropic and Supabase do not.
+through it; Kotak, Telegram, Anthropic and Supabase do not.
 
 **Option 2: alternatives per data type.**
 
@@ -235,17 +242,17 @@ through it; Upstox, Telegram, Anthropic and Supabase do not.
 | Corporate announcements | BSE corporate announcements API (api.bseindia.com); news RSS |
 | FII/DII flows | NSDL FPI daily reports (fpi.nsdl.co.in) |
 | Event calendar | BSE corporate calendar; `data/manual_calendar.yaml` |
-| Corporate actions | BSE corporate actions; Upstox instrument master (contract changes) |
+| Corporate actions | BSE corporate actions; Kotak scrip master (contract changes) |
 | Insider trades (PIT) | BSE insider disclosures (SAST/PIT) |
 | Bulk / block deals | BSE bulk/block deal reports |
 | Shareholding | BSE shareholding pattern |
 | Financial results / XBRL | BSE results XBRL; results PDFs in announcements (AI extract) |
-| Equity quote (issued size) | Upstox market quote + yearly manual market caps |
+| Equity quote (issued size) | Kotak quotes + yearly manual market caps |
 | F&O ban list | none free (thin contracts are also rejected by liquidity checks) |
-| Lot sizes | Upstox instrument master (already used daily) |
-| Equity bhavcopy (history) | BSE bhavcopy; Upstox historical candles |
-| F&O bhavcopy (history) | Upstox expired-instrument candles (paid); else none free |
-| Index closes incl. VIX | Upstox index candles; Yahoo `^NSEI` / `^INDIAVIX` |
+| Lot sizes | Kotak scrip master (already used daily) |
+| Equity bhavcopy (history) | BSE bhavcopy; Kotak candles (active instruments, 180 days) |
+| F&O bhavcopy (history) | none free (Kotak history covers active contracts only) |
+| Index closes incl. VIX | Kotak quotes (live); Yahoo `^NSEI` / `^INDIAVIX` |
 
 The BSE sources are not yet built as collectors. Ask for them if the proxy is not an option.
 
@@ -271,7 +278,7 @@ The BSE sources are not yet built as collectors. Ask for them if the proxy is no
   1. Edit `/opt/desk/.env`, then `docker restart desk-worker`.
   2. For Supabase keys, also update Vercel.
   3. Rotate Telegram with @BotFather `/revoke`, and Anthropic/GitHub in their consoles.
-- **Yearly Upstox token:** the worker warns 14 days before expiry. Generate a new Analytics Token,
-  set `BROKER_ACCESS_TOKEN` and `BROKER_TOKEN_ISSUED_ON`, then restart.
+- **Kotak:** the worker logs in every weekday at 08:30 by itself (TOTP + MPIN). If you reset the
+  access token or change the MPIN or TOTP in the Neo app, update the `KOTAK_*` values and restart.
 - **Database full:** the free tier is 500 MB. The `db_size` check warns at 80%. Quote thinning and
   cleanup run nightly.

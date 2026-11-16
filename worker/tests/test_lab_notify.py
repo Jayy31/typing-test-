@@ -1,6 +1,6 @@
 """Phase 14 PR 4: /lab, weekly lab summary, digest + monthly sections, strategy alerts."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
@@ -50,7 +50,8 @@ def test_weekly_summary_digest_and_monthly(engine: Engine) -> None:
         assert a.text.startswith("STRATEGY LAB WEEK") and "New hypotheses: 1" in a.text
         lines = lab.digest_lines(s, NOW.date())
         assert any("EOD incubation 12 trades" in x for x in lines)
-        d = lab.monthly_data(s, NOW.replace(day=1), NOW)
+        real = datetime.now(IST)  # hypotheses are stamped with the real clock at registration
+        d = lab.monthly_data(s, real - timedelta(days=1), real + timedelta(days=1))
     assert d["hypotheses"] == 1 and "STRATEGY LAB" in lab.monthly_lines(d)
 
 

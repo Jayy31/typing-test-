@@ -1320,7 +1320,7 @@ const golive_checks: Row[] = [
           details: [
             "announcements: OK",
             "insider: BLOCKED (HTTP 403) -> alternative: BSE insider disclosures (bseindia.com)",
-            "fo_bhavcopy: THROTTLED (slow (9100 ms)) -> alternative: Upstox option chain (live only)",
+            "fo_bhavcopy: THROTTLED (slow (9100 ms)) -> alternative: Kotak option chain (live only)",
           ],
         },
         {
@@ -1330,7 +1330,7 @@ const golive_checks: Row[] = [
           details: [],
         },
         {
-          name: "upstox",
+          name: "kotak",
           status: "ok",
           summary: "token expires in 351 days",
           details: [
@@ -1434,7 +1434,7 @@ const config: Row[] = [
         consecutive_failures: 4,
       },
       macro_yahoo: { last_ok: T(52), consecutive_failures: 0 },
-      upstox: { last_ok: T(4), consecutive_failures: 0 },
+      kotak_instruments: { last_ok: T(4), consecutive_failures: 0 },
       sebi_rss: { last_ok: T(25), consecutive_failures: 0 },
     },
   },
@@ -1479,7 +1479,7 @@ const config: Row[] = [
     key: "unverified_alerts",
     value_json: [
       {
-        item: "Upstox depth quantity field missing: using chain quantities",
+        item: "Kotak depth quantity field missing: fill check reads unknown",
         since: D(1),
       },
     ],
