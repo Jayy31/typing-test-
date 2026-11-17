@@ -10,6 +10,11 @@ bootstrap_samples: 3000
 bootstrap_seed: 23
 stress_extra_cost_pct: 4.0      # 2x spread: extra round-trip cost per trade, % of premium
 review_after_months: 2
+review_min_changed: 5           # review needs this many events the change actually affected;
+                                # a revert is suggested only if the whole interval is below 0
+# Rejection stages that are thresholds (the tunables below). Only these count as "would have been
+# traded with a looser gate"; hard-rule rejections (pre-move, liquidity, ban, core rule) never do.
+soft_stages: [score, edge, ev, probability]
 
 # Each tunable is a minimum gate on a field stored with every signal and rejection.
 tunables:

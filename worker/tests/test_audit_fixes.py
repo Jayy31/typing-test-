@@ -202,3 +202,268 @@ def test_a11f_day_rules_wait_for_the_late_session(engine: Engine) -> None:
     trading_cycle(engine, src, now.replace(hour=15, minute=5))
     tr2 = trade(engine)
     assert tr2.status == "CLOSED" and tr2.exit_reason == "TIME"
+
+
+# ---- group B: learning system ----------------------------------------------------------------
+def _analysis(s: Any, symbol: str = "SBIN") -> Any:
+    from app.db.models import Analysis
+
+    a = Analysis(
+        symbol=symbol, thesis="t", direction="bullish", created_at=datetime.now(IST), window_days=3
+    )
+    s.add(a)
+    s.flush()
+    return a
+
+
+def test_b1_rejection_never_replayed_is_not_a_miss(engine: Engine) -> None:
+    from app.calibration import service as calibration
+    from app.db.models import CalibrationRecord, RejectedCandidate
+
+    now = datetime.now(IST)
+    with session_scope(engine) as s:
+        a = _analysis(s)
+        s.add(
+            RejectedCandidate(
+                dedupe_key="b1",
+                ts=now,
+                symbol="SBIN",
+                stage="ev",
+                reason="r",
+                analysis_id=a.id,
+                ref_strike=500,
+                ref_option_type="PE",
+                outcome_status="resolved",
+                details_json={"cf": {"seen": now.isoformat()}},  # option never quoted: no state
+            )
+        )
+        s.add(
+            CalibrationRecord(
+                analysis_id=a.id, target="p_t1_before_sl", predicted=0.6, recorded_at=now
+            )
+        )
+    calibration.resolve(engine)
+    with session_scope(engine) as s:
+        r = s.scalars(select(CalibrationRecord)).one()
+        assert r.outcome is None and r.resolved_at is None
+
+
+def test_b2_tracker_serves_least_recently_seen_rows(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.db.models import RejectedCandidate
+    from app.tracking import counterfactual as cf
+
+    cfg = {
+        "counterfactual": {**load_yaml("tracking.yaml")["counterfactual"], "max_rows_per_run": 1}
+    }
+    monkeypatch.setattr(
+        cf, "load_yaml", lambda name: cfg if name == "tracking.yaml" else load_yaml(name)
+    )
+    src = FakeSource()
+    now = weekday_at(12, 40)
+    with session_scope(engine) as s:
+        s.add(
+            RejectedCandidate(dedupe_key="c0", ts=now, symbol="INFY", stage="candidate", reason="r")
+        )
+        for i, sym in enumerate(("TCS", "SBIN")):
+            s.add(
+                RejectedCandidate(
+                    dedupe_key=f"o{i}",
+                    ts=now,
+                    symbol=sym,
+                    stage="edge",
+                    reason="r",
+                    ref_expiry=src.exp[0],
+                    ref_strike=4000.0,
+                    ref_option_type="CE",
+                    ref_premium=50.0,
+                )
+            )
+    cf.track_rejections(engine, src, now)  # type: ignore[arg-type]
+    cf.track_rejections(engine, src, now + timedelta(minutes=5))  # type: ignore[arg-type]
+    with session_scope(engine) as s:
+        seen = {
+            r.symbol: bool(((r.details_json or {}).get("cf") or {}).get("state"))
+            for r in s.scalars(select(RejectedCandidate))
+        }
+    assert seen["TCS"] and seen["SBIN"]  # one chain per run, yet both replayed after two runs
+
+
+def test_b3_b10c_score_sets_scored_at_and_judges_the_window_day() -> None:
+    from app.db.models import PredictionScore
+    from app.tracking.scorecard import score
+
+    made = datetime(2026, 11, 9, 11, 0, tzinfo=IST)  # Monday
+    ps = PredictionScore(
+        analysis_id=1,
+        symbol="TCS",
+        direction="bullish",
+        predicted_move_pct=2,
+        predicted_move_raw_pct=4,
+        window_days=2,
+        spot_start=100.0,
+        created_at=made,
+        path_json=[],
+    )
+    closes = [
+        ("2026-11-09", 100.5),
+        ("2026-11-10", 101.0),
+        ("2026-11-11", 102.0),
+        ("2026-11-12", 99.0),
+    ]
+    score(ps, closes, set())
+    assert ps.status == "scored" and ps.scored_at is not None
+    assert (
+        ps.direction_hit is True
+    )  # up at the end of the 2-day window; the buffer-day fall is not judged
+    assert ps.realised_move_pct == pytest.approx(-1.0)
+
+
+def _opp(ret: float, edge: float, taken: bool, cluster: str) -> Any:
+    from app.analytics.learning import Opp
+
+    vals: dict[str, float | None] = {
+        "score": 80,
+        "edge_ratio": edge,
+        "p_t1_before_sl": 0.7,
+        "ev_pct": 30,
+    }
+    return Opp(datetime.now(IST), ret, vals, taken, cluster)
+
+
+def test_b6_learning_counts_one_news_event_once() -> None:
+    from app.analytics import learning
+
+    cur = learning.current_values()
+    opps = [_opp(10.0, 1.1, False, "c1") for _ in range(40)]  # one event analysed 40 times
+    d = learning.evaluate(opps, "edge_ratio_min", 1.0, cur)
+    assert d is not None and len(d) == 1 and d[0] == pytest.approx(400.0)
+
+
+def test_b5_only_soft_gate_rejections_are_opportunities(engine: Engine) -> None:
+    from app.analytics import learning
+    from app.db.models import RejectedCandidate
+
+    now = datetime.now(IST)
+    with session_scope(engine) as s:
+        for i, stage in enumerate(("edge", "entry", "liquidity", "options_probability")):
+            a = _analysis(s)
+            s.add(
+                RejectedCandidate(
+                    dedupe_key=f"s{i}",
+                    ts=now,
+                    symbol="SBIN",
+                    stage=stage,
+                    reason="r",
+                    analysis_id=a.id,
+                    outcome_status="resolved",
+                    option_return_pct=20.0,
+                    score=80,
+                    details_json={"edge_ratio": 1.1, "p_t1_before_sl": 0.6, "ev_pct": 20},
+                )
+            )
+    with session_scope(engine) as s:
+        opps = learning.opportunities(s, now - timedelta(days=1), now + timedelta(days=1))
+    assert len(opps) == 2  # edge and options_probability; pre-move and liquidity are hard rules
+    assert opps[0].ret == pytest.approx(20.0 - 1.5)  # same round-trip cost as real trades
+
+
+def test_b8_time_exit_is_not_a_t1_hit() -> None:
+    from app.analytics.live import perf
+
+    t = PaperTrade(
+        pnl_pct=-5.0, pnl=-100.0, exit_reason="TIME", state_json={"targets_hit": 0}, slippage_inr=0
+    )
+    w = PaperTrade(
+        pnl_pct=30.0, pnl=600.0, exit_reason="TRAIL", state_json={"targets_hit": 2}, slippage_inr=0
+    )
+    assert perf([t, w], lambda x: str(id(x)))["t1_hit_rate"] == 0.5
+
+
+def test_b9_calibrator_brier_is_out_of_sample() -> None:
+    from app.calibration import fit as F
+
+    rng = np.random.default_rng(3)
+    p = rng.uniform(0.3, 0.9, 400)
+    y = rng.random(400) < 0.5  # outcomes unrelated to the predictions
+    keys = [f"k{i}" for i in range(400)]
+    res = F.fit(list(p), [bool(v) for v in y], keys, isotonic_min=200)
+    w = F.cluster_weights(keys)
+    in_sample = F.brier(np.array([res.apply(v) for v in p]), y.astype(float), w)
+    assert res.brier > in_sample  # the stored figure no longer flatters the calibrator
+
+
+def test_b10d_learning_lookback_is_three_months(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.analytics import learning
+
+    seen: list[datetime] = []
+    monkeypatch.setattr(learning, "opportunities", lambda s, a, b: seen.append(a) or [])
+    monkeypatch.setattr(learning, "review_applied", lambda e, n: [])
+    learning.run_monthly(engine, datetime(2026, 11, 1, 6, 0, tzinfo=IST))
+    assert seen and seen[0].date() == date(2026, 8, 1)
+
+
+def test_b7_review_without_affected_trades_does_not_revert(engine: Engine) -> None:
+    from app.analytics import learning
+    from app.db.models import Suggestion
+    from tests.test_phase10 import NOW, _trade
+
+    applied_at = datetime(2026, 8, 25, tzinfo=IST)
+    with session_scope(engine) as s:
+        s.add(
+            Suggestion(
+                id=7,
+                month=date(2026, 8, 1),
+                kind="change",
+                param="edge_ratio_min",
+                file="worker/config/options.yaml",
+                yaml_path="edge_ratio_min",
+                current_value=1.2,
+                proposed_value=1.3,
+                expected_effect=6.0,
+                evidence_json={},
+                status="applied",
+                applied_at=applied_at,
+            )
+        )
+        for i in range(1, 61):  # every trade far above both values: the change affected nothing
+            _trade(s, i, 5.0, applied_at + timedelta(hours=20 * i), edge=1.6)
+    assert learning.review_applied(engine, NOW) == []
+    with session_scope(engine) as s:
+        g = s.get(Suggestion, 7)
+        assert g is not None and g.review_json["status"] == "too few affected opportunities"
+
+
+def test_b4_after_hours_prediction_is_scored_when_priced(engine: Engine) -> None:
+    from types import SimpleNamespace
+
+    from app.db.models import CalibrationRecord, PredictionScore
+    from app.signals.deferred import _score_deferred
+
+    now = datetime.now(IST)
+    with session_scope(engine) as s:
+        a = _analysis(s, "TCS")
+        sig = Signal(
+            symbol="TCS", direction="CALL", status="NEW", analysis_id=a.id, created_at=now, score=80
+        )
+        s.add(sig)
+        s.flush()
+        res = SimpleNamespace(p_t1_before_sl=0.6)
+        plan = SimpleNamespace(
+            spot=4000.0,
+            best_reference=SimpleNamespace(raw=SimpleNamespace(p_t1_before_sl=0.7), result=res),
+        )
+        policy = SimpleNamespace(move_weight=0.5, t1_cal=None)
+        d = {"move_pct": 4.0, "p_move": 0.7, "direction": "bullish", "source": "single"}
+        _score_deferred(s, a, sig, d, plan, policy, now)
+    with session_scope(engine) as s:
+        ps = s.scalars(select(PredictionScore)).one()
+        assert (ps.spot_start, ps.predicted_move_pct, ps.predicted_move_raw_pct) == (
+            4000.0,
+            2.0,
+            4.0,
+        )
+        assert s.scalars(select(CalibrationRecord)).one().target == "p_t1_before_sl"

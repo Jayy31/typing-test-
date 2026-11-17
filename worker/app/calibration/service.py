@@ -204,9 +204,12 @@ def resolve(
                 )
                 if rej is not None:
                     r.rejection_id = rej.id
-                    outcome = _t1_outcome(((rej.details_json or {}).get("cf") or {}).get("state"))
-                    if outcome is None and rej.outcome_status != "open":
+                    state = ((rej.details_json or {}).get("cf") or {}).get("state")
+                    outcome = _t1_outcome(state)
+                    if outcome is None and state and rej.outcome_status != "open":
                         outcome = False  # replay ended (horizon) without reaching T1
+                    # no replay state at all (option never quoted): NOT a miss; the record
+                    # stays unresolved and ages out below without an outcome
             if outcome is not None:
                 r.outcome, r.resolved_at = outcome, now
                 n += 1
@@ -274,6 +277,14 @@ def fit_all(engine: Engine | None = None, now: datetime | None = None) -> list[s
                     keys,
                     st.calibration_isotonic_min,
                 )
+                if res.brier >= res.brier_raw:
+                    # no out-of-sample improvement over the raw probabilities: keep what is
+                    # active (the previous calibrator, or shrinkage) and try again next time
+                    out.append(
+                        f"{target}/{source}: {res.method} not activated, cross-validated Brier "
+                        f"{res.brier:.3f} is not below raw {res.brier_raw:.3f}"
+                    )
+                    continue
                 version = (
                     int(
                         s.scalar(
@@ -313,7 +324,7 @@ def fit_all(engine: Engine | None = None, now: datetime | None = None) -> list[s
                 )
                 out.append(
                     f"{target}/{source}: {res.method} v{version} on {res.n_records} records / {res.n_events:.0f} events, "
-                    f"Brier {res.brier_raw:.3f} -> {res.brier:.3f}"
+                    f"Brier raw {res.brier_raw:.3f} -> calibrated {res.brier:.3f} (cross-validated)"
                 )
     log.info("calibration: %s", "; ".join(out))
     return out
