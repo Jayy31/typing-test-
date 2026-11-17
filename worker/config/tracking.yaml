@@ -1,6 +1,8 @@
 # Counterfactual tracker (v2.1 B1) and prediction scorecard (v2.1 B3).
 counterfactual:
-  max_rows_per_run: 60          # API budget per run (each distinct symbol/expiry = 1 chain call)
+  max_rows_per_run: 60          # API budget per run: distinct symbol/expiry chains fetched.
+                                # Rows not looked at for longest go first, so every open
+                                # rejection is replayed regularly, not only the oldest
   max_days: 10                  # trading days after rejection; then resolved at the last mark
   times: ["12:40", "15:20"]     # runs (market hours)
 scorecard:

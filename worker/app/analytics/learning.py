@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.analytics import github, yaml_edit
 from app.config import IST, get_settings
-from app.db.models import PaperTrade, RejectedCandidate, Signal, Suggestion
+from app.db.models import Analysis, PaperTrade, RejectedCandidate, Signal, Suggestion
 from app.db.session import session_scope
 from app.notify.outbox import enqueue_alert
 from app.timeutil import as_ist
@@ -40,6 +40,7 @@ class Opp:
     ret: float  # % of premium (realised or counterfactual)
     values: dict[str, float | None] = field(default_factory=dict)
     taken: bool = False  # a real trade (it passed every gate at the time)
+    cluster: str = ""  # news event: repeat analyses of one event are one independent sample
 
 
 def opportunities(s: Session, start: datetime, end: datetime) -> list[Opp]:
@@ -48,11 +49,21 @@ def opportunities(s: Session, start: datetime, end: datetime) -> list[Opp]:
     # Phase 12: watchlist near-misses count with their real fills instead of the counterfactual
     use_watch = bool(load_yaml("watchlist.yaml")["learning"]["include"])
     watched: set[int] = set()
+    clusters = {a.id: a.cluster_id for a in s.scalars(select(Analysis))}
+
+    def cluster_of(analysis_id: int | None, fallback: str) -> str:
+        c = clusters.get(analysis_id) if analysis_id else None
+        return f"c{c}" if c else (f"a{analysis_id}" if analysis_id else fallback)
+
+    soft = set(cfg()["soft_stages"])
+    cost = float(load_yaml("options.yaml")["simulator"]["costs_pct_of_premium"])
     for t in s.scalars(select(PaperTrade).where(PaperTrade.status == "CLOSED")):
         when = as_ist(t.exit_ts or t.entry_ts)
         g = sig.get(t.signal_id)
         if g is None or not (start <= when < end) or t.pnl_pct is None:
             continue
+        if t.book not in ("main", "watchlist"):
+            continue  # strategy-lab books are not gate near-misses
         if t.book != "main":
             if not use_watch:
                 continue
@@ -69,6 +80,7 @@ def opportunities(s: Session, start: datetime, end: datetime) -> list[Opp]:
                     "ev_pct": g.expected_value,
                 },
                 t.book == "main",  # only main-book trades passed every gate
+                cluster_of(g.analysis_id, f"t{t.id}"),
             )
         )
     for r in s.scalars(
@@ -79,11 +91,16 @@ def opportunities(s: Session, start: datetime, end: datetime) -> list[Opp]:
             continue
         if r.analysis_id in watched:
             continue  # already counted from the watchlist trade
+        # only candidates stopped by a SOFT gate: one blocked by a hard rule (pre-move, ban,
+        # liquidity, core rule...) could not be traded whatever the thresholds are
+        if r.stage.removeprefix("options_") not in soft:
+            continue
         d = r.details_json or {}
         out.append(
             Opp(
                 when,
-                float(r.option_return_pct),
+                # trades are net of costs; the replay is not: charge the same round-trip cost
+                float(r.option_return_pct) - cost,
                 {
                     "score": r.score,
                     "edge_ratio": d.get("edge_ratio"),
@@ -91,6 +108,7 @@ def opportunities(s: Session, start: datetime, end: datetime) -> list[Opp]:
                     "ev_pct": d.get("ev_pct"),
                 },
                 False,
+                cluster_of(r.analysis_id, f"r{r.id}"),
             )
         )
     return sorted(out, key=lambda o: o.when)
@@ -123,18 +141,22 @@ def selected(o: Opp, gates: dict[str, tuple[str, float]]) -> bool | None:
 def evaluate(
     opps: list[Opp], param: str, new: float, cur: dict[str, float], extra_cost: float = 0.0
 ) -> np.ndarray | None:
-    """Per-opportunity difference (new - current) in % of premium; None if too few knowable."""
+    """Difference (new - current) in % of premium, summed per news event (cluster) in time
+    order, so the bootstrap resamples independent events; None if too few knowable."""
     tun = {t["param"]: t for t in cfg()["tunables"]}
     base = {p: (tun[p]["field"], v) for p, v in cur.items() if p in tun}
     alt = {**base, param: (tun[param]["field"], new)}
-    diffs = []
-    for o in opps:
+    by_event: dict[str, float] = {}
+    n = 0
+    for i, o in enumerate(opps):
         a, b = selected(o, base), selected(o, alt)
         if a is None or b is None:
             continue
+        n += 1
         r = o.ret - extra_cost
-        diffs.append((r if b else 0.0) - (r if a else 0.0))
-    return np.array(diffs) if len(diffs) >= int(cfg()["min_opportunities"]) else None
+        key = o.cluster or f"o{i}"
+        by_event[key] = by_event.get(key, 0.0) + (r if b else 0.0) - (r if a else 0.0)
+    return np.array(list(by_event.values())) if n >= int(cfg()["min_opportunities"]) else None
 
 
 def ci(diffs: np.ndarray, level: float) -> tuple[float, float]:
@@ -212,9 +234,8 @@ def run_monthly(engine: Engine | None = None, now: datetime | None = None) -> in
     now = now or datetime.now(IST)
     c = cfg()
     month = month_start(now.date())
-    start = datetime.combine(
-        (month - timedelta(days=31 * int(c["lookback_months"]))).replace(day=1), time(0), IST
-    )
+    back = month.year * 12 + month.month - 1 - int(c["lookback_months"])
+    start = datetime.combine(date(back // 12, back % 12 + 1, 1), time(0), IST)
     end = datetime.combine(month, time(0), IST)
     months = max(1.0, (end - start).days / 30.4)
     reverts = review_applied(engine, now)
@@ -298,9 +319,18 @@ def review_applied(engine: Engine | None, now: datetime) -> list[int]:
             if d is None:
                 g.review_json = {"status": "too few opportunities", "reviewed_at": now.isoformat()}
                 continue
+            changed = int(np.count_nonzero(d))
+            if changed < int(c["review_min_changed"]):
+                # nothing (or almost nothing) fell between the old and the new value: no evidence
+                g.review_json = {
+                    "status": "too few affected opportunities",
+                    "changed": changed,
+                    "reviewed_at": now.isoformat(),
+                }
+                continue
             actual = float(-d.sum()) / months  # applied - old, per month
             lo, hi = ci(-d, float(c["ci_level"]))
-            helped = actual > 0
+            helped = not hi < 0  # revert only when the whole interval says it hurt
             g.review_json = {
                 "reviewed_at": now.isoformat(),
                 "predicted_effect": g.expected_effect,

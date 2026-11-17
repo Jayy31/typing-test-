@@ -106,6 +106,7 @@ def update_one(
         r.outcome_status = "resolved" if r.ref_strike else "stock_only"
         r.resolved_at = now
         r.exit_reason = r.exit_reason or ("HORIZON" if r.ref_strike else None)
+    cf["seen"] = now.isoformat()
     d["cf"] = cf
     r.details_json = d
 
@@ -120,15 +121,38 @@ def track_rejections(
     if not source.available or not market_open(now):
         return 0
     cfg = load_yaml("tracking.yaml")["counterfactual"]
+    budget = int(cfg["max_rows_per_run"])
     with session_scope(engine) as s:
-        rows = s.scalars(
+        open_rows = s.scalars(
             select(RejectedCandidate)
             .where(RejectedCandidate.outcome_status == "open")
             .order_by(RejectedCandidate.id)
-            .limit(int(cfg["max_rows_per_run"]))
         ).all()
-        wanted = {(r.symbol, r.ref_expiry) for r in rows if r.ref_expiry and r.ref_strike}
+
+        def last_seen(r: RejectedCandidate) -> str:
+            return str(((r.details_json or {}).get("cf") or {}).get("seen") or "")
+
+        # rows with an option to replay: least recently looked at first, until the chain budget
+        # is used. Rows without one (stock-only) never take a chain slot.
+        wanted: set[tuple[str, date]] = set()
+        rows = []
+        for r in sorted(
+            (x for x in open_rows if x.ref_expiry and x.ref_strike),
+            key=lambda x: (last_seen(x), x.id),
+        ):
+            key = (r.symbol, r.ref_expiry)
+            if key not in wanted and len(wanted) >= budget:
+                continue
+            wanted.add(key)  # type: ignore[arg-type]
+            rows.append(r)
+        stock_only = [x for x in open_rows if not (x.ref_expiry and x.ref_strike)]
         symbols = {r.symbol for r in rows}
+        spare = max(budget - len(symbols), 0)
+        for r in sorted(stock_only, key=lambda x: (last_seen(x), x.id)):
+            if r.symbol in symbols or spare > 0:
+                spare -= r.symbol not in symbols
+                symbols.add(r.symbol)
+                rows.append(r)
     chains: dict[tuple[str, date], OptionChain] = {}
     for sym, exp in wanted:
         try:

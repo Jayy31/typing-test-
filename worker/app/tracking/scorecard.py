@@ -61,7 +61,14 @@ def score(ps: PredictionScore, closes: list[tuple[str, float]], holidays: set[da
         return
     start = as_ist(ps.created_at).date()
     ps.realised_move_pct = round(moves[-1], 3)
-    ps.direction_hit = moves[-1] > 0
+    # direction is judged at the end of the PREDICTED window (the buffer day only gives the
+    # close time to be captured), so the horizon scored is the horizon predicted
+    in_window = [
+        m
+        for (d, _), m in zip(closes, moves, strict=True)
+        if trading_days_between(start, date.fromisoformat(d), holidays) <= ps.window_days
+    ]
+    ps.direction_hit = (in_window[-1] if in_window else moves[-1]) > 0
     ps.move_error_pct = round(moves[-1] - ps.predicted_move_pct, 3)
     ps.max_favourable_pct = round(max(moves), 3)
     ps.max_adverse_pct = round(min(moves), 3)
@@ -71,6 +78,7 @@ def score(ps: PredictionScore, closes: list[tuple[str, float]], holidays: set[da
         ps.days_to_half_move = trading_days_between(start, date.fromisoformat(hit_day), holidays)
         ps.timing_error_days = ps.days_to_half_move - ps.window_days
     ps.status = "scored"
+    ps.scored_at = datetime.now(IST)  # the weekly self-review selects on this
 
 
 def update_scores(

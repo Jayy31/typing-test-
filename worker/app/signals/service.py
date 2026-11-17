@@ -398,7 +398,12 @@ def store_result(
         if sig.status != "CANCELLED":
             stamp_signal(s, sig, out, item, plan, now)
     _score_prediction(s, analysis, out, plan, events, now, item)
-    made = any(ev.kind == "new" for ev in events) or live_signal(s, cand.symbol) is not None
+    # an AI call = this analysis raised a signal, or backs a live one in the SAME direction
+    live_now = live_signal(s, cand.symbol)
+    want = {"bullish": "CE", "bearish": "PE"}.get(analysis.direction or "")
+    made = any(ev.kind == "new" for ev in events) or (
+        live_now is not None and want is not None and live_now.option_type == want
+    )
     ai_vs_rules.record(s, analysis, cand.direction, item.analogue, made)  # B3 (Phase 10)
     if not any(ev.kind == "new" for ev in events) and live_signal(s, cand.symbol) is None:
         _record_not_signalled(s, item, out, analysis, score, checks, plan, now)

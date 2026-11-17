@@ -86,7 +86,7 @@ class Fitted:
     n_records: int
     n_events: float  # independent events = sum of cluster weights
     brier_raw: float
-    brier: float
+    brier: float  # calibrated, out-of-sample (cross-validated by event)
     reliability: list[dict[str, float]] = field(default_factory=list)
 
     def apply(self, p: float) -> float:
@@ -140,6 +140,31 @@ def fit(p: list[float], y: list[bool], keys: list[str], isotonic_min: float) -> 
         len(pa),
         round(n_events, 2),
         brier(pa, ya, w),
-        brier(cal, ya, w),
+        cv_brier(pa, ya, keys, w, method),
         reliability(cal, ya, w),
     )
+
+
+def cv_brier(
+    pa: np.ndarray, ya: np.ndarray, keys: list[str], w: np.ndarray, method: str, folds: int = 5
+) -> float:
+    """Out-of-sample Brier of the calibrated probabilities: each event (cluster) is scored by a
+    calibrator fitted WITHOUT it. An in-sample Brier always flatters the calibrator (isotonic
+    most of all), so this is the number compared with the raw Brier before activation."""
+    import zlib
+
+    fold = np.array([zlib.crc32(k.encode()) % folds for k in keys])
+    out = pa.copy()
+    for f in range(folds):
+        test = fold == f
+        train = ~test
+        if not test.any() or len(set(ya[train])) < 2:
+            continue  # nothing to score, or one class only: leave the raw probability
+        if method == "isotonic":
+            kx, ky = isotonic_fit(pa[train], ya[train], w[train])
+            prm: dict[str, Any] = dict(x=kx, y=ky)
+        else:
+            a, b = platt_fit(pa[train], ya[train], w[train])
+            prm = dict(a=a, b=b)
+        out[test] = [apply_params(method, prm, v) for v in pa[test]]
+    return brier(out, ya, w)

@@ -14,6 +14,7 @@ import numpy as np
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
+from app.config import IST
 from app.db.models import (
     Analysis,
     BacktestRun,
@@ -63,10 +64,8 @@ def perf(trades: list[PaperTrade], cluster: Callable[[PaperTrade], str]) -> dict
         groups[cluster(t)].append(t.pnl_pct or 0.0)
     ci = bootstrap_ci(list(groups.values()))
     losses = inr[inr <= 0].sum()
-    t1 = [
-        bool((t.state_json or {}).get("targets_hit", 0)) or (t.exit_reason or "").startswith("T")
-        for t in trades
-    ]
+    # T1 reached = a target was actually booked ("TIME" / "THESIS" exits are not targets)
+    t1 = [int((t.state_json or {}).get("targets_hit") or 0) >= 1 for t in trades]
     return {
         "n": len(trades),
         "events": len(groups),
@@ -275,7 +274,10 @@ def drift_check(engine: Engine | None = None, now: datetime | None = None) -> in
             return 0
         lo, hi = float(b["expectancy_p5"]), float(b["expectancy_p95"])
         e = float(live["expectancy_pct"])
-        if lo <= e <= hi:
+        # the live number has sampling noise too: alert only when the live interval and the
+        # backtest interval do not overlap at all
+        l_lo, l_hi = (live.get("ci") or [e, e])[:2]
+        if float(l_lo) <= hi and float(l_hi) >= lo:
             return 0
         side = "below" if e < lo else "above"
         text = (
@@ -285,5 +287,5 @@ def drift_check(engine: Engine | None = None, now: datetime | None = None) -> in
             f"{c['drift_backtest_variant']}).\n"
             "Check fills, spreads and data quality before trusting either number."
         )
-        month = (now or datetime.now()).strftime("%Y-%m")
+        month = (now or datetime.now(IST)).strftime("%Y-%m")
         return int(enqueue_alert(s, "health", text, f"drift:{month}:{side}"))

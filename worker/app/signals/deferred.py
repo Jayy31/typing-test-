@@ -82,6 +82,49 @@ def due(s: Session, now: datetime) -> list[Signal]:
     ]
 
 
+def _score_deferred(
+    s: Session, an: Analysis, sig: Signal, d: dict[str, Any], plan: Any, policy: Any, now: datetime
+) -> None:
+    """After-hours predictions join the scorecard and the p(T1) calibration set once they have a
+    live starting price (the open they are priced at). Without this, post-close news, which
+    includes most results, would never be measured."""
+    from app.calibration import service as calibration
+    from app.signals.prediction import Prediction, shrink
+    from app.tracking.scorecard import create_score
+
+    if plan.spot is None:
+        return
+    raw = Prediction(
+        float(d["move_pct"]), sig.predicted_move_source or "scenario_tree", d["p_move"]
+    )
+    used = shrink(raw, policy.move_weight)
+    create_score(
+        s,
+        an,
+        d["direction"],
+        used.move_pct,
+        raw.move_pct,
+        used.p_move,
+        plan.spot,
+        now,
+        sig.id,
+        raw.source,
+        d["source"],
+    )
+    best = plan.best_reference
+    if best is not None and best.raw is not None and best.result is not None:
+        calibration.add_record(
+            s,
+            an,
+            "p_t1_before_sl",
+            best.raw.p_t1_before_sl,
+            best.result.p_t1_before_sl,
+            d["source"],
+            policy.t1_cal.id if policy.t1_cal else None,
+            sig.id,
+        )
+
+
 def reprice_due(engine: Any, source: Any, now: datetime) -> int:
     """Re-price deferred signals at the open. Rejections cancel the signal (recorded for the
     counterfactual tracker). Returns the number of signals priced."""
@@ -122,6 +165,7 @@ def reprice_due(engine: Any, source: Any, now: datetime) -> int:
             assert sig is not None and an is not None
             an.scores_json = {**(an.scores_json or {}), "options": _plan_json(plan)}
             apply_plan(s, sig, plan, now)
+            _score_deferred(s, an, sig, d, plan, policy, now)
             if plan.chosen is None:
                 stage, reason = plan.rejection or ("options", f"pricing at the open: {plan.status}")
                 sig.status, sig.updated_at = "CANCELLED", now
