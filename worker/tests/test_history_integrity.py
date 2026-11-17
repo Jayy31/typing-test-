@@ -56,7 +56,8 @@ def test_reaction_day_labels():
     assert reaction_day(cal, date(2024, 1, 8), time(11, 0)) == (1, "intraday")
     assert reaction_day(cal, date(2024, 1, 8), time(15, 45)) == (2, "post_close")
     assert reaction_day(cal, date(2024, 1, 6), time(10, 0)) == (1, "non_trading_day")  # Saturday
-    assert reaction_day(cal, date(2024, 1, 8), None) == (1, "unknown")
+    # no time: possibly after the close, so the first tradable day is the next one
+    assert reaction_day(cal, date(2024, 1, 8), None) == (2, "unknown")
     assert reaction_day(cal, date(2024, 1, 9), time(16, 0)) == (None, "post_close")
 
 

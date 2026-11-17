@@ -97,6 +97,10 @@ def reaction_day(calendar: list[date], d: date, t: time | None) -> tuple[int | N
     if calendar[i] != d:
         return i, "non_trading_day"
     if t is None:
+        # no time: the news may have come after the close (index changes, curated events), so
+        # the first day that can be TRADED on it is the next one; same-day would buy before it
+        if cfg.get("unknown_time_next_day", True):
+            return (i + 1, "unknown") if i + 1 < len(calendar) else (None, "unknown")
         return i, "unknown"
     if t < time.fromisoformat(cfg["market_open"]):
         return i, "pre_open"
@@ -474,7 +478,7 @@ def reaction_rows(
                max(r.weight) AS w, arg_max(r.abnormal_ret, r.weight) AS abn
         FROM event_reactions r JOIN hist_events e USING (event_id)
         WHERE e.direction IN ('bullish', 'bearish') AND r."window" >= 0 AND r.weight > 0
-        GROUP BY ALL""").fetchall()
+        GROUP BY ALL ORDER BY r.reaction_day, r.symbol, e.event_type""").fetchall()
     if before is None:
         return rows
     cal = [r[0] for r in con.execute("SELECT DISTINCT date FROM hist_prices ORDER BY 1").fetchall()]
@@ -496,11 +500,22 @@ def grouped_values(
     `labels` (Phase 12 market regime per day) adds groups keyed "R:<label>"."""
     from app.regime.analogues import key as regime_key
 
+    # The regime of an event is the one KNOWN before its reaction day (the previous session),
+    # as live: the reaction day's own VIX / index close already contains the event's effect.
+    vix_days = sorted(vix)
+    label_days = sorted(labels) if labels else []
+
+    def prior(days: list[date], d: date) -> date | None:
+        i = bisect.bisect_left(days, d)
+        return days[i - 1] if i > 0 else None
+
     groups: dict[tuple[Any, ...], list[tuple[float, float]]] = defaultdict(list)
     for etype, sector, sym, w, direction, d, wt, abn in rows:
         signed = abn if direction == "bullish" else -abn
-        regs = [regime(vix, d), "all"]
-        rk = regime_key(labels.get(d)) if labels else None
+        pv = prior(vix_days, d)
+        regs = [regime(vix, pv) if pv else "unknown", "all"]
+        pl = prior(label_days, d)
+        rk = regime_key(labels.get(pl)) if labels and pl else None
         if rk:
             regs.append(rk)
         for reg in dict.fromkeys(regs):

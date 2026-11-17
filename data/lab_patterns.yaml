@@ -12,7 +12,7 @@ patterns:
     rationale: Implied volatility tends to rise into scheduled results; a long option bought a week before gains vega before the announcement.
     expected_effect: Positive expectancy when bought 5-7 trading days before results and sold the day before.
     spec:
-      trigger: {event_types: [results], direction: base_rate, min_analogue_n: 20}
+      trigger: {event_types: [results], direction: bullish}   # IV run-up is direction-neutral; a call is the simplest long-vega leg
       entry: {timing: before_event, days_before: 6}
       exits: {exit_before_event: true, targets_pct: [40, 80]}
   - name: insider_buying_drift

@@ -39,6 +39,7 @@ def cutoff_mid(monkeypatch):
 def small_cfg(monkeypatch, **over):
     c = copy.deepcopy(cfg())
     c["luck"]["placebo"]["runs"] = 3
+    c["stage0"]["exit_buffer_days"] = 14  # the fixture history is short: events sit near the cutoff
     for path, v in over.items():
         node = c
         keys = path.split(".")

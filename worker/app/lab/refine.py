@@ -13,7 +13,7 @@ from sqlalchemy import Engine, select
 from app.ai.client import AiClient, BudgetExceededError
 from app.ai.providers.base import ModelProvider
 from app.config import IST
-from app.db.models import LabHypothesis, LabSpec, LabTrial
+from app.db.models import LabHypothesis, LabSpec, LabTrial, LabVerdict
 from app.db.session import session_scope
 from app.lab import ai as lab_ai
 from app.lab import registry as R
@@ -31,7 +31,8 @@ def _merge(d: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
 
 
 def candidates(s: Any) -> list[tuple[LabHypothesis, LabSpec]]:
-    """Hypotheses whose newest spec was rejected at Stage 0 and that have variants left."""
+    """Hypotheses whose newest spec was rejected at Stage 0 (never at the holdout) and that have
+    variants left."""
     out = []
     mx = int(cfg()["registry"]["max_variants_per_hypothesis"])
     for h in s.scalars(
@@ -43,7 +44,14 @@ def candidates(s: Any) -> list[tuple[LabHypothesis, LabSpec]]:
             )
         )
         if specs and specs[-1].stage == "rejected" and len(specs) < mx and h.source != "news_core":
-            if all(sp.stage == "rejected" for sp in specs):
+            # a hypothesis whose holdout was used is CLOSED: a variant would get a fresh
+            # "once only" holdout on the same post-cutoff data, which defeats the holdout
+            used = s.scalar(
+                select(LabVerdict.id).where(
+                    LabVerdict.stage == "holdout", LabVerdict.spec_id.in_([sp.id for sp in specs])
+                )
+            )
+            if used is None and all(sp.stage == "rejected" for sp in specs):
                 out.append((h, specs[-1]))
     return out
 

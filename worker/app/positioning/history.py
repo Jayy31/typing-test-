@@ -182,6 +182,14 @@ def stat_rows(
     for s, d, c in con.execute("SELECT symbol, date, close FROM hist_prices").fetchall():
         if c:
             closes[s][d] = float(c)
+    ex_dates: dict[str, list[date]] = defaultdict(list)
+    try:
+        for sym_, ex in con.execute(
+            "SELECT symbol, ex_date FROM hist_corp_actions WHERE kind <> 'dividend'"
+        ).fetchall():
+            ex_dates[sym_].append(ex)
+    except duckdb.Error:  # store without the corporate-actions table yet
+        pass
     out: dict[tuple[str, str, int], list[float]] = defaultdict(list)
     for d, sym, feat, state in con.execute(
         "SELECT date, symbol, feature, state FROM hist_positioning"
@@ -192,6 +200,8 @@ def stat_rows(
         end = cal[i + w]
         if before is not None and end >= before:
             continue
+        if any(d < x <= end for x in ex_dates.get(sym, ())):
+            continue  # a split / bonus / demerger inside the window: the raw price change is not a return
         a, b = closes[sym].get(d), closes[sym].get(end)
         na, nb = nifty.get(d), nifty.get(end)
         if not (a and b and na and nb):

@@ -293,6 +293,7 @@ def plan(
         exit_by=exit_by,
         max_hold_days=spec.exits.max_hold_days,
         iv_spike_pts=spec.exits.iv_spike_exit_pts,
+        entry_at_open=at_open,
     )
     vol_lots = data.to_lots(row.volume, entry_day, lot, "volume")
     return Trade(
@@ -411,8 +412,10 @@ def _direction(spec: StrategySpec, event_dir: str | None, an: AnalogueResult | N
         return event_dir
     if an is None or an.n < spec.trigger.min_analogue_n or an.mean == 0:
         return None
-    if event_dir is None:  # scheduled events: the base rate's own sign
-        return "bullish" if an.mean > 0 else "bearish"
+    if event_dir is None:
+        # scheduled events have no news direction, and the stats are direction-ADJUSTED (how far
+        # the stock moved the way the news said), so their sign is not "up or down": no direction
+        return None
     # stats are direction-adjusted: a negative mean means the market did the opposite
     flip = {"bullish": "bearish", "bearish": "bullish"}
     return event_dir if an.mean > 0 else flip[event_dir]

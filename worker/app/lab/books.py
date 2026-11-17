@@ -221,7 +221,7 @@ def review_books(engine: Engine | None = None, now: datetime | None = None) -> d
                 [
                     t["pnl_pct"]
                     for t in ((eod.metrics_json or {}).get("trades") or [])
-                    if t["exit_day"]
+                    if t["exit_day"] and t.get("exit_reason") != "END"  # END = still open
                 ]
                 if eod
                 else []

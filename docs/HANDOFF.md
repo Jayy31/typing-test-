@@ -5,7 +5,7 @@ Read `CLAUDE.md` first (hard rules, owner decisions, progress log), then `docs/D
 doesn't show.
 
 ## State
-- **Phases 0-14: all built and merged to `main`.** Last: Phase 14 Strategy Lab (PRs #34-#38), its follow-ups (#39) and the Kotak broker switch (#40).
+- **Phases 0-14: all built and merged to `main`.** Last: Phase 14 Strategy Lab (PRs #34-#38), its follow-ups (#39) the Kotak broker switch (#40) and the accuracy-audit fixes (#41-#43).
 - **Open PRs: none.** `ENGINE_VERSION` 10.1.0, latest migration `0020`, DuckDB history schema v8.
 - **Not deployed yet.** The owner is doing the external setup step by step in chat:
   - done: Supabase, Vercel dashboard (`https://option-desk-tan.vercel.app`), Telegram bot, Anthropic key, healthchecks.io;
@@ -15,6 +15,11 @@ doesn't show.
   - VM needs `KOTAK_ACCESS_TOKEN`, `KOTAK_MOBILE`, `KOTAK_UCC`, `KOTAK_MPIN`, `KOTAK_TOTP_SECRET` (the TOTP secret text, not just the authenticator).
   - Setup steps: `docs/setup/deploy.md` section 1 and `docs/setup/setup-guide.pdf` section 7; API notes `docs/notes/kotak-api.md`.
   - Until set: live option prices and paper trading don't run; preflight flags the `KOTAK_*` keys; the go-live `kotak` line is FAIL.
+
+## Accuracy audit (2026-11)
+- Four code reviews found about 40 logic problems; findings, fixes and status are in **`docs/AUDIT_FIXES.md`** (read it before touching signals, exits, calibration, learning, backtest or lab code).
+- Fixed in PRs #41 (live trading and selection), #42 (learning system), #43 (history, backtests, lab). Tests: `worker/tests/test_audit_fixes.py`.
+- Still open (none blocks paper trading): B4 rest, B10a rest, C3 rest, C8a, C8g. Continue from the tracker.
 
 ## Owner decisions not obvious from code
 - **Paper trading only.** NSE F&O **stock** options only, never index options.
