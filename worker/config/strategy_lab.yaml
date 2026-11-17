@@ -19,6 +19,8 @@ spec:
 # Stage 0 screening: walk-forward on the PRE-cutoff part of the history only (never the full 5 years) (AI_MODEL_KNOWLEDGE_CUTOFF).
 # Stage 1 holdout: post-cutoff data, evaluated exactly once when it has enough trades/events.
 stage0:
+  exit_buffer_days: 45               # entries stop this many days before the cutoff, so every
+                                     # screening trade exits on pre-cutoff prices
   min_trades: 60
   min_events: 40                     # independent events (same day + event type = one)
   require_ci_lower_above: 0.0        # 90% bootstrap CI of expectancy (% of premium) must exclude 0

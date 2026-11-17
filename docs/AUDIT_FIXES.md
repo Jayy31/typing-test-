@@ -17,7 +17,13 @@ before fixing (others must be confirmed while fixing; if a finding is wrong, mar
   Next: group B, then C.
 - 2026-11-17: group A merged (PR #41). Group B fixed (see rows; B4 and B10a partly). New config:
   `learning.yaml soft_stages` / `review_min_changed`. Calibrator Brier is now cross-validated and a
-  calibrator is activated only if it beats the raw probabilities. Next: group C.
+  calibrator is activated only if it beats the raw probabilities.
+- 2026-11-17: group B merged (PR #42). Group C fixed except C8a and C8g (todo) and part of C3.
+  Behaviour changes: events with no time react from the NEXT day (`history.yaml
+  unknown_time_next_day`); Stage 0 entries stop `strategy_lab.yaml stage0.exit_buffer_days` (45)
+  before the cutoff; seed pattern `pre_results_iv_runup` now `direction: bullish`; regime of a
+  historical event = the previous session's. C3/C5/C8b have no dedicated tests.
+  **Remaining todo: B4 (rest), B10a (rest), C3 (rest), C8a, C8g.** None blocks paper trading.
 
 ## A. Live trading and trade selection
 | # | Where | Problem | Fix | Checked | Status |
@@ -42,37 +48,37 @@ before fixing (others must be confirmed while fixing; if a finding is wrong, mar
 ## B. Learning system
 | # | Where | Problem | Fix | Checked | Status |
 |---|---|---|---|---|---|
-| B1 | `calibration/service.py:205-209` | Rejection never replayed -> labelled T1 not reached | Leave unresolved (excluded) when no replay state | yes | done (group B PR) |
-| B2 | `tracking/counterfactual.py:124-129`, `config/tracking.yaml` | 60 oldest open rows per run incl. rows with no option reference -> newer rows starved | Only rows with an option reference; least-recently-updated first; stock-only rows resolved separately | yes | done (group B PR) |
-| B3 | `tracking/scorecard.py:56-73`, `research/review.py:54` | `scored_at` never written -> weekly review always empty | Set `scored_at` | yes | done (group B PR) |
-| B4 | `signals/service.py:218,464,559`, `signals/deferred.py` | After-hours predictions never scored / calibrated | Create score + records when the deferred signal is priced | yes | partly done (group B PR): after-hours analyses that raised a signal are scored at the open. todo: after-hours analyses that did NOT raise a signal still get no scorecard row |
-| B5 | `analytics/learning.py:74-120` | Replay counts hard-rejected candidates | Only soft-gate rejections (stage in soft set) | no | done (group B PR) |
-| B6 | `analytics/learning.py:51-95,140` | Costs differ (trades net, rejections gross); rows not clustered; lab books swept in | Same cost on rejections; cluster bootstrap by news event; `book == watchlist` only | no | done (group B PR) |
-| B7 | `analytics/learning.py:296-312` | Revert suggested with zero evidence, no significance test | Need min differing opportunities and CI below 0 | no | done (group B PR) |
-| B8 | `analytics/live.py:66-69` | T1 hit counts TIME/THESIS exits | Use targets_hit only | yes | done (group B PR) |
-| B9 | `calibration/fit.py:136`, `calibration/service.py:309` | In-sample Brier, unconditional activation | Cross-validated Brier; activate only if better than raw | no | done (group B PR) |
-| B10a | `analytics/ai_vs_rules.py:66` | Neutral AI rows never resolve; `made` over-counted; no clustering | Resolve neutral rows from stock move; made = this analysis created the signal | no | partly done (group B PR): `made` fixed. todo: neutral-AI rows still never resolve (need a price path without a PredictionScore) and rows are not clustered by news event. Report-only; does not feed predictions |
-| B10b | `analytics/live.py:256-289` | Drift check ignores live sampling noise | Alert only if live CI and backtest CI do not overlap | no | done (group B PR) |
-| B10c | `tracking/scorecard.py:59-64,108` | Direction hit measured at window + buffer close | Use the window day | no | done (group B PR) |
-| B10d | `analytics/learning.py:215` | Lookback 4 months instead of 3 | Fix month arithmetic | no | done (group B PR) |
+| B1 | `calibration/service.py:205-209` | Rejection never replayed -> labelled T1 not reached | Leave unresolved (excluded) when no replay state | yes | done (PR #42) |
+| B2 | `tracking/counterfactual.py:124-129`, `config/tracking.yaml` | 60 oldest open rows per run incl. rows with no option reference -> newer rows starved | Only rows with an option reference; least-recently-updated first; stock-only rows resolved separately | yes | done (PR #42) |
+| B3 | `tracking/scorecard.py:56-73`, `research/review.py:54` | `scored_at` never written -> weekly review always empty | Set `scored_at` | yes | done (PR #42) |
+| B4 | `signals/service.py:218,464,559`, `signals/deferred.py` | After-hours predictions never scored / calibrated | Create score + records when the deferred signal is priced | yes | partly done (PR #42): after-hours analyses that raised a signal are scored at the open. todo: after-hours analyses that did NOT raise a signal still get no scorecard row |
+| B5 | `analytics/learning.py:74-120` | Replay counts hard-rejected candidates | Only soft-gate rejections (stage in soft set) | no | done (PR #42) |
+| B6 | `analytics/learning.py:51-95,140` | Costs differ (trades net, rejections gross); rows not clustered; lab books swept in | Same cost on rejections; cluster bootstrap by news event; `book == watchlist` only | no | done (PR #42) |
+| B7 | `analytics/learning.py:296-312` | Revert suggested with zero evidence, no significance test | Need min differing opportunities and CI below 0 | no | done (PR #42) |
+| B8 | `analytics/live.py:66-69` | T1 hit counts TIME/THESIS exits | Use targets_hit only | yes | done (PR #42) |
+| B9 | `calibration/fit.py:136`, `calibration/service.py:309` | In-sample Brier, unconditional activation | Cross-validated Brier; activate only if better than raw | no | done (PR #42) |
+| B10a | `analytics/ai_vs_rules.py:66` | Neutral AI rows never resolve; `made` over-counted; no clustering | Resolve neutral rows from stock move; made = this analysis created the signal | no | partly done (PR #42): `made` fixed. todo: neutral-AI rows still never resolve (need a price path without a PredictionScore) and rows are not clustered by news event. Report-only; does not feed predictions |
+| B10b | `analytics/live.py:256-289` | Drift check ignores live sampling noise | Alert only if live CI and backtest CI do not overlap | no | done (PR #42) |
+| B10c | `tracking/scorecard.py:59-64,108` | Direction hit measured at window + buffer close | Use the window day | no | done (PR #42) |
+| B10d | `analytics/learning.py:215` | Lookback 4 months instead of 3 | Fix month arithmetic | no | done (PR #42) |
 
 ## C. History, backtests, Strategy Lab
 | # | Where | Problem | Fix | Checked | Status |
 |---|---|---|---|---|---|
-| C1 | `lab/refine.py:33-47`, `lab/registry.py:242` | Holdout failure triggers variants, each with a fresh holdout | Stage `holdout_failed`; hypothesis closed | yes | todo |
-| C2 | `history/event_study.py:99`, `backtest/data.py:181`, `lab/scheduled.py:118` | Events with no time enter at same-day close (before after-hours news) | Unknown time -> next trading day | yes | todo |
-| C3 | `lab/backtest.py:241-266,394`, `backtest/engine.py:646` | `next_open`: no exits on entry day, full-day data on entry bar | Check exits on the entry day; previous-day liquidity for tiers | no | todo |
-| C4 | `lab/backtest.py:414` | base_rate direction for scheduled events uses direction-adjusted mean | Use raw up/down stat; else no direction (skip) | yes | todo |
-| C5 | `lab/backtest.py:433-441` | news_core spec ignores placebo shift / variants | Pass shift through; plateau skipped for news_core | yes | todo |
-| C6 | `positioning/history.py:181-199` | Raw closes: splits appear as returns | Adjusted closes + corp-action window exclusion | no | todo |
-| C7 | `lab/sources.py:128-133` | "Stable halves" split is not chronological | Sort by date | yes | todo |
-| C8a | `history/event_study.py:299,328`, `backtest/engine.py` | Analogue move includes day-0 jump not tradable at reaction close | Post-entry stat (close day0 -> day+w) for gating in backtest | no | todo |
-| C8b | `history/corp_actions.py:195`, `backtest/engine.py:655` | Demerger / special dividend: contract lost until expiry | Exit at last tradable price before ex-date | no | todo |
-| C8c | `lab/registry.py:153`, `lab/validate.py:40` | Stage 0 trades exit on post-cutoff prices | Force exit at cutoff | no | todo |
-| C8d | `lab/books.py:220` | END (still open) trades counted in incubation | Exclude END | no | todo |
-| C8e | `history/iv_backfill.py:31` | IV from non-traded closes | Require volume > 0 | no | todo |
-| C8f | `history/event_study.py:502,545` | History regime label uses same-day close | Use previous day | no | todo |
-| C8g | `positioning/features.py`, `history/iv_backfill.py:44` | Live vs history skew at different strikes; live PCR drops rising/falling | Same strike rule live; keep EOD pcr change state | no | todo |
+| C1 | `lab/refine.py:33-47`, `lab/registry.py:242` | Holdout failure triggers variants, each with a fresh holdout | Stage `holdout_failed`; hypothesis closed | yes | done (group C PR) |
+| C2 | `history/event_study.py:99`, `backtest/data.py:181`, `lab/scheduled.py:118` | Events with no time enter at same-day close (before after-hours news) | Unknown time -> next trading day | yes | done (group C PR) |
+| C3 | `lab/backtest.py:241-266,394`, `backtest/engine.py:646` | `next_open`: no exits on entry day, full-day data on entry bar | Check exits on the entry day; previous-day liquidity for tiers | no | partly done (group C PR): exits are now checked on the entry day for at-open entries. todo: the entry bar still uses full-day volume/OI for the spread tier and fill class |
+| C4 | `lab/backtest.py:414` | base_rate direction for scheduled events uses direction-adjusted mean | Use raw up/down stat; else no direction (skip) | yes | done (group C PR) |
+| C5 | `lab/backtest.py:433-441` | news_core spec ignores placebo shift / variants | Pass shift through; plateau skipped for news_core | yes | done (group C PR): plateau and placebo marked "not applicable: baseline" for news_core (it replays the main engine, so variants cannot differ) |
+| C6 | `positioning/history.py:181-199` | Raw closes: splits appear as returns | Adjusted closes + corp-action window exclusion | no | done (group C PR) |
+| C7 | `lab/sources.py:128-133` | "Stable halves" split is not chronological | Sort by date | yes | done (group C PR) |
+| C8a | `history/event_study.py:299,328`, `backtest/engine.py` | Analogue move includes day-0 jump not tradable at reaction close | Post-entry stat (close day0 -> day+w) for gating in backtest | no | todo: analogue stats still measure from the pre-reaction close, so the backtest direction/edge gate includes the day-0 jump (trade P&L is honest). Needs a second, post-entry statistic in the event study |
+| C8b | `history/corp_actions.py:195`, `backtest/engine.py:655` | Demerger / special dividend: contract lost until expiry | Exit at last tradable price before ex-date | no | done (group C PR): trade force-closed (CORP_ACTION) at the last bid the day before a demerger / special dividend / unknown-factor ex-date. No dedicated test yet |
+| C8c | `lab/registry.py:153`, `lab/validate.py:40` | Stage 0 trades exit on post-cutoff prices | Force exit at cutoff | no | done (group C PR) |
+| C8d | `lab/books.py:220` | END (still open) trades counted in incubation | Exclude END | no | done (group C PR) |
+| C8e | `history/iv_backfill.py:31` | IV from non-traded closes | Require volume > 0 | no | done (group C PR) |
+| C8f | `history/event_study.py:502,545` | History regime label uses same-day close | Use previous day | no | done (group C PR) |
+| C8g | `positioning/features.py`, `history/iv_backfill.py:44` | Live vs history skew at different strikes; live PCR drops rising/falling | Same strike rule live; keep EOD pcr change state | no | todo: live vs history IV skew still at different strikes; live PCR has no rising/falling state |
 
 ## Found sound (do not re-audit)
 BS pricing/greeks, pure + vectorised exits (stop first, SL moves, whole lots), costs and spread

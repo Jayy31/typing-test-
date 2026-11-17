@@ -150,15 +150,23 @@ def screen(
         assert row is not None
         spec = parse(row.spec_yaml)
     start = _start(data)
-    end = V.screening_end(data.calendar[-1] + timedelta(days=1) if data.calendar else start)
+    end = V.screening_entry_end(data.calendar[-1] + timedelta(days=1) if data.calendar else start)
     lk = cfg()["luck"]
     main = run_spec(con, spec, start, end, data)
     stress = run_spec(
         con, spec, start, end, data, RunOptions(spread_mult=float(lk["cost_stress_spread_mult"]))
     )
-    plateau = [(lbl, run_spec(con, n, start, end, data)) for lbl, n in V.neighbours(spec)]
+    # news_core replays the main engine's own signals: its strike / hold / entry day are not the
+    # spec's, so neighbour variants and shifted entries would all equal the main run. It is the
+    # BASELINE other strategies are compared with; plateau and placebo do not apply to it.
+    baseline = spec.source == "news_core"
+    plateau = (
+        []
+        if baseline
+        else [(lbl, run_spec(con, n, start, end, data)) for lbl, n in V.neighbours(spec)]
+    )
     placebo: list[float] = []
-    for i in range(int(lk["placebo"]["runs"])):
+    for i in range(0 if baseline else int(lk["placebo"]["runs"])):
         r = run_spec(con, spec, start, end, data, RunOptions(shift=V.placebo_shift(i)))
         e = V.stats(r.trades)["expectancy_pct"]
         placebo.append(e if e is not None else 0.0)
@@ -178,6 +186,9 @@ def screen(
         checks.items["placebo"]["distribution_mean"] = (
             round(float(np.mean(placebo)), 3) if placebo else None
         )
+        if baseline:
+            for name in ("plateau", "placebo"):
+                checks.items[name] = {"passed": True, "note": "not applicable: baseline"}
         v = LabVerdict(
             spec_id=spec_id,
             stage="stage0",

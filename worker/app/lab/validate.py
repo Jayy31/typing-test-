@@ -42,6 +42,13 @@ def screening_end(requested: date) -> date:
     return min(requested, cutoff() + timedelta(days=1))
 
 
+def screening_entry_end(requested: date) -> date:
+    """Last Stage-0 ENTRY day (exclusive): early enough that every trade has exited by the cutoff,
+    so no screening result depends on holdout-period prices."""
+    gap = int(cfg()["stage0"].get("exit_buffer_days", 45))
+    return min(requested, cutoff() + timedelta(days=1) - timedelta(days=gap))
+
+
 # ---- statistics ----------------------------------------------------------------------------
 def events_of(trades: list[Trade]) -> int:
     return len({f"{t.signal.day}:{t.signal.event_type}" for t in trades})

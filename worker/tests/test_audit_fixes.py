@@ -467,3 +467,102 @@ def test_b4_after_hours_prediction_is_scored_when_priced(engine: Engine) -> None
             4.0,
         )
         assert s.scalars(select(CalibrationRecord)).one().target == "p_t1_before_sl"
+
+
+# ---- group C: history, backtests, Strategy Lab -------------------------------------------------
+def test_c1_hypothesis_is_closed_after_a_failed_holdout(engine: Engine) -> None:
+    from sqlalchemy.orm import Session
+
+    from app.db.models import LabSpec, LabVerdict
+    from app.lab import refine
+    from tests.test_lab_validate import _register
+
+    sid = _register(engine)
+    with Session(engine) as s:
+        sp = s.get(LabSpec, sid)
+        assert sp is not None
+        sp.stage = "rejected"
+        s.commit()
+        assert len(refine.candidates(s)) == 1  # rejected at Stage 0: variants allowed
+        s.add(
+            LabVerdict(
+                spec_id=sid,
+                stage="holdout",
+                passed=False,
+                checks_json={},
+                summary="failed",
+                created_at=datetime.now(IST),
+            )
+        )
+        s.commit()
+        assert refine.candidates(s) == []  # holdout used: no variant may look at it again
+
+
+def test_c4_scheduled_events_have_no_base_rate_direction() -> None:
+    from app.lab.backtest import _direction
+    from tests.test_lab_validate import spec
+
+    sp = spec(trigger={"event_types": ["results"], "direction": "base_rate", "min_analogue_n": 5})
+    an = replace(_an(1.0, 0.6), mean=2.0)
+    assert _direction(sp, None, an) is None  # "moved the news' way" is not "up"
+    assert _direction(sp, "bearish", an) == "bearish"
+    assert _direction(sp, "bearish", replace(an, mean=-2.0)) == "bullish"
+
+
+def test_c7_c8f_reactions_in_date_order_and_regime_known_before_the_event() -> None:
+    from app.history.event_study import grouped_values, reaction_rows
+    from tests import bt_fixture as F
+
+    con, cal = F.build(event_days=(300,))
+    F.add_training_reactions(con, cal)
+    rows = reaction_rows(con)
+    days = [r[5] for r in rows]
+    assert days == sorted(days) and len(days) > 2
+    d = days[-1]
+    prev = cal[cal.index(d) - 1]
+    groups = grouped_values(
+        [r for r in rows if r[5] == d], {prev: 10.0, d: 40.0}
+    )  # VIX spikes ON the day
+    regimes = {k[3] for k in groups}
+    assert "low_vol" in regimes and "high_vol" not in regimes
+
+
+def test_c8c_stage0_entries_stop_before_the_cutoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.lab import validate as V
+
+    monkeypatch.setenv("AI_MODEL_KNOWLEDGE_CUTOFF", "2026-06-30")
+    get_settings.cache_clear()
+    assert V.screening_entry_end(date(2026, 12, 1)) == date(2026, 7, 1) - timedelta(days=45)
+    assert V.screening_entry_end(date(2025, 1, 1)) == date(2025, 1, 1)
+    get_settings.cache_clear()
+
+
+def test_c6_positioning_base_rates_skip_corporate_action_windows() -> None:
+    import duckdb
+
+    from app.history.store import init_schema
+    from app.positioning.history import stat_rows
+
+    con = duckdb.connect()
+    init_schema(con)
+    days = [date(2026, 3, 2) + timedelta(days=i) for i in range(5)]  # Mon..Fri
+    for i, d in enumerate(days):
+        con.execute("INSERT INTO hist_index VALUES (?, 'Nifty 50', 100)", [d])
+        for sym, px in (("AAA", 100.0 if i < 2 else 20.0), ("BBB", 100.0 + i)):  # AAA: 1:5 split
+            con.execute(
+                "INSERT INTO hist_prices VALUES (?, ?, ?, ?, ?, ?, 1000, 50)",
+                [d, sym, px, px, px, px],
+            )
+        if i == 0:
+            for sym in ("AAA", "BBB"):
+                con.execute(
+                    "INSERT INTO hist_positioning VALUES (?, ?, 'pcr', 'high', 1.5)", [d, sym]
+                )
+    con.execute(
+        "INSERT INTO hist_corp_actions VALUES ('AAA', ?, 'split', 'Split 10 to 2', 0.2, NULL, 't')",
+        [days[2]],
+    )
+    vals = [v for vs in stat_rows(con).values() for v in vs]
+    assert len(vals) == 1 and vals[0] == pytest.approx(
+        3.0
+    )  # only BBB; no -80% "return" from the split

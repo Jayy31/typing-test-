@@ -91,6 +91,7 @@ class Signal:
     exit_by: date | None = None
     max_hold_days: int | None = None
     iv_spike_pts: float | None = None
+    entry_at_open: bool = False  # entered at the open: the entry day's own range can exit it
 
 
 @dataclass
@@ -647,9 +648,46 @@ def simulate(trade: Trade, data: HistoryData, variant: Variant, rules: ExitRules
     trade.marks.append(
         (d, -(trade.entry_ask - trade.entry_mid) * units)
     )  # marked at mid: the spread is lost
+    if sig.entry_at_open:
+        # entered at the open: stops and targets can be hit later the same day
+        row0 = data.contract(sig.symbol, d, trade.expiry, trade.strike, trade.option_type)
+        p0, sbar0 = fills.tradable(row0), data.prices.get(sig.symbol, {}).get(d)
+        if p0 is not None and sbar0 is not None:
+            b0 = _bid_fn(1.0, tier, variant.spread_mult)
+            state = step(
+                state,
+                Bar(
+                    b0(p0.open),
+                    b0(p0.high),
+                    b0(p0.low),
+                    b0(p0.close),
+                    data.trading_days_between(d, trade.expiry),
+                    None,
+                    False,
+                    sbar0.close,
+                    sbar0.high,
+                    sbar0.low,
+                    0,
+                ),
+                rules,
+            )
+            last_bid = b0(p0.close)
+            trade.spot_exit = sbar0.close
+            if state.fills:
+                lots0 = data.to_lots(row0.volume if row0 else None, d, trade.lot_size, "volume")
+                _record(trade, state, d, p0.stale, lots0, units)
     while not state.closed:
         nd = data.next_day(d)
         if nd is None:
+            break
+        if any(
+            d < a.ex_date <= nd and (a.kind not in ("split", "bonus") or not a.factor)
+            for a in actions
+        ):
+            # demerger / special dividend / unknown factor going ex tomorrow: the adjusted contract
+            # cannot be followed in the files, so the trade is closed at today's last bid
+            state = _force_close(state, "CORP_ACTION", last_bid)
+            _record(trade, state, d, False, None, units)
             break
         d, i = nd, i + 1
         f = contract_factor(actions, trade.entry_day, d)  # split/bonus: strike x f, price / f

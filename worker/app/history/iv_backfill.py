@@ -32,6 +32,7 @@ def backfill_day(con: duckdb.DuckDBPyConnection, d: date) -> int:
         SELECT o.symbol, o.expiry, o.strike, o.type, o.close, p.close
         FROM hist_options o JOIN hist_prices p ON p.date = o.date AND p.symbol = o.symbol
         WHERE o.date = ? AND o.close >= ? AND o.expiry >= ? + INTERVAL 3 DAY
+          AND coalesce(o.volume, 0) > 0  -- an untraded contract's close is a stale carried price
         ORDER BY o.symbol, o.expiry, o.strike""",
         [d, float(cfg["min_premium"]), d],
     ).fetchall()
