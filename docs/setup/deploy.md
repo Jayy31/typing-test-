@@ -37,13 +37,15 @@ hours (option polling, trading cycle). The full first-run report arrives 24 hour
 6. **healthchecks.io** (free): create a check with period 10 min and grace 15 min. Copy its ping URL
    into `HEALTHCHECK_PING_URL`. It emails you if the VM itself stops (the worker pings it every 5 min).
 7. **Vercel**: import the repo with root directory `dashboard/`.
-8. **Oracle Cloud** (the VM): see section 2.
+8. **Google Cloud** (the VM): see section 2 and `gcp.md`.
 9. Optional:
    - **Cloudflare R2** (history backup): a bucket plus an API token; set the `R2_*` values.
    - **GitHub fine-grained token** for learning-loop PRs (`GITHUB_TOKEN_CONFIG_PR`): this repo only,
      with Contents and Pull requests write access.
 
 ## 2. The VM
+
+**Current choice: the Google Cloud free trial, an e2-medium VM in Mumbai. Step by step: `gcp.md`.** The Oracle notes below are kept for reference.
 
 **Recommended: Oracle Cloud Always Free, Ampere A1 (ARM) in Mumbai or Hyderabad.**
 - Shape `VM.Standard.A1.Flex`, 2 OCPU / 12 GB.

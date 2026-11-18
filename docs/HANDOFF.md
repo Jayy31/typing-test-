@@ -9,7 +9,7 @@ doesn't show.
 - **Open PRs: none.** `ENGINE_VERSION` 10.1.0, latest migration `0020`, DuckDB history schema v8.
 - **Not deployed yet.** The owner is doing the external setup step by step in chat:
   - done: Supabase, Vercel dashboard (`https://option-desk-tan.vercel.app`), Telegram bot, Anthropic key, healthchecks.io;
-  - in progress: Oracle Always Free VM. Account ready; VM create blocked by A1 "out of capacity" in Mumbai; owner declined the Pay-As-You-Go card hold. Status and next steps: **`docs/setup/oracle-progress.md`**.
+  - in progress: Google Cloud free-trial VM, steps in **`docs/setup/gcp.md`**. Oracle was abandoned (`docs/setup/oracle-progress.md`).
 - **Broker: Kotak Neo** (market data only; Upstox removed). Merged in #40; not run against the live Kotak API yet (field names from Kotak's docs, checked by the go-live report).
   - Owner has the Neo app API; keeps **no funds** in the account and must **never whitelist a static IP** (Kotak then rejects all order APIs).
   - VM needs `KOTAK_ACCESS_TOKEN`, `KOTAK_MOBILE`, `KOTAK_UCC`, `KOTAK_MPIN`, `KOTAK_TOTP_SECRET` (the TOTP secret text, not just the authenticator).
