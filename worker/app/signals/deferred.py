@@ -192,3 +192,74 @@ def reprice_due(engine: Any, source: Any, now: datetime) -> int:
             else:
                 priced += 1
     return priced
+
+
+# ---- audit B4: after-hours predictions that did not raise a priced signal ----------------------
+PENDING_KEY = "pending_score"
+
+
+def queue_score(
+    s: Session,
+    an: Analysis,
+    direction: str,
+    used: Any,
+    raw: Any,
+    signal_id: int | None,
+    prediction_source: str | None,
+    now: datetime,
+) -> None:
+    """Remember an after-hours prediction; `score_pending` scores it from the next open's spot."""
+    from app.signals.filters import load_holidays
+
+    an.scores_json = {
+        **(an.scores_json or {}),
+        PENDING_KEY: {
+            "direction": direction,
+            "move_used": used.move_pct,
+            "move_raw": raw.move_pct,
+            "p_move": used.p_move,
+            "source": raw.source,
+            "prediction_source": prediction_source,
+            "signal_id": signal_id,
+            "due": next_open(now, load_holidays(s)).isoformat(),
+        },
+    }
+
+
+def score_pending(engine: Any, source: Any, now: datetime, max_age_days: int = 7) -> int:
+    """Score queued after-hours predictions at the open (spot from the live source)."""
+    from app.db.models import PredictionScore
+    from app.db.session import session_scope
+    from app.tracking.scorecard import create_score
+
+    done = 0
+    with session_scope(engine) as s:
+        since = now - timedelta(days=max_age_days)
+        for an in s.scalars(select(Analysis).where(Analysis.created_at >= since)):
+            q = (an.scores_json or {}).get(PENDING_KEY)
+            if not q or datetime.fromisoformat(q["due"]) > now:
+                continue
+            if s.scalar(select(PredictionScore.id).where(PredictionScore.analysis_id == an.id)):
+                spot = None  # already scored (e.g. its deferred signal was priced): just clear
+            else:
+                spot = source.spot(an.symbol)
+                if spot is None:
+                    continue  # try again next cycle
+                create_score(
+                    s,
+                    an,
+                    q["direction"],
+                    float(q["move_used"]),
+                    float(q["move_raw"]),
+                    q["p_move"],
+                    float(spot),
+                    now,
+                    q["signal_id"],
+                    q["source"],
+                    q["prediction_source"],
+                )
+                done += 1
+            rest = dict(an.scores_json or {})
+            rest.pop(PENDING_KEY, None)
+            an.scores_json = rest
+    return done

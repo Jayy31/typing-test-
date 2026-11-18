@@ -478,9 +478,15 @@ def _score_prediction(
     pred, _ = predict(item, out)
     new = next((ev.signal_id for ev in events if ev.kind == "new"), None)
     _calibration_records(s, analysis, item, pred, plan, new)
-    if pred is None or plan is None or plan.spot is None:
+    if pred is None:
         return
     shrunk = shrink(pred, _move_weight(item))
+    if plan is None or plan.spot is None:
+        # Audit B4: an after-hours prediction without a live price (no signal, or a signal whose
+        # pricing waits for the open) is scored from the next open instead of being dropped.
+        if item.deferred is None and deferred.off_hours(now, load_holidays(s)):
+            deferred.queue_score(s, analysis, out.direction, shrunk, pred, new, item.source, now)
+        return
     create_score(
         s,
         analysis,

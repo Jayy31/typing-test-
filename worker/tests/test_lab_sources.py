@@ -80,7 +80,7 @@ def test_mining_uses_pre_cutoff_reactions_only(engine: Engine, monkeypatch) -> N
     with Session(engine) as s:
         h = s.scalars(select(LabHypothesis).where(LabHypothesis.source == "data_mining")).first()
         assert h is not None and h.origin_json["scanned"] >= 1 and h.origin_json["mean"] > 0
-        assert "+8.00%" in h.rationale
+        assert "+16.00%" in h.rationale  # full move incl. day 0 (bt_fixture)
         assert R.trial_population(s)[0] >= h.origin_json["scanned"]
     get_settings.cache_clear()
 

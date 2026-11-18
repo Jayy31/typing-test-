@@ -11,6 +11,7 @@ pcr:                           # put OI / call OI, near-month options
   change_min: 0.15             # day-on-day change counted as rising / falling
 iv_skew:                       # OTM put IV minus OTM call IV (vol points), near month
   otm_pct: 5.0                 # strikes about this far out of the money
+  max_strike_gap_pct: 2.0      # no state if the nearest strike with an IV is further than this (% of spot) from the target (same rule live and history)
   put_skew_above: 4.0
   call_skew_below: -2.0
 term_structure:                # near ATM IV minus next-month ATM IV (vol points)

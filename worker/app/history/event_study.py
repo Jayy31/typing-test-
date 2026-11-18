@@ -467,12 +467,33 @@ def weighted_quantile(values: np.ndarray, weights: np.ndarray, q: float) -> floa
     return float(np.interp(q * w.sum(), cum, v))
 
 
+def post_entry(rows: list[tuple[Any, ...]]) -> list[tuple[Any, ...]]:
+    """Audit C8a: the part of each move still available to a trade entered at the reaction-day
+    close. Window w (>= 1) becomes abnormal(w) - abnormal(0) (additive approximation of the
+    compounded return); window 0 and windows without a day-0 row are dropped. Weight = the smaller
+    of the two rows' weights. The backtester gates on these, as it enters at the day-0 close."""
+    day0: dict[tuple[Any, ...], tuple[float, float]] = {}
+    for etype, sector, sym, w, direction, d, wt, abn in rows:
+        if w == 0 and abn is not None:
+            day0[(etype, sector, sym, direction, d)] = (wt, abn)
+    out = []
+    for etype, sector, sym, w, direction, d, wt, abn in rows:
+        base = day0.get((etype, sector, sym, direction, d))
+        if w < 1 or base is None or abn is None:
+            continue
+        out.append((etype, sector, sym, w, direction, d, min(wt, base[0]), abn - base[1]))
+    return out
+
+
 def reaction_rows(
     con: duckdb.DuckDBPyConnection, before: date | None = None
 ) -> list[tuple[Any, ...]]:
     """One row per (event cluster, window): (event_type, sector, symbol, window, direction,
     reaction_day, weight, abnormal %). Several articles about the same event count once.
-    `before`: only reactions whose whole 10-day window ended before this date (backtests)."""
+    `before`: only reactions whose whole 10-day window ended before this date (backtests).
+    Moves are measured from the close BEFORE the reaction day (live use: the signal is formed
+    before or during the reaction); the backtester enters at the reaction close and uses
+    `post_entry(rows)` instead."""
     rows = con.execute("""
         SELECT e.event_type, e.sector, r.symbol, r."window", e.direction, r.reaction_day,
                max(r.weight) AS w, arg_max(r.abnormal_ret, r.weight) AS abn

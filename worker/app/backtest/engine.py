@@ -407,6 +407,23 @@ def plan_entry(
     large = sig.symbol in data.large_caps(sig.day)
     cfg_c = load_yaml("options.yaml")["candidates"]
     cands: list[Cand] = []
+    # C3: an at-open entry cannot know the entry day's own volume / OI: use the previous session's
+    liq_day = _prev_day(data, sig.day) if sig.entry_at_open else sig.day
+    prev_rows = (
+        {(r.expiry, r.strike, r.type): r for r in data.chain(sig.symbol, liq_day)}
+        if sig.entry_at_open
+        else {}
+    )
+
+    def liq(r: OptRow) -> tuple[float | None, float | None]:
+        src = prev_rows.get((r.expiry, r.strike, r.type)) if sig.entry_at_open else r
+        if src is None:
+            return None, None
+        return (
+            data.to_lots(src.oi, liq_day, lot, "oi"),
+            data.to_lots(src.volume, liq_day, lot, "volume"),
+        )
+
     for exp in expiries:
         rows = sorted((r for r in chain if r.expiry == exp), key=lambda r: r.strike)
         if not rows:
@@ -424,12 +441,8 @@ def plan_entry(
             p = fills.tradable(r)
             if p is None:
                 continue
-            tier = fills.tier_for(
-                abs(r.strike / spot - 1) * 100,
-                data.to_lots(r.oi, sig.day, lot, "oi"),
-                data.to_lots(r.volume, sig.day, lot, "volume"),
-                large,
-            )
+            oi_lots, vol_lots = liq(r)
+            tier = fills.tier_for(abs(r.strike / spot - 1) * 100, oi_lots, vol_lots, large)
             hs = fills.half_spread(p.close, tier, variant.spread_mult)
             iv = _iv(data, sig.symbol, sig.day, r, p.close, spot)
             if iv is None:
@@ -563,7 +576,7 @@ def plan_entry(
     )
     if bad:
         return Skip(sig.key, sig.symbol, sig.day, core_rules.STAGE, bad)
-    vol_lots = data.to_lots(chosen.row.volume, sig.day, lot, "volume")
+    vol_lots = liq(chosen.row)[1]
     return Trade(
         sig,
         chosen.row.expiry,

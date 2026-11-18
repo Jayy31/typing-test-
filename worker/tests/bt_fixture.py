@@ -131,7 +131,10 @@ def add_training_reactions(
         eid = f"past{sym}{k}"
         add_event(con, eid, d, sym)
         for w in (0, 1, 3, 5, 10):
+            # day 0 carries only part of the move: the backtest gates on what is left after the
+            # reaction-day close (audit C8a), here `abn` from day 1 on
+            v = abn if w == 0 else 2 * abn
             con.execute(
                 "INSERT INTO event_reactions VALUES (?, ?, ?, ?, 'intraday', ?, ?, ?, ?, 'nifty it', NULL, NULL, NULL, NULL, false, 1.0)",
-                [eid, sym, w, d, abn, abn, abn, abn],
+                [eid, sym, w, d, v, v, v, v],
             )
