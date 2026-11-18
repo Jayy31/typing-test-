@@ -640,3 +640,45 @@ def test_c3_at_open_entry_uses_previous_day_liquidity() -> None:
     # both entry paths read volume / OI for the tier and fill class from the previous session
     assert "liq_day = _prev_day(data, sig.day) if sig.entry_at_open" in inspect.getsource(bt)
     assert "liq_day = _shift_day(data, entry_day, -1) if at_open" in inspect.getsource(lab)
+
+
+def test_b10a_neutral_ai_rows_resolve_from_closes_and_events_count_once(engine: Engine) -> None:
+    import duckdb
+
+    from app.analytics import ai_vs_rules
+    from app.db.models import AiVsRules, NewsCluster
+
+    con = duckdb.connect()
+    con.execute("CREATE TABLE hist_prices (symbol VARCHAR, date DATE, close DOUBLE)")
+    for i, px in enumerate([100.0, 101.0, 103.0, 104.0, 106.0]):
+        con.execute("INSERT INTO hist_prices VALUES ('TCS', ?, ?)", [date(2026, 11, 2 + i), px])
+    with session_scope(engine) as s:
+        t0 = datetime(2026, 11, 3, 10, 0, tzinfo=IST)
+        cl = NewsCluster(headline="one story", first_seen=t0, last_seen=t0)
+        s.add(cl)
+        s.flush()
+        ids = []
+        for _ in range(2):  # two articles about the same event, AI neutral, rules bullish
+            a = _analysis(s, "TCS")
+            a.direction, a.cluster_id, a.window_days = "neutral", cl.id, 3
+            a.created_at = datetime(2026, 11, 3, 11, 0, tzinfo=IST)  # in market hours
+            s.add(
+                AiVsRules(
+                    analysis_id=a.id,
+                    symbol="TCS",
+                    created_at=a.created_at,
+                    news_direction="bullish",
+                    ai_direction=None,
+                    ai_signal=False,
+                    rules_direction="bullish",
+                )
+            )
+            ids.append(a.id)
+    assert ai_vs_rules.resolve(engine, con=con) == 2
+    with session_scope(engine) as s:
+        rows = list(s.scalars(select(AiVsRules)))
+        # ref = close before the analysis day (11-02: 100), 3 trading days later (11-05: 104)
+        assert [r.realised_move_pct for r in rows] == [4.0, 4.0]
+        out = ai_vs_rules.summarize(rows, ai_vs_rules.cluster_keys(s, rows))
+        assert out["rules_only"] == {"n": 1, "hit_rate": 1.0, "avg_move_pct": 4.0}
+        assert ai_vs_rules.summarize(rows)["rules_only"]["n"] == 2  # unclustered for comparison

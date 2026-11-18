@@ -23,7 +23,7 @@ before fixing (others must be confirmed while fixing; if a finding is wrong, mar
   unknown_time_next_day`); Stage 0 entries stop `strategy_lab.yaml stage0.exit_buffer_days` (45)
   before the cutoff; seed pattern `pre_results_iv_runup` now `direction: bullish`; regime of a
   historical event = the previous session's. C3/C5/C8b have no dedicated tests.
-  **Remaining todo: B10a (rest), report only.** B4, C3, C8a and C8g were finished in the follow-up PR (2026-11-18).
+  **Nothing left open.** B4, C3, C8a, C8g and B10a were finished in the follow-up PRs (2026-11-18).
 
 ## A. Live trading and trade selection
 | # | Where | Problem | Fix | Checked | Status |
@@ -57,7 +57,7 @@ before fixing (others must be confirmed while fixing; if a finding is wrong, mar
 | B7 | `analytics/learning.py:296-312` | Revert suggested with zero evidence, no significance test | Need min differing opportunities and CI below 0 | no | done (PR #42) |
 | B8 | `analytics/live.py:66-69` | T1 hit counts TIME/THESIS exits | Use targets_hit only | yes | done (PR #42) |
 | B9 | `calibration/fit.py:136`, `calibration/service.py:309` | In-sample Brier, unconditional activation | Cross-validated Brier; activate only if better than raw | no | done (PR #42) |
-| B10a | `analytics/ai_vs_rules.py:66` | Neutral AI rows never resolve; `made` over-counted; no clustering | Resolve neutral rows from stock move; made = this analysis created the signal | no | partly done (PR #42): `made` fixed. todo: neutral-AI rows still never resolve (need a price path without a PredictionScore) and rows are not clustered by news event. Report-only; does not feed predictions |
+| B10a | `analytics/ai_vs_rules.py:66` | Neutral AI rows never resolve; `made` over-counted; no clustering | Resolve neutral rows from stock move; made = this analysis created the signal | no | done (follow-up PRs): `made` fixed earlier; rows with no scorecard row (neutral AI) now resolve from the history store's daily closes over the analysis window; summaries count one call per news event + stock + direction (worker monthly report and dashboard page) |
 | B10b | `analytics/live.py:256-289` | Drift check ignores live sampling noise | Alert only if live CI and backtest CI do not overlap | no | done (PR #42) |
 | B10c | `tracking/scorecard.py:59-64,108` | Direction hit measured at window + buffer close | Use the window day | no | done (PR #42) |
 | B10d | `analytics/learning.py:215` | Lookback 4 months instead of 3 | Fix month arithmetic | no | done (PR #42) |
