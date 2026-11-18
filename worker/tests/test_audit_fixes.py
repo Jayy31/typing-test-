@@ -566,3 +566,77 @@ def test_c6_positioning_base_rates_skip_corporate_action_windows() -> None:
     assert len(vals) == 1 and vals[0] == pytest.approx(
         3.0
     )  # only BBB; no -80% "return" from the split
+
+
+# ---- follow-up: B4 rest, C3 rest, C8a, C8g ----------------------------------------------------
+def test_b4_after_hours_prediction_without_signal_is_scored_at_the_open(engine: Engine) -> None:
+    from types import SimpleNamespace
+
+    from app.db.models import Analysis, PredictionScore
+    from app.signals.deferred import PENDING_KEY, queue_score, score_pending
+
+    night = datetime(2026, 11, 17, 21, 0, tzinfo=IST)  # Tuesday evening
+    with session_scope(engine) as s:
+        a = _analysis(s, "TCS")
+        a.created_at = night
+        pred = SimpleNamespace(move_pct=4.0, p_move=0.7, source="scenario_tree")
+        used = SimpleNamespace(move_pct=2.0, p_move=0.6)
+        queue_score(s, a, "bullish", used, pred, None, "single", night)
+        aid = a.id
+
+    class Spot:
+        def spot(self, symbol: str) -> float:
+            return 4100.0
+
+    assert score_pending(engine, Spot(), night + timedelta(hours=1)) == 0  # not due yet
+    open_ = datetime(2026, 11, 18, 9, 20, tzinfo=IST)
+    assert score_pending(engine, Spot(), open_) == 1
+    assert score_pending(engine, Spot(), open_) == 0  # once
+    with session_scope(engine) as s:
+        ps = s.scalars(select(PredictionScore)).one()
+        assert (ps.spot_start, ps.predicted_move_pct, ps.predicted_move_raw_pct) == (
+            4100.0,
+            2.0,
+            4.0,
+        )
+        an = s.get(Analysis, aid)
+        assert an is not None and PENDING_KEY not in (an.scores_json or {})
+
+
+def test_c8a_post_entry_removes_the_day0_jump() -> None:
+    from app.history.event_study import post_entry
+
+    d = date(2025, 3, 3)
+    rows = [
+        ("results", "IT", "TCS", 0, "bullish", d, 1.0, 5.0),
+        ("results", "IT", "TCS", 3, "bullish", d, 0.5, 6.0),
+        ("results", "IT", "TCS", 5, "bullish", d, 1.0, 4.0),
+        ("results", "IT", "INFY", 3, "bullish", d, 1.0, 9.0),  # no day-0 row: dropped
+    ]
+    out = post_entry(rows)
+    assert out == [
+        ("results", "IT", "TCS", 3, "bullish", d, 0.5, 1.0),
+        ("results", "IT", "TCS", 5, "bullish", d, 1.0, -1.0),
+    ]
+
+
+def test_c8g_skew_needs_strikes_near_the_target_and_live_pcr_keeps_change() -> None:
+    from app.positioning.features import DayInput, OptRow, iv_skew, pcr_state
+
+    near = [OptRow(95, "PE", iv=30.0), OptRow(105, "CE", iv=20.0)]
+    assert iv_skew(DayInput(spot=100.0, near=near))[0] == "put_skew"
+    far = [OptRow(85, "PE", iv=30.0), OptRow(115, "CE", iv=20.0)]  # only far strikes have an IV
+    assert iv_skew(DayInput(spot=100.0, near=far)) is None
+    assert pcr_state(1.5, 1.2)[0] == "high_rising"
+    assert pcr_state(1.5, None)[0] == "high"
+
+
+def test_c3_at_open_entry_uses_previous_day_liquidity() -> None:
+    import inspect
+
+    from app.backtest import engine as bt
+    from app.lab import backtest as lab
+
+    # both entry paths read volume / OI for the tier and fill class from the previous session
+    assert "liq_day = _prev_day(data, sig.day) if sig.entry_at_open" in inspect.getsource(bt)
+    assert "liq_day = _shift_day(data, entry_day, -1) if at_open" in inspect.getsource(lab)

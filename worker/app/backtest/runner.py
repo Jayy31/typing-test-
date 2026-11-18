@@ -22,6 +22,7 @@ from app.db.session import session_scope
 from app.history.event_study import (
     grouped_values,
     kg_reaction_rows,
+    post_entry,
     reaction_day,
     reaction_rows,
     regime_labels,
@@ -130,7 +131,10 @@ def run_rules(
     labels = regime_labels(con) if variant.regime_aware else None
     for f in res.folds:
         groups = grouped_values(  # nothing from the fold on
-            reaction_rows(con, before=f.test_start) + kg_reaction_rows(con, before=f.test_start),
+            # C8a: entry is at the reaction-day close, so gate on the move left after it
+            post_entry(
+                reaction_rows(con, before=f.test_start) + kg_reaction_rows(con, before=f.test_start)
+            ),
             vix,
             labels,
         )

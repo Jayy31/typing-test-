@@ -31,7 +31,7 @@ from app.market.live import LiveOptionData, market_open, store_chain
 from app.market.options import OptionChain, OptionQuoteRow
 from app.notify import templates
 from app.notify.outbox import enqueue_alert
-from app.signals.deferred import entry_start, reprice_due
+from app.signals.deferred import entry_start, reprice_due, score_pending
 from app.signals.expiry import trading_days_between
 from app.signals.filters import load_holidays
 from app.signals.lifecycle import LIVE
@@ -652,6 +652,7 @@ def trading_cycle(
     if not source.available or not market_open(now):
         return 0
     reprice_due(engine, source, now)  # after-hours signals get live prices at the open
+    score_pending(engine, source, now)  # audit B4: other after-hours predictions
     with session_scope(engine) as s:
         from app import flags
 

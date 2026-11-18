@@ -22,7 +22,13 @@ from app.backtest.engine import Signal, Skip, Trade, Variant, _iv, simulate
 from app.backtest.runner import Fold, RunResult, folds, run_rules
 from app.config import get_settings
 from app.history.analogues import AnalogueResult
-from app.history.event_study import grouped_values, reaction_rows, summarize, vix_series
+from app.history.event_study import (
+    grouped_values,
+    post_entry,
+    reaction_rows,
+    summarize,
+    vix_series,
+)
 from app.lab.spec import StrategySpec, cfg
 from app.pricing.bs import greeks
 from app.trading import core_rules
@@ -257,11 +263,24 @@ def plan(
     if row is None or p is None:
         return Skip(key, sym, entry_day, "liquidity", "no tradable option price for the strike")
     ref = p.open if at_open else p.close
+    # C3: an at-open entry only knows the previous session's volume / OI
+    liq_day = _shift_day(data, entry_day, -1) if at_open else entry_day
+    liq_row = (
+        next(
+            (
+                r
+                for r in (data.chain(sym, liq_day) if liq_day else [])
+                if (r.expiry, r.strike, r.type) == (row.expiry, row.strike, row.type)
+            ),
+            None,
+        )
+        if at_open
+        else row
+    )
+    oi_lots = data.to_lots(liq_row.oi, liq_day, lot, "oi") if liq_row and liq_day else None
+    vol_lots = data.to_lots(liq_row.volume, liq_day, lot, "volume") if liq_row and liq_day else None
     tier = fills.tier_for(
-        abs(row.strike / spot - 1) * 100,
-        data.to_lots(row.oi, entry_day, lot, "oi"),
-        data.to_lots(row.volume, entry_day, lot, "volume"),
-        sym in data.large_caps(entry_day),
+        abs(row.strike / spot - 1) * 100, oi_lots, vol_lots, sym in data.large_caps(entry_day)
     )
     hs = fills.half_spread(ref, tier, opts.spread_mult)
     bad = core_rules.violation(
@@ -295,7 +314,6 @@ def plan(
         iv_spike_pts=spec.exits.iv_spike_exit_pts,
         entry_at_open=at_open,
     )
-    vol_lots = data.to_lots(row.volume, entry_day, lot, "volume")
     return Trade(
         sig,
         exp,
@@ -448,7 +466,10 @@ def run_spec(
     one = bool(load_yaml("backtest.yaml")["entry"]["one_trade_per_symbol"])
     busy: dict[str, date] = {}
     for f in res.folds:
-        stats = summarize(grouped_values(reaction_rows(con, before=f.test_start), vix))
+        rr = reaction_rows(con, before=f.test_start)
+        if spec.entry.timing != "before_event":  # C8a: entered after day 0, gate on what is left
+            rr = post_entry(rr)
+        stats = summarize(grouped_values(rr, vix))
         for c in sorted(
             candidates(spec, ctx, f.test_start, f.test_end, stats, res, opts),
             key=lambda c: (c.day, c.key),

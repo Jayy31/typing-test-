@@ -78,14 +78,17 @@ def pcr_value(rows: list[OptRow]) -> float | None:
 
 def pcr(x: DayInput) -> State | None:
     v = pcr_value(x.near)
-    if v is None:
-        return None
+    return None if v is None else pcr_state(v, x.prev_pcr)
+
+
+def pcr_state(v: float, prev_pcr: float | None) -> State:
+    """Level + change vs the previous session's PCR (live uses the last EOD value, audit C8g)."""
     c = cfg()["pcr"]
     level = (
         "high" if v > float(c["high_above"]) else "low" if v < float(c["low_below"]) else "neutral"
     )
-    if x.prev_pcr is not None:
-        d = v - x.prev_pcr
+    if prev_pcr is not None:
+        d = v - prev_pcr
         if d > float(c["change_min"]):
             level += "_rising"
         elif d < -float(c["change_min"]):
@@ -110,11 +113,14 @@ def iv_skew(x: DayInput) -> State | None:
         return None
     c = cfg()["iv_skew"]
     off = float(c["otm_pct"]) / 100
-    put, call = (
-        _nearest(x.near, "PE", x.spot * (1 - off)),
-        _nearest(x.near, "CE", x.spot * (1 + off)),
-    )
+    t_put, t_call = x.spot * (1 - off), x.spot * (1 + off)
+    put, call = _nearest(x.near, "PE", t_put), _nearest(x.near, "CE", t_call)
     if not (put and call and put.iv and call.iv):
+        return None
+    # Audit C8g: one strike rule live and in history. History only has IV for traded strikes and
+    # the live chain only the strikes around ATM, so "nearest" alone can be far from the target.
+    gap = float(c.get("max_strike_gap_pct", 2.0)) / 100 * x.spot
+    if abs(put.strike - t_put) > gap or abs(call.strike - t_call) > gap:
         return None
     v = put.iv - call.iv
     s = (

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import PositioningSnapshot
 from app.positioning.evidence import Evidence, assess
-from app.positioning.features import DayInput, OptRow, compute
+from app.positioning.features import DayInput, OptRow, compute, pcr_state
 
 log = logging.getLogger(__name__)
 
@@ -125,6 +125,9 @@ def for_signal(
             as_of, states = eod
             source = "eod"
         if live:
+            live = dict(live)
+            if "pcr" in live and "pcr" in states:  # C8g: keep rising/falling vs the last EOD PCR
+                live["pcr"] = pcr_state(float(live["pcr"][1]), float(states["pcr"][1]))
             states = {**states, **live}
             source = "live" if eod is None else "live+eod"
     ev = assess(states, stats_lookup)
