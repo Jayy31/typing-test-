@@ -74,7 +74,7 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 - `worker/`: Python 3.12, APScheduler, httpx, feedparser, trafilatura, Pydantic v2, SQLAlchemy 2 + Alembic, Anthropic SDK, python-telegram-bot, pytest
 - `dashboard/`: Next.js (App Router) + TypeScript + Tailwind + shadcn/ui + Recharts + Supabase JS, deployed on Vercel
 - DB: Supabase Postgres. Worker uses service-role key; dashboard uses anon key + row-level security (read-only) + Supabase Auth limited to one email
-- Worker hosting: always-on free VM (Oracle Cloud Always Free) via Docker
+- Worker hosting: always-on VM via Docker (Google Cloud free trial, Mumbai; `docs/setup/gcp.md`)
 - Timezone: `Asia/Kolkata` everywhere
 
 ## Conventions

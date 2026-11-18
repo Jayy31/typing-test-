@@ -1,5 +1,7 @@
 # Oracle VM setup: progress (paused 2026-11-17)
 
+> **Abandoned 2026-11-18.** The worker VM moved to Google Cloud: see `gcp.md`.
+
 Owner is doing the Oracle setup from the personal laptop (not the company PC). Resume here.
 
 ## Done
