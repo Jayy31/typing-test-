@@ -17,3 +17,4 @@ analytics:
   drift_min_trades: 30            # live vs backtest comparison starts at this many closed trades
   drift_backtest_variant: "rules: v2.1 rules, per_lot"
   ai_vs_rules_ci_z: 1.645         # live rules decision: mean - z * std / sqrt(n_eff) > 0 (one-sided 95%)
+  ai_vs_rules_window_days: 3     # analyses without a window: trading days to measure the stock move (rows with no scorecard row)

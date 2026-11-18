@@ -129,7 +129,7 @@ def build(s: Session, month: date) -> dict[str, Any]:
             }
             for k, v in sorted(rej.items())
         },
-        "ai_vs_rules": ai_vs_rules.summarize(avr),
+        "ai_vs_rules": ai_vs_rules.summarize(avr, ai_vs_rules.cluster_keys(s, avr)),
         "ai_spend_inr": round(spend, 0),
         "ai_budget_inr": float(get_settings().ai_monthly_budget_inr),
         "uptime": {j: round(sum(v) / len(v), 3) for j, v in sorted(by_job.items()) if len(v) >= 5},
