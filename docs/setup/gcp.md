@@ -1,6 +1,6 @@
 # Worker VM on Google Cloud (free trial)
 
-> **2026-11-19:** this Google account has no free-trial credit (paid account). The worker is trialled on a phone first (`phone.md`); this guide is the paid fallback.
+> **2026-11-19:** this Google account has no free-trial credit (paid account). An Indian VPS is being evaluated first; this guide is the paid fallback.
 
 Chosen 2026-11-18 after Oracle failed: there was no A1 capacity, and upgrading needed a large Pay-As-You-Go card hold (see `oracle-progress.md`).
 
