@@ -8,7 +8,8 @@ sources:
   shareholding:     {enabled: true, path: "/api/corporate-share-holdings-master?index=equities", poll_minutes: 360}
   financial_results: {enabled: true, path: "/api/corporates-financial-results?index=equities&period=Quarterly"}
   sebi_orders:      {enabled: true, url: "https://www.sebi.gov.in/sebirss.xml", poll_minutes: 60}
-  usfda:            {enabled: true, url: "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/warning-letters/rss.xml", poll_minutes: 180}
+  usfda:            {enabled: false, url: "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/warning-letters/rss.xml", poll_minutes: 180}
+  # usfda off since 2026-11-22: fda.gov answers data-centre IPs with an abuse-detection 404 (VPS).
   quote_equity:     {path: "/api/quote-equity?symbol={symbol}"}   # issued size -> market cap (nightly)
 
 # Counterparty classes from the disclosure's category / client name (first match wins).
