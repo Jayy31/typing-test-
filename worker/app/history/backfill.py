@@ -27,7 +27,7 @@ from app.history.nse_files import (
     parse_fo,
     parse_index,
 )
-from app.history.store import connect
+from app.history.store import bulk_insert, connect
 from app.yaml_config import load_yaml
 
 log = logging.getLogger(__name__)
@@ -62,7 +62,7 @@ def load_prices(con: duckdb.DuckDBPyConnection, dl: Downloader, d: date) -> int:
     if raw is None:
         return -1
     rows = parse_equity(raw, d)
-    con.executemany("INSERT OR REPLACE INTO hist_prices VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows)
+    bulk_insert(con, "INSERT OR REPLACE INTO hist_prices", rows)
     return len(rows)
 
 
@@ -71,15 +71,13 @@ def load_options(con: duckdb.DuckDBPyConnection, dl: Downloader, d: date) -> int
     if raw is None:
         return -1
     parsed = parse_fo(raw, d)
-    con.executemany(
-        "INSERT OR REPLACE INTO hist_options VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        parsed.options,
-    )
+    bulk_insert(con, "INSERT OR REPLACE INTO hist_options", parsed.options)
     # F&O universe as of that day (no survivorship bias): every stock with options that day
     lots = parsed.lots
     universe = sorted({r[1] for r in parsed.options})
-    con.executemany(
-        "INSERT OR REPLACE INTO hist_fno_universe (date, symbol, lot_size) VALUES (?, ?, ?)",
+    bulk_insert(
+        con,
+        "INSERT OR REPLACE INTO hist_fno_universe (date, symbol, lot_size)",
         [(d, s, lots.get(s)) for s in universe],
     )
     return len(parsed.options)
@@ -92,7 +90,7 @@ def load_futures(con: duckdb.DuckDBPyConnection, dl: Downloader, d: date) -> int
         return -1
     rows = parse_fo(raw, d).futures
     if rows:  # DuckDB rejects an empty batch
-        con.executemany("INSERT OR REPLACE INTO hist_futures VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows)
+        bulk_insert(con, "INSERT OR REPLACE INTO hist_futures", rows)
     return len(rows)
 
 
@@ -101,7 +99,7 @@ def load_index(con: duckdb.DuckDBPyConnection, dl: Downloader, d: date) -> int:
     if raw is None:
         return -1
     rows = parse_index(raw, d)
-    con.executemany("INSERT OR REPLACE INTO hist_index VALUES (?, ?, ?)", rows)
+    bulk_insert(con, "INSERT OR REPLACE INTO hist_index", rows)
     return len(rows)
 
 

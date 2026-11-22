@@ -18,7 +18,7 @@ import duckdb
 import numpy as np
 
 from app.config import get_settings
-from app.history.store import connect
+from app.history.store import bulk_insert, connect
 from app.pricing.bs import implied_vol_vec
 from app.yaml_config import load_yaml
 
@@ -62,7 +62,7 @@ def backfill_day(con: duckdb.DuckDBPyConnection, d: date) -> int:
         for r, iv in zip(keep, ivs, strict=True)
         if not np.isnan(iv)
     ]
-    con.executemany("INSERT OR REPLACE INTO hist_iv VALUES (?, ?, ?, ?, ?, ?, ?)", out)
+    bulk_insert(con, "INSERT OR REPLACE INTO hist_iv", out)
     # ATM IV per stock: nearest expiry, strike closest to the stock close, mean of CE and PE
     grouped: dict[str, dict[date, list[tuple[float, float, float]]]] = defaultdict(
         lambda: defaultdict(list)
@@ -75,8 +75,9 @@ def backfill_day(con: duckdb.DuckDBPyConnection, d: date) -> int:
         legs = by_exp[exp]
         nearest = min({k for k, _, _ in legs}, key=lambda x: abs(x - legs[0][2]))
         atm[sym] = (exp, [iv for k, iv, _ in legs if k == nearest])
-    con.executemany(
-        "INSERT OR REPLACE INTO hist_atm_iv VALUES (?, ?, ?, ?)",
+    bulk_insert(
+        con,
+        "INSERT OR REPLACE INTO hist_atm_iv",
         [(d, s, e, sum(v) / len(v)) for s, (e, v) in atm.items() if v],
     )
     return len(out)

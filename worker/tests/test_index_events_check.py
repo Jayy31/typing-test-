@@ -31,9 +31,7 @@ AUG = (
     "being included: Trent Ltd, Bharat Electronics Ltd. The following companies are being "
     "excluded: Divi's Laboratories Ltd, LTIMindtree Ltd."
 )
-FEB = (
-    "<p>February 24, 2025</p><p>NIFTY 50: the following companies are excluded: Zomato Ltd</p>"
-)
+FEB = "<p>February 24, 2025</p><p>NIFTY 50: the following companies are excluded: Zomato Ltd</p>"
 
 
 def _fetch(pages: dict[str, str]) -> Any:

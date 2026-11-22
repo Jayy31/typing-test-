@@ -31,7 +31,7 @@ import numpy as np
 
 from app.history import universe
 from app.history.corp_actions import Action, adjust, contract_factor, load_actions
-from app.history.store import connect
+from app.history.store import bulk_insert, connect
 from app.yaml_config import load_yaml
 
 log = logging.getLogger(__name__)
@@ -374,10 +374,7 @@ def compute_reactions(con: duckdb.DuckDBPyConnection) -> int:
                     weight,
                 )
             )
-    con.executemany(
-        "INSERT OR REPLACE INTO event_reactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        rows,
-    )
+    bulk_insert(con, "INSERT OR REPLACE INTO event_reactions", rows)
     if skipped:
         log.info("event study skipped: %s", dict(skipped))
     return len(rows)
@@ -625,9 +622,7 @@ def compute_stats(con: duckdb.DuckDBPyConnection) -> int:
     con.execute("DELETE FROM analogue_stats")
     now = datetime.now().replace(microsecond=0)
     out = [(*key, *vals, now) for key, vals in stats.items()]
-    con.executemany(
-        "INSERT INTO analogue_stats VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", out
-    )
+    bulk_insert(con, "INSERT INTO analogue_stats", out)
     return len(out)
 
 
