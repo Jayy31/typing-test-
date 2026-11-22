@@ -682,3 +682,34 @@ def test_b10a_neutral_ai_rows_resolve_from_closes_and_events_count_once(engine: 
         out = ai_vs_rules.summarize(rows, ai_vs_rules.cluster_keys(s, rows))
         assert out["rules_only"] == {"n": 1, "hit_rate": 1.0, "avg_move_pct": 4.0}
         assert ai_vs_rules.summarize(rows)["rules_only"]["n"] == 2  # unclustered for comparison
+
+
+def test_research_web_drops_domains_anthropic_cannot_fetch() -> None:
+    import anthropic
+    import httpx
+
+    from app.ai.providers.anthropic_provider import _create
+
+    class Api:
+        def __init__(self) -> None:
+            self.seen: list[list[str]] = []
+
+        def create(self, **kw: Any) -> str:
+            doms = list(kw["tools"][0]["allowed_domains"])
+            self.seen.append(doms)
+            if "reuters.com" in doms:
+                req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+                raise anthropic.BadRequestError(
+                    "Error code: 400 - The following domains are not accessible to our user "
+                    "agent: ['reuters.com', 'livemint.com']. Read more",
+                    response=httpx.Response(400, request=req),
+                    body=None,
+                )
+            return "ok"
+
+    tools = [
+        {"name": "web_fetch", "allowed_domains": ["livemint.com", "nseindia.com", "reuters.com"]}
+    ]
+    api = Api()
+    assert _create(api, tools, tools=tools) == "ok"
+    assert api.seen[-1] == ["nseindia.com"]
