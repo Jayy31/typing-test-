@@ -184,3 +184,25 @@ def test_vectorised_iv_matches_prices():
         px, np.array([100.0]), np.array([100.0]), np.array([0.1]), 0.065, np.array([True])
     )
     assert iv[0] == pytest.approx(0.25, abs=1e-3)
+
+
+def test_load_options_into_a_fresh_store():
+    """The backfill loader writes into the real schema (incl. columns added by later versions)."""
+    from app.history.backfill import load_options
+
+    raw = (
+        b"FinInstrmTp,TckrSymb,XpryDt,StrkPric,OptnTp,OpnPric,HghPric,LwPric,ClsPric,SttlmPric,"
+        b"OpnIntrst,ChngInOpnIntrst,TtlTradgVol,NewBrdLotQty,UndrlygPric\n"
+        b"STO,INFY,2024-08-29,1800,CE,20,25,18,22,22,1000,50,300,400,1790\n"
+    )
+
+    class Dl:
+        def get(self, kind, d):
+            return raw
+
+    con = mem()
+    d = date(2024, 8, 1)
+    assert load_options(con, Dl(), d) == 1
+    assert con.execute(
+        "SELECT symbol, lot_size FROM hist_fno_universe WHERE date = ?", [d]
+    ).fetchall() == [("INFY", 400)]
