@@ -79,7 +79,7 @@ def load_options(con: duckdb.DuckDBPyConnection, dl: Downloader, d: date) -> int
     lots = parsed.lots
     universe = sorted({r[1] for r in parsed.options})
     con.executemany(
-        "INSERT OR REPLACE INTO hist_fno_universe VALUES (?, ?, ?)",
+        "INSERT OR REPLACE INTO hist_fno_universe (date, symbol, lot_size) VALUES (?, ?, ?)",
         [(d, s, lots.get(s)) for s in universe],
     )
     return len(parsed.options)
