@@ -734,3 +734,23 @@ def test_nse_error_page_is_not_cached_and_the_day_is_retried(tmp_path: Any) -> N
     with _pytest.raises(RuntimeError):
         dl.get("equity", date(2022, 8, 9))
     assert not bad.exists()
+
+
+def test_wrapped_nse_error_page_is_detected_and_backfill_continues(tmp_path: Any) -> None:
+    import io
+    import zipfile
+
+    import pytest as _pytest
+
+    from app.history.nse_files import NotAFile, _error_page, parse_equity
+
+    xml = b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Error>NoSuchKey</Error>\n'
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("x.csv", xml)
+    for raw in (b"\xef\xbb\xbf" + xml, b"\n  " + xml, buf.getvalue()):
+        assert _error_page(raw)
+        with _pytest.raises(NotAFile):
+            parse_equity(raw, date(2022, 8, 8))
+    assert not _error_page(b"SYMBOL,SERIES\nTCS,EQ\n")
+    assert issubclass(NotAFile, RuntimeError)  # backfill records "error" and goes on

@@ -35,6 +35,10 @@ class FormatError(ValueError):
     """A file did not have the columns config/history.yaml expects."""
 
 
+class NotAFile(RuntimeError):
+    """NSE answered with an XML/HTML error document instead of the data file (retry later)."""
+
+
 def url_for(kind: str, d: date) -> str:
     src = load_yaml("history.yaml")["sources"][kind]
     return str(src["url"]).format(
@@ -57,7 +61,10 @@ def _text(raw: bytes) -> str:
     if raw[:2] == b"PK":
         with zipfile.ZipFile(io.BytesIO(raw)) as z:
             raw = z.read(z.namelist()[0])
-    return raw.decode("utf-8-sig", errors="replace")
+    text = raw.decode("utf-8-sig", errors="replace")
+    if text.lstrip().lower().startswith(("<?xml", "<!doctype", "<html", "<error")):
+        raise NotAFile("error page instead of the file")
+    return text
 
 
 def _rows(text: str) -> list[dict[str, str]]:
@@ -216,9 +223,17 @@ def parse_index(raw: bytes, d: date) -> list[tuple[Any, ...]]:
 
 
 def _error_page(data: bytes) -> bool:
-    """An XML/HTML error document where a CSV or zip file was expected."""
-    head = data[:200].lstrip().lower()
-    return head.startswith((b"<?xml", b"<!doctype", b"<html", b"<error"))
+    """An XML/HTML error document where a CSV or zip file was expected (also inside a zip, and
+    after a byte-order mark or whitespace)."""
+    if not data:
+        return False
+    try:
+        _text(data)
+    except NotAFile:
+        return True
+    except Exception:  # noqa: BLE001 - a broken zip etc. is left to the parser to report
+        return False
+    return False
 
 
 class Downloader:
