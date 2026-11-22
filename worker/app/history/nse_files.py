@@ -215,6 +215,12 @@ def parse_index(raw: bytes, d: date) -> list[tuple[Any, ...]]:
     return out
 
 
+def _error_page(data: bytes) -> bool:
+    """An XML/HTML error document where a CSV or zip file was expected."""
+    head = data[:200].lstrip().lower()
+    return head.startswith((b"<?xml", b"<!doctype", b"<html", b"<error"))
+
+
 class Downloader:
     """Polite downloader with an on-disk cache: raw files are kept, so re-runs never re-download."""
 
@@ -240,7 +246,10 @@ class Downloader:
         target = self.cache / kind / f"{d.isoformat()}.bin"
         if target.exists():
             data = target.read_bytes()
-            return data or None
+            if _error_page(data):  # cached by an older version: drop it and fetch again
+                target.unlink()
+            else:
+                return data or None
         if not self._warmed:
             try:
                 self.http.get("https://www.nseindia.com/")  # cookies
@@ -261,6 +270,12 @@ class Downloader:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(b"")
                 return None
+            if resp.status_code == 200 and _error_page(resp.content):
+                # NSE's archive host sometimes answers 200 with an XML/HTML error page instead of
+                # the file. Not cached; the day is recorded as an error and retried on the next run.
+                if attempt == self.retries:
+                    raise RuntimeError(f"{kind} {d}: error page instead of the file")
+                continue
             if resp.status_code == 200 and resp.content:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(resp.content)
