@@ -74,7 +74,7 @@ Collects news, macro, calendar and option data → AI + rules analysis → ranke
 - `worker/`: Python 3.12, APScheduler, httpx, feedparser, trafilatura, Pydantic v2, SQLAlchemy 2 + Alembic, Anthropic SDK, python-telegram-bot, pytest
 - `dashboard/`: Next.js (App Router) + TypeScript + Tailwind + shadcn/ui + Recharts + Supabase JS, deployed on Vercel
 - DB: Supabase Postgres. Worker uses service-role key; dashboard uses anon key + row-level security (read-only) + Supabase Auth limited to one email
-- Worker hosting: always-on Linux VM/VPS via Docker (`docs/setup/deploy.md`); provider being chosen (Indian VPS preferred; GCP paid fallback `docs/setup/gcp.md`, no free-trial credit)
+- Worker hosting: Contabo Cloud VPS 4 (4 vCPU, 8 GB, 100 GB SSD, India region, Ubuntu 24.04, 1-month term, about USD 11.33/month incl. GST), Docker via `deploy/bootstrap.sh`; deployed 2026-11-22 (preflight OK, migrations at head). GCP paid fallback `docs/setup/gcp.md`
 - Timezone: `Asia/Kolkata` everywhere
 
 ## Conventions
