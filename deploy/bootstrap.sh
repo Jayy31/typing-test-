@@ -24,11 +24,11 @@ if mountpoint -q /data; then
   echo "/data already mounted"
 else
   lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT
-  read -rp "Block device for /data (e.g. sdb; empty = use the boot disk): " DEV
+  read -rp "Block device for /data (e.g. sdb; empty = use the boot disk): " DEV < /dev/tty
   if [ -n "$DEV" ]; then
     DEV=/dev/${DEV#/dev/}
     if [ -z "$(blkid -o value -s TYPE "$DEV" || true)" ]; then
-      read -rp "$DEV has no filesystem. Format it as ext4 (ERASES it)? type YES: " OK
+      read -rp "$DEV has no filesystem. Format it as ext4 (ERASES it)? type YES: " OK < /dev/tty
       [ "$OK" = YES ] || { echo "not formatted; stopping"; exit 1; }
       mkfs.ext4 -L deskdata "$DEV"
     fi
@@ -53,9 +53,9 @@ while IFS= read -r line; do
   [[ "$line" =~ ^[A-Z0-9_]+= ]] || continue
   grep -q "^${key}=" "$ENV" && continue          # already set: keep (re-run safe)
   if [[ "$key" =~ $SECRET_RE ]]; then
-    read -rsp "$key (hidden, empty = default): " val; echo
+    read -rsp "$key (hidden, empty = default): " val < /dev/tty; echo
   else
-    read -rp "$key (empty = default): " val
+    read -rp "$key (empty = default): " val < /dev/tty
   fi
   printf '%s=%s\n' "$key" "$val" >> "$ENV"
 done < /opt/desk/env.example
