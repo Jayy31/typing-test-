@@ -713,3 +713,24 @@ def test_research_web_drops_domains_anthropic_cannot_fetch() -> None:
     api = Api()
     assert _create(api, tools, tools=tools) == "ok"
     assert api.seen[-1] == ["nseindia.com"]
+
+
+def test_nse_error_page_is_not_cached_and_the_day_is_retried(tmp_path: Any) -> None:
+    import httpx
+    import pytest as _pytest
+
+    from app.history.nse_files import Downloader
+
+    xml = b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Error>NoSuchKey</Error>'
+    http = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, content=xml)))
+    dl = Downloader(http=http, cache_dir=tmp_path)
+    dl.retries, dl.min_interval = 1, 0.0
+    with _pytest.raises(RuntimeError, match="error page"):
+        dl.get("equity", date(2022, 8, 8))
+    assert not list(tmp_path.rglob("*.bin"))  # nothing cached
+    bad = tmp_path / "equity" / "2022-08-09.bin"  # left over from an older version
+    bad.parent.mkdir(parents=True, exist_ok=True)
+    bad.write_bytes(xml)
+    with _pytest.raises(RuntimeError):
+        dl.get("equity", date(2022, 8, 9))
+    assert not bad.exists()
