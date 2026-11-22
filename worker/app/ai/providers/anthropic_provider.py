@@ -10,6 +10,7 @@
 """
 
 import json
+import re
 import time
 from typing import Any, cast
 
@@ -78,6 +79,36 @@ def web_tool_params(model: str, web: WebTools) -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+BLOCKED_DOMAINS = re.compile(r"domains are not accessible to our user agent: \[([^\]]*)\]")
+
+
+def drop_blocked_domains(tools: list[dict[str, Any]], exc: Exception) -> bool:
+    """Anthropic rejects the whole request when an allowed domain cannot be fetched by its
+    crawler (400 "domains are not accessible to our user agent: [...]"). Remove those domains from
+    every web tool; True if anything was removed (caller retries once)."""
+    m = BLOCKED_DOMAINS.search(str(exc))
+    if not m:
+        return False
+    bad = {d.strip().strip("'\"") for d in m.group(1).split(",") if d.strip()}
+    changed = False
+    for t in tools:
+        doms = t.get("allowed_domains")
+        if doms:
+            keep = [d for d in doms if d not in bad]
+            if len(keep) != len(doms):
+                t["allowed_domains"], changed = keep, True
+    return changed
+
+
+def _create(api: Any, web_tools: list[dict[str, Any]] | None, /, **kwargs: Any) -> Any:
+    try:
+        return api.create(**kwargs)
+    except anthropic.BadRequestError as exc:
+        if web_tools is None or not drop_blocked_domains(web_tools, exc):
+            raise
+        return api.create(**kwargs)
 
 
 def usage_of(u: Any) -> Usage:
@@ -156,7 +187,7 @@ class AnthropicConversation:
             kwargs["tools"] = self.tools
         if self.effort:
             kwargs["output_config"] = {"effort": self.effort}
-        return self.api.create(**kwargs)
+        return _create(self.api, self.tools or None, **kwargs)
 
     def send(self, text: str | None = None, tool_results: list[ToolResult] | None = None) -> Turn:
         content: list[dict[str, Any]] = [
@@ -274,7 +305,7 @@ class AnthropicProvider:
         usage = Usage()
         msg: Any = None
         for _ in range(MAX_PAUSE_RESUMES + 1):
-            msg = self.client().messages.create(**params, timeout=timeout_s)
+            msg = _create(self.client().messages, params.get("tools"), **params, timeout=timeout_s)
             usage.accumulate(usage_of(msg.usage))
             if msg.stop_reason != "pause_turn":
                 break

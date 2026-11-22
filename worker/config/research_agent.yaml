@@ -123,12 +123,11 @@ web_allowlist:
   - sebi.gov.in
   - rbi.org.in
   - pib.gov.in
-  - economictimes.indiatimes.com
-  - livemint.com
   - business-standard.com
-  - moneycontrol.com
-  - reuters.com
   - bloomberg.com
+# Removed 2026-11-22: economictimes.indiatimes.com, livemint.com, moneycontrol.com, reuters.com
+# (Anthropic's crawler cannot access them; the API rejects the whole request). Their news still
+# arrives through the RSS collectors. Any other blocked domain is dropped and the call retried once.
 
 # Read-only data tools: limits per call
 tools:
