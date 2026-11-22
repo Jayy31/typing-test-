@@ -206,3 +206,17 @@ def test_load_options_into_a_fresh_store():
     assert con.execute(
         "SELECT symbol, lot_size FROM hist_fno_universe WHERE date = ?", [d]
     ).fetchall() == [("INFY", 400)]
+
+
+def test_bulk_insert_matches_executemany_and_handles_duplicate_keys():
+    from app.history.store import bulk_insert
+
+    con = mem()
+    d = date(2024, 1, 2)
+    rows = [(d, "INFY", 1.0, 2.0, 0.5, 1.5, 100, None), (d, "TCS", 3.0, 4.0, 2.5, 3.5, 200, 40.0)]
+    assert bulk_insert(con, "INSERT OR REPLACE INTO hist_prices", rows) == 2
+    dup = [(d, "INFY", 9.0, 9.0, 9.0, 9.0, 9, None), (d, "INFY", 7.0, 7.0, 7.0, 7.0, 7, 1.0)]
+    bulk_insert(con, "INSERT OR REPLACE INTO hist_prices", dup)  # same key twice: last wins
+    got = con.execute("SELECT symbol, close FROM hist_prices ORDER BY symbol").fetchall()
+    assert got == [("INFY", 7.0), ("TCS", 3.5)]
+    assert bulk_insert(con, "INSERT OR REPLACE INTO hist_prices", []) == 0

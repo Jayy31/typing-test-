@@ -6,9 +6,11 @@ backfill and the backtester can never write at the same time (the second one fai
 """
 
 import fcntl
-from collections.abc import Iterator
+import re
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import duckdb
 
@@ -176,3 +178,53 @@ def connect(path: Path | None = None, write: bool = False) -> Iterator[duckdb.Du
         con.close()
         fcntl.flock(lock_file, fcntl.LOCK_UN)
         lock_file.close()
+
+
+def bulk_insert(con: duckdb.DuckDBPyConnection, insert: str, rows: Sequence[Sequence[Any]]) -> int:
+    """Fast batch insert: `insert` is the statement head without VALUES, e.g.
+    "INSERT OR REPLACE INTO hist_options" or "INSERT INTO t (a, b)". Rows are sent as one list per
+    column and unnested in DuckDB; `executemany` costs ~3 ms per row (minutes per F&O day)."""
+    if not rows:
+        return 0
+    rows = _last_per_key(con, insert, rows)
+    width = len(rows[0])
+    sel = ", ".join(f"unnest(${i + 1})" for i in range(width))
+    step = 50_000
+    for start in range(0, len(rows), step):
+        chunk = rows[start : start + step]
+        cols = [[r[i] for r in chunk] for i in range(width)]
+        try:
+            con.execute(f"{insert} SELECT {sel}", cols)
+        except duckdb.Error:
+            # e.g. the same key twice in one file (one statement cannot upsert a row twice):
+            # fall back to row-by-row, where the last row wins as before
+            con.executemany(f"{insert} VALUES ({', '.join('?' * width)})", chunk)
+    return len(rows)
+
+
+def _last_per_key(
+    con: duckdb.DuckDBPyConnection, insert: str, rows: Sequence[Sequence[Any]]
+) -> Sequence[Sequence[Any]]:
+    """Keep the last row per primary key (as row-by-row upserts did); one statement would keep the
+    first. Tables without a primary key are returned unchanged."""
+    m = re.search(r"INTO\s+(\w+)\s*(\(([^)]*)\))?", insert, re.IGNORECASE)
+    if not m:
+        return rows
+    table = m.group(1)
+    names = (
+        [c.strip() for c in m.group(3).split(",")]
+        if m.group(3)
+        else [r[0] for r in con.execute(f"SELECT * FROM {table} LIMIT 0").description]
+    )
+    pk = con.execute(
+        "SELECT constraint_column_names FROM duckdb_constraints() "
+        "WHERE table_name = ? AND constraint_type = 'PRIMARY KEY'",
+        [table],
+    ).fetchone()
+    if not pk or not all(c in names for c in pk[0]):
+        return rows
+    idx = [names.index(c) for c in pk[0]]
+    last: dict[tuple[Any, ...], Sequence[Any]] = {}
+    for r in rows:
+        last[tuple(r[i] for i in idx)] = r
+    return list(last.values()) if len(last) < len(rows) else rows
