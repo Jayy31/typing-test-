@@ -9,7 +9,7 @@ doesn't show.
 - **Open PRs: none.** `ENGINE_VERSION` 10.1.0, latest migration `0020`, DuckDB history schema v8.
 - **Not deployed yet.** The owner is doing the external setup step by step in chat:
   - done: Supabase, Vercel dashboard (`https://option-desk-tan.vercel.app`), Telegram bot, Anthropic key, healthchecks.io;
-  - in progress: choosing an Indian VPS for the worker (phone trial dropped: phone not working; GCP account has no trial credit, `gcp.md` is the paid fallback). Oracle was abandoned.
+  - done 2026-11-22: worker running on a Contabo Cloud VPS 4 (India region), installed with `deploy/bootstrap.sh`; preflight OK. Next: the one-time 5-year history backfill on the VPS (`docs/setup/phase-4.md` section 3). Oracle and the phone trial were dropped.
 - **Broker: Kotak Neo** (market data only; Upstox removed). Merged in #40; not run against the live Kotak API yet (field names from Kotak's docs, checked by the go-live report).
   - Owner has the Neo app API; keeps **no funds** in the account and must **never whitelist a static IP** (Kotak then rejects all order APIs).
   - VM needs `KOTAK_ACCESS_TOKEN`, `KOTAK_MOBILE`, `KOTAK_UCC`, `KOTAK_MPIN`, `KOTAK_TOTP_SECRET` (the TOTP secret text, not just the authenticator).
