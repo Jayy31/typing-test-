@@ -230,3 +230,15 @@ def test_empty_batches_are_skipped():
     con = mem()
     assert corp_actions.store(con, []) == 0
     assert news_history.store_news(con, []) == 0
+
+
+def test_tagging_filter_fno_only_and_routine_categories():
+    from app.history.tagging import skipped_reason
+
+    cfg = {"fno_only": True, "skip_categories": ["trading window", "newspaper publication"]}
+    fno = {"TCS", "INFY"}
+    assert skipped_reason("SMALLCO: Outcome of Board Meeting", "SMALLCO", fno, cfg) == "not_fno"
+    assert skipped_reason("TCS: Closure of Trading Window", "TCS", fno, cfg) == "routine"
+    assert skipped_reason("TCS: Copy of Newspaper Publication", "TCS", fno, cfg) == "routine"
+    assert skipped_reason("TCS: Financial Result Updates", "TCS", fno, cfg) is None
+    assert skipped_reason("INFY: Acquisition", "infy", fno, cfg) is None

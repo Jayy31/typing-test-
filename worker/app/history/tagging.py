@@ -25,6 +25,7 @@ from app.db.session import session_scope
 from app.history import universe
 from app.history.integrity import LABELS_ONLY
 from app.history.store import HIST_EVENTS_INSERT, connect
+from app.yaml_config import load_yaml
 
 log = logging.getLogger(__name__)
 BATCH_SIZE = 10_000
@@ -40,17 +41,54 @@ def _with_history_universe(
     )
 
 
-def pending(con: duckdb.DuckDBPyConnection) -> list[tuple[str, str, str | None, str]]:
-    return [
-        (r[0], r[1], r[2], r[3])
-        for r in con.execute(
-            "SELECT news_id, title, body, source FROM hist_raw_news WHERE tag_status = 'pending' ORDER BY ts"
-        ).fetchall()
-    ]
+def _cfg() -> dict[str, Any]:
+    return dict(load_yaml("history.yaml").get("tagging") or {})
+
+
+def category(title: str) -> str:
+    """NSE announcement category: the text after 'SYMBOL: ' in the stored title."""
+    return title.split(":", 1)[1].strip() if ":" in title else title
+
+
+def skipped_reason(
+    title: str, symbol: str | None, fno: set[str], cfg: dict[str, Any]
+) -> str | None:
+    """Why an item is not sent to the AI (None = tag it). Owner rule: only stocks ever in F&O,
+    and no routine filings that never move a price."""
+    if cfg.get("fno_only", True) and fno and (symbol or "").upper() not in fno:
+        return "not_fno"
+    cat = category(title).lower()
+    if any(p.lower() in cat for p in cfg.get("skip_categories") or []):
+        return "routine"
+    return None
+
+
+def pending(
+    con: duckdb.DuckDBPyConnection, counts: dict[str, int] | None = None
+) -> list[tuple[str, str, str | None, str]]:
+    cfg = _cfg()
+    fno = {s.upper() for s in universe.all_symbols(con)}
+    out = []
+    for nid, title, body, src, sym in con.execute(
+        "SELECT news_id, title, body, source, symbol FROM hist_raw_news "
+        "WHERE tag_status = 'pending' ORDER BY ts"
+    ).fetchall():
+        why = skipped_reason(title, sym, fno, cfg)
+        if counts is not None:
+            counts[why or "to_tag"] = counts.get(why or "to_tag", 0) + 1
+        if why is None:
+            out.append((nid, title, body, src))
+    return out
 
 
 def estimate(con: duckdb.DuckDBPyConnection) -> CostEstimate:
     return tagger.estimate(len(pending(con)))
+
+
+def breakdown(con: duckdb.DuckDBPyConnection) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    pending(con, counts)
+    return counts
 
 
 def submit(con: duckdb.DuckDBPyConnection, ai: AiClient) -> list[str]:
@@ -147,6 +185,12 @@ def main(argv: list[str] | None = None) -> int:
     with connect(write=True) as con:
         est = estimate(con)
         if a.cmd == "estimate":
+            b = breakdown(con)
+            print(
+                f"pending {sum(b.values()):,}: to tag {b.get('to_tag', 0):,}, skipped "
+                f"(not an F&O stock) {b.get('not_fno', 0):,}, skipped (routine filing) "
+                f"{b.get('routine', 0):,}"
+            )
             print(est.summary())
             return 0
         ai = AiClient()

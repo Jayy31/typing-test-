@@ -109,3 +109,57 @@ blend:                          # predicted move once analogues exist (before ca
 backup:
   every_days: 7
   include: ["parquet", "history.duckdb"]
+
+# Historical AI tagging (owner-approved cost): only news about stocks that were ever in F&O, and
+# not routine filings that never move a price. Matched case-insensitively against the NSE
+# announcement category (the text after "SYMBOL: " in the title). Live tagging is unaffected.
+tagging:
+  fno_only: true
+  skip_categories:
+    - trading window
+    - newspaper publication
+    - copy of newspaper
+    - loss of share certificate
+    - duplicate share certificate
+    - issue of duplicate
+    - share certificate
+    - transfer of shares
+    - analysts/institutional investor meet
+    - investor meet
+    - con. call
+    - conference call
+    - investor presentation
+    - shareholders meeting
+    - agm
+    - egm
+    - postal ballot
+    - book closure
+    - record date
+    - certificate under sebi
+    - regulation 74(5)
+    - regulation 7(3)
+    - compliance certificate
+    - compliances-certificate
+    - reg. 24a
+    - secretarial compliance
+    - statement of investor complaints
+    - investor complaints
+    - change in registrar
+    - closure of trading window
+    - esop
+    - esos
+    - employee stock option
+    - allotment of securities
+    - allotment of equity shares
+    - clarification - financial results
+    - spurt in volume
+    - disclosure under sebi takeover
+    - reg. 29
+    - reg. 31
+    - encumbrance
+    - change in director
+    - change in company secretary
+    - change in compliance officer
+    - resignation of company secretary
+    - appointment of company secretary
+    - kmp
