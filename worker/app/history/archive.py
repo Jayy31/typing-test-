@@ -44,7 +44,8 @@ def write_parquet(rows: list[tuple[Any, ...]], target: Path) -> None:
     con = duckdb.connect()  # in-memory: never touches the history DB's writer lock
     try:
         con.execute(f"CREATE TABLE q ({', '.join(f'{n} {t}' for n, t in COLUMNS)})")
-        con.executemany(f"INSERT INTO q VALUES ({', '.join('?' * len(COLUMNS))})", rows)
+        if rows:  # DuckDB rejects an empty batch
+            con.executemany(f"INSERT INTO q VALUES ({', '.join('?' * len(COLUMNS))})", rows)
         tmp = target.with_suffix(".tmp")
         con.execute(f"COPY q TO '{tmp}' (FORMAT PARQUET)")
         tmp.replace(target)  # atomic: a crash never leaves a half file under the final name

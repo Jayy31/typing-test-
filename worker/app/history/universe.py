@@ -50,10 +50,11 @@ def fill_lots(con: duckdb.DuckDBPyConnection) -> int:
         later_day, later_lot = ks[i]
         f = contract_factor(actions.get(sym, []), d, later_day)  # lot after = lot before / f
         updates.append((max(1, round(later_lot * f)), d, sym))
-    con.executemany(
-        "UPDATE hist_fno_universe SET lot_size = ?, lot_source = 'inferred' WHERE date = ? AND symbol = ?",
-        updates,
-    )
+    if updates:  # DuckDB rejects an empty batch
+        con.executemany(
+            "UPDATE hist_fno_universe SET lot_size = ?, lot_source = 'inferred' WHERE date = ? AND symbol = ?",
+            updates,
+        )
     apply_overrides(con)
     return len(updates)
 

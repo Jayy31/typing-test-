@@ -133,7 +133,8 @@ def save_equity(run_id: int, points: list[tuple[Any, float]]) -> None:
     con = duckdb.connect()  # in-memory: never touches the history DB's writer lock
     try:
         con.execute("CREATE TABLE e (date DATE, equity DOUBLE)")
-        con.executemany("INSERT INTO e VALUES (?, ?)", points)
+        if points:  # DuckDB rejects an empty batch
+            con.executemany("INSERT INTO e VALUES (?, ?)", points)
         con.execute(f"COPY e TO '{out / 'equity.parquet'}' (FORMAT PARQUET)")
     finally:
         con.close()
