@@ -95,8 +95,13 @@ def sync_instruments(
             inst.sector = row.sector
             inst.sub_sector = row.sub_sector
             inst.aliases = row.aliases
-            inst.is_fno = row.symbol in lot_sizes
-            inst.lot_size = lot_sizes.get(row.symbol)
+            if lot_sizes:
+                inst.is_fno = row.symbol in lot_sizes
+                inst.lot_size = lot_sizes.get(row.symbol)
+            elif inst.is_fno is None:
+                # NSE lot-size file unavailable (it is a PDF now): the symbol master is the F&O
+                # list; membership and lots are confirmed by the Kotak scrip-master sync.
+                inst.is_fno = True
             inst.updated_at = now
             s.add(inst)
         unknown = set(lot_sizes) - {r.symbol for r in rows}
@@ -111,7 +116,12 @@ class FnoMetaCollector(Collector[SymbolRow]):
     name = "nse_fno_meta"
 
     def fetch(self) -> Any:
-        return SYMBOL_MASTER.read_text(encoding="utf-8"), fetch_lot_sizes(self.timeout_s)
+        try:
+            lots = fetch_lot_sizes(self.timeout_s)
+        except Exception as exc:  # noqa: BLE001 - lots also come from Kotak; never block the list
+            log.warning("NSE lot-size file unavailable (%s); loading the symbol master only", exc)
+            lots = {}
+        return SYMBOL_MASTER.read_text(encoding="utf-8"), lots
 
     def parse(self, raw: Any) -> list[SymbolRow]:
         text, self._lots = raw

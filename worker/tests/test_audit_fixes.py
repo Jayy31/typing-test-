@@ -754,3 +754,17 @@ def test_wrapped_nse_error_page_is_detected_and_backfill_continues(tmp_path: Any
             parse_equity(raw, date(2022, 8, 8))
     assert not _error_page(b"SYMBOL,SERIES\nTCS,EQ\n")
     assert issubclass(NotAFile, RuntimeError)  # backfill records "error" and goes on
+
+
+def test_symbol_master_loads_when_nse_lot_file_fails(engine: Engine, monkeypatch: Any) -> None:
+    from app.collectors import fno_meta
+    from app.db.models import Instrument
+
+    def boom(timeout: float = 20.0) -> dict[str, int]:
+        raise ValueError("new-line character seen in unquoted field")  # NSE serves a PDF now
+
+    monkeypatch.setattr(fno_meta, "fetch_lot_sizes", boom)
+    fno_meta.FnoMetaCollector().run(engine)
+    with session_scope(engine) as s:
+        insts = list(s.scalars(select(Instrument)))
+        assert len(insts) > 100 and all(i.is_fno for i in insts)
