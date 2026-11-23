@@ -56,10 +56,8 @@ def sync_live_events(
                     f"{tag.prompt_ver}:{LABELS_ONLY}",
                 )
             )
-    con.executemany(
-        HIST_EVENTS_INSERT,
-        rows,
-    )
+    if rows:  # DuckDB rejects an empty batch
+        con.executemany(HIST_EVENTS_INSERT, rows)
     return len(rows)
 
 
@@ -89,8 +87,6 @@ def load_curated(con: duckdb.DuckDBPyConnection, path: Path = CURATED) -> int:
                 "curated",
             )
         )
-    con.executemany(
-        HIST_EVENTS_INSERT,
-        rows,
-    )
+    if rows:  # DuckDB rejects an empty batch
+        con.executemany(HIST_EVENTS_INSERT, rows)
     return len(rows)

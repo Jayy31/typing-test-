@@ -40,11 +40,12 @@ def month_chunks(start: date, end: date) -> list[tuple[date, date]]:
 def store_news(con: duckdb.DuckDBPyConnection, rows: list[tuple[Any, ...]]) -> int:
     """rows: (news_id, ts, symbol, title, body, url, source). Existing ids are kept (idempotent)."""
     before = con.execute("SELECT count(*) FROM hist_raw_news").fetchone()[0]  # type: ignore[index]
-    con.executemany(
-        "INSERT OR IGNORE INTO hist_raw_news (news_id, ts, symbol, title, body, url, source) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        rows,
-    )
+    if rows:  # DuckDB rejects an empty batch
+        con.executemany(
+            "INSERT OR IGNORE INTO hist_raw_news (news_id, ts, symbol, title, body, url, source) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
     return int(con.execute("SELECT count(*) FROM hist_raw_news").fetchone()[0]) - int(before)  # type: ignore[index]
 
 

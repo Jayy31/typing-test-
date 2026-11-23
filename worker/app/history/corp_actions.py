@@ -91,6 +91,8 @@ def parse_rows(rows: list[dict[str, Any]]) -> list[tuple[Any, ...]]:
 
 def store(con: duckdb.DuckDBPyConnection, rows: list[tuple[Any, ...]]) -> int:
     # never overwrite an owner-verified (manual) row with the NSE text parse
+    if not rows:  # DuckDB rejects an empty batch (a week without actions)
+        return 0
     con.executemany(
         """INSERT INTO hist_corp_actions VALUES (?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT DO UPDATE SET subject = excluded.subject, factor = excluded.factor,
@@ -141,7 +143,10 @@ def load_manual(con: duckdb.DuckDBPyConnection, path: Path | None = None) -> int
         rows.append(
             (a["symbol"], ex, a["kind"], a.get("note"), a.get("factor"), a.get("amount"), "manual")
         )
-    con.executemany("INSERT OR REPLACE INTO hist_corp_actions VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+    if rows:
+        con.executemany(
+            "INSERT OR REPLACE INTO hist_corp_actions VALUES (?, ?, ?, ?, ?, ?, ?)", rows
+        )
     return len(rows)
 
 

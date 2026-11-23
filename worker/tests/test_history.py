@@ -220,3 +220,13 @@ def test_bulk_insert_matches_executemany_and_handles_duplicate_keys():
     got = con.execute("SELECT symbol, close FROM hist_prices ORDER BY symbol").fetchall()
     assert got == [("INFY", 7.0), ("TCS", 3.5)]
     assert bulk_insert(con, "INSERT OR REPLACE INTO hist_prices", []) == 0
+
+
+def test_empty_batches_are_skipped():
+    """A week without corporate actions / a quiet news day must not crash (DuckDB rejects an empty
+    executemany)."""
+    from app.history import corp_actions, news_history
+
+    con = mem()
+    assert corp_actions.store(con, []) == 0
+    assert news_history.store_news(con, []) == 0
